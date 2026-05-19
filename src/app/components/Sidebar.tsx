@@ -5,7 +5,6 @@ import {
   BarChart2,
   List,
   Rocket,
-  Layers,
   HelpCircle,
   Settings,
   Building2,
@@ -31,7 +30,6 @@ const navItems = [
   { icon: Play, key: "plays" },
   { icon: BarChart2, key: "analytics" },
   { icon: Rocket, key: "marketplace" },
-  { icon: Layers, key: "layers" },
 ];
 
 const audienceItems = [
@@ -57,7 +55,7 @@ export function Sidebar({ activePage = "contas", onNavigate }: SidebarProps) {
             className="flex items-center justify-center rounded-lg"
             style={{ width: 44, height: 44, background: "#FF5F39" }}
           >
-            <svg width="26" height="26" viewBox="0 0 64 67" fill="none">
+            <svg width="26" height="26" viewBox="2 6 46 49" fill="none">
               <path
                 d="M48 6L48 38C48 43 44 47 39 47C34 47 30 43 30 38C30 33 34 29 39 29C41 29 43 30 44.5 31.5V13L20 19V46C20 51 16 55 11 55C6 55 2 51 2 46C2 41 6 37 11 37C13 37 15 38 16.5 39.5V6L48 6Z"
                 fill="white"
@@ -67,9 +65,9 @@ export function Sidebar({ activePage = "contas", onNavigate }: SidebarProps) {
         </div>
 
         {/* Nav icons */}
-        <div className="flex flex-col gap-1 w-full items-center flex-1">
+        <div className="flex flex-col gap-1 w-full items-center flex-1 justify-center">
           {navItems.map(({ icon: Icon, key }) => {
-            const pageKey = key === "analytics" ? "dashboard" : key === "person" ? "contas" : key === "layers" ? "canvas" : key;
+            const pageKey = key === "analytics" ? "dashboard" : key === "person" ? "contas" : key;
             const isActive = activePage === pageKey;
             
             return (

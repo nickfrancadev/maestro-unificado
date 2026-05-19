@@ -187,7 +187,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
                           <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                           <path d="M9 14l2 2 4-4"/>
                         </svg>
-                        TAREFA INTERNA
+                        TASKPOINT INTERNA
                       </>
                     ) : (
                       <>
@@ -231,7 +231,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
 
             {/* Subtasks */}
             <div className="bg-white rounded-lg p-4">
-              <h4 className="text-sm font-bold text-[#212a46] mb-3">Subtarefas</h4>
+              <h4 className="text-sm font-bold text-[#212a46] mb-3">Subtaskpoints</h4>
               
               {touchpoint.subtasks.map((subtask) => (
                 <div key={subtask.id} className="flex items-center gap-2 mb-2">
@@ -249,7 +249,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
 
               <button className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 mt-3 transition-colors">
                 <Plus className="w-3.5 h-3.5" />
-                Nova subtarefa
+                Nova subtaskpoint
               </button>
             </div>
 
@@ -461,7 +461,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
                       <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                       <path d="M9 14l2 2 4-4"/>
                     </svg>
-                    TAREFA INTERNA
+                    TASKPOINT INTERNA
                   </>
                 ) : (
                   <>
@@ -481,7 +481,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
                 e.stopPropagation();
               }}
               className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
-              title={isTask ? 'Duplicar tarefa' : 'Duplicar touchpoint'}
+              title={isTask ? 'Duplicar taskpoint' : 'Duplicar touchpoint'}
             >
               <Copy className="w-4 h-4 text-gray-600" />
             </button>
@@ -490,7 +490,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
                 e.stopPropagation();
               }}
               className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
-              title={isTask ? 'Editar tarefa' : 'Editar touchpoint'}
+              title={isTask ? 'Editar taskpoint' : 'Editar touchpoint'}
             >
               <Edit3 className="w-4 h-4 text-gray-600" />
             </button>
@@ -553,7 +553,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
                   <line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2"/>
                   <line x1="8" y1="21" x2="21" y2="21" stroke="currentColor" strokeWidth="2"/>
                 </svg>
-                Subtarefas
+                Subtaskpoints
               </h4>
               
               {touchpoint.subtasks.map((subtask) => (
@@ -572,7 +572,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
 
               <button className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 mt-3 transition-colors">
                 <Plus className="w-3.5 h-3.5" />
-                Nova subtarefa
+                Nova subtaskpoint
               </button>
             </div>
 
@@ -741,7 +741,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
 
           <div className="bg-white rounded-lg p-3 flex items-center justify-center">
             <button className="w-full py-2 bg-[#5cb85c] text-white rounded font-bold text-[10px] hover:bg-[#4cae4c] transition-colors">
-              TAREFA EXECUTADA
+              TASKPOINT EXECUTADA
             </button>
           </div>
 
@@ -752,7 +752,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation }: T
 
           <div className="bg-white rounded-lg p-3 flex items-center justify-center">
             <button className="w-full py-2 bg-[#3571de] text-white rounded font-bold text-[10px] hover:bg-[#2557b8] transition-colors">
-              CONCLUIR TAREFA
+              CONCLUIR TASKPOINT
             </button>
           </div>
         </div>

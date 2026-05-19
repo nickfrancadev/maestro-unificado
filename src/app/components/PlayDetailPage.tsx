@@ -39,7 +39,7 @@ export interface NewPlayData {
   contas: PlayContaData[];
   dossiêsContas: PlayDossieContaData[];
   dossiêsContatos: PlayDossieContatoData[];
-  produto: GtmProduto | null;
+  produtos: GtmProduto[];
   publicos: GtmPublico[];
   momentos: GtmMomento[];
   withAI?: boolean;
@@ -178,40 +178,44 @@ export function PlayDetailPage({ play, onBack }: PlayDetailPageProps) {
               <div style={{ width: 32, height: 32, borderRadius: 8, background: "#EFF6FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Package size={15} color="#3571DE" />
               </div>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em" }}>Produto / Serviço</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em" }}>Produtos / Serviços</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#3571DE" }}>{play.produtos.length}</span>
             </div>
-            {play.produto ? (
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                  <span style={{
-                    display: "inline-flex", alignItems: "center", gap: 4,
-                    padding: "2px 8px", borderRadius: 9999, fontSize: 10,
-                    background: play.produto.tipo === "Produto" ? "#DCFCE7" : play.produto.tipo === "Serviço" ? "#FFEDD5" : "#DBEAFE",
-                    color: play.produto.tipo === "Produto" ? "#166534" : play.produto.tipo === "Serviço" ? "#FF5F39" : "#1e40af",
-                  }}>
-                    <TipoIcon tipo={play.produto.tipo} />
-                    {play.produto.tipo}
-                  </span>
-                </div>
-                <p style={{ fontSize: 14, fontWeight: 700, color: "#212A46", marginBottom: 4 }}>{play.produto.nome}</p>
-                <p style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.5, marginBottom: 8 }}>{play.produto.descricao}</p>
-                <div style={{ display: "flex", gap: 12 }}>
-                  <div>
-                    <p style={{ fontSize: 10, color: "#9CA3AF" }}>Preço</p>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: "#212A46" }}>R$ {play.produto.preco.toLocaleString("pt-BR")}/{play.produto.unidade}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {play.produtos.map((p) => (
+                <div key={p.id} style={{ borderBottom: play.produtos.length > 1 ? "1px solid #F3F4F6" : "none", paddingBottom: play.produtos.length > 1 ? 12 : 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "2px 8px", borderRadius: 9999, fontSize: 10,
+                      background: p.tipo === "Produto" ? "#DCFCE7" : p.tipo === "Serviço" ? "#FFEDD5" : "#DBEAFE",
+                      color: p.tipo === "Produto" ? "#166534" : p.tipo === "Serviço" ? "#FF5F39" : "#1e40af",
+                    }}>
+                      <TipoIcon tipo={p.tipo} />
+                      {p.tipo}
+                    </span>
                   </div>
-                  <div>
-                    <p style={{ fontSize: 10, color: "#9CA3AF" }}>PMF Rating</p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                      <Star size={11} color="#F59E0B" fill="#F59E0B" />
-                      <p style={{ fontSize: 12, fontWeight: 700, color: "#212A46" }}>{play.produto.pmfRating.toFixed(1)}</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: "#212A46", marginBottom: 4 }}>{p.nome}</p>
+                  <p style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.5, marginBottom: 8 }}>{p.descricao}</p>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <div>
+                      <p style={{ fontSize: 10, color: "#9CA3AF" }}>Preço</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#212A46" }}>R$ {p.preco.toLocaleString("pt-BR")}/{p.unidade}</p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 10, color: "#9CA3AF" }}>PMF Rating</p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                        <Star size={11} color="#F59E0B" fill="#F59E0B" />
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "#212A46" }}>{p.pmfRating.toFixed(1)}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <p style={{ fontSize: 13, color: "#9CA3AF" }}>Nenhum produto selecionado</p>
-            )}
+              ))}
+              {play.produtos.length === 0 && (
+                <p style={{ fontSize: 13, color: "#9CA3AF" }}>Nenhum produto selecionado</p>
+              )}
+            </div>
           </div>
 
           {/* Públicos + Momentos */}

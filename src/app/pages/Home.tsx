@@ -520,7 +520,7 @@ export function Home() {
           {/* Separador */}
           <div className="border-t border-gray-200 my-6"></div>
 
-          {/* Abas de Tarefas */}
+          {/* Abas de Taskpoints */}
           <div className="flex items-center gap-2 mb-4">
             <button
               onClick={() => setActiveTab("afazer")}
@@ -544,7 +544,7 @@ export function Home() {
             </button>
           </div>
 
-          {/* Lista de Tarefas/Touchpoints */}
+          {/* Lista de Taskpoints/Touchpoints */}
           {activeTab === "afazer" && (
             <div className="space-y-4">
               {/* Hoje EM */}
@@ -682,8 +682,8 @@ export function Home() {
           {activeTab === "finalizadas" && (
             <div className="py-16 text-center">
               <CheckCircle2 size={48} className="mx-auto mb-4" style={{ color: "#D1D5DB" }} />
-              <p className="text-gray-600 font-semibold mb-1">Nenhuma tarefa finalizada</p>
-              <p className="text-sm text-gray-500">As tarefas concluídas aparecerão aqui</p>
+              <p className="text-gray-600 font-semibold mb-1">Nenhuma taskpoint finalizada</p>
+              <p className="text-sm text-gray-500">As taskpoints concluídas aparecerão aqui</p>
             </div>
           )}
         </div>

@@ -18,7 +18,8 @@ interface Dossier {
   id: number;
   kind: string;
   title: string;
-  date: string;
+  createdAt: string;
+  updatedAt: string;
   author: string;
   type: string;
   stage?: string;
@@ -48,20 +49,16 @@ interface ContactData {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TYPE_COLORS: Record<string, string> = {
-  Reunião: "#2563EB",
-  Proposta: "#16A34A",
-  "Follow-up": "#D97706",
-  Sale: "#FF5F39",
-  Relacionamento: "#6B7280",
-};
-
 const FUNCOES_COMPRA = [
   "Decisor", "Influenciador", "Usuário Final",
   "Técnico", "Financeiro", "Campeão", "Bloqueador",
 ];
-const ENVOLVIMENTOS = ["Alto", "Médio", "Baixo", "Neutro"];
-const TIPOS = ["Sale", "Reunião", "Proposta", "Follow-up", "Relacionamento", "Renovação", "Expansão"];
+const ENVOLVIMENTOS = [
+  "Alto",
+  "Médio",
+  "Baixo",
+  "Neutro",
+];
 const STAGES = ["Descoberta", "Qualificação", "Proposta", "Negociação", "Fechado"];
 const CULTURAS = ["Innovative", "Conservative", "Collaborative", "Competitive", "Hierarchical"];
 const FASES_DEFAULT = ["Prospecção", "Qualificação", "Proposta enviada", "Negociação", "Fechado – ganho", "Fechado – perdido"];
@@ -243,7 +240,6 @@ const selectStyle: React.CSSProperties = {
 
 function AccountDossierForm({ dossier }: { dossier: Dossier }) {
   const [title, setTitle] = useState(dossier.title);
-  const [type, setType] = useState(dossier.type);
   const [localizacaoSede, setLocalizacaoSede] = useState(dossier.localizacaoSede ?? "");
   const [oportunidade, setOportunidade] = useState(dossier.oportunidade ?? "");
   const [diferenciais, setDiferenciais] = useState(dossier.diferenciais ?? "");
@@ -257,21 +253,12 @@ function AccountDossierForm({ dossier }: { dossier: Dossier }) {
 
   return (
     <div style={{ borderTop: "1px solid #F1F5F9", background: "#FAFBFD" }}>
-      {/* Meta row: Título + Tipo */}
-      <div style={{ padding: "16px 20px 0", display: "grid", gridTemplateColumns: "1fr auto", gap: "0 14px", alignItems: "end" }}>
-        <Field label="Título">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} placeholder="Título do dossiê" />
-        </Field>
-        <Field label="Tipo">
-          <div style={{ position: "relative", width: 150 }}>
-            <select value={type} onChange={(e) => setType(e.target.value)} style={selectStyle}>
-              {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <ChevronDown size={12} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "#9B9B9B", pointerEvents: "none" }} />
-          </div>
-        </Field>
-      </div>
-
+    {/* Meta row: Título */}
+    <div style={{ padding: "16px 20px 0" }}>
+      <Field label="Título">
+        <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} placeholder="Título do dossiê" />
+      </Field>
+    </div>
       {/* All dossier fields in 2-col grid */}
       <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px" }}>
 
@@ -348,7 +335,6 @@ function AccountDossierForm({ dossier }: { dossier: Dossier }) {
 
 function ContactDossierForm({ dossier, account }: { dossier: Dossier; account: AccountDetail }) {
   const [title, setTitle] = useState(dossier.title);
-  const [type, setType] = useState(dossier.type);
   const [stage, setStage] = useState(dossier.stage ?? "");
   const [activeContactName, setActiveContactName] = useState<string | null>(
     dossier.contacts[0] ?? null
@@ -368,19 +354,10 @@ function ContactDossierForm({ dossier, account }: { dossier: Dossier; account: A
   return (
     <div style={{ borderTop: "1px solid #F1F5F9" }}>
       {/* Header fields */}
-      <div style={{ padding: "16px 20px 0", display: "grid", gridTemplateColumns: "1fr auto auto", gap: "0 12px", alignItems: "end" }}>
+      <div style={{ padding: "16px 20px 0", display: "grid", gridTemplateColumns: "1fr auto", gap: "0 12px", alignItems: "end" }}>
         <div>
           <FieldLabel>Título</FieldLabel>
           <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
-        </div>
-        <div>
-          <FieldLabel>Tipo</FieldLabel>
-          <div style={{ position: "relative" }}>
-            <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...selectStyle, width: 140 }}>
-              {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <ChevronDown size={12} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: "#9B9B9B", pointerEvents: "none" }} />
-          </div>
         </div>
         <div>
           <FieldLabel>Estágio</FieldLabel>
@@ -413,7 +390,6 @@ function ContactDossierForm({ dossier, account }: { dossier: Dossier; account: A
                   whiteSpace: "nowrap", flexShrink: 0, marginBottom: -1, boxShadow: "none",
                 }}
               >
-                <Avatar name={name} size={20} color={isActive ? "#FF5F39" : AVATAR_COLORS[i % AVATAR_COLORS.length]} />
                 {name.split(" ")[0]}
               </button>
             );
@@ -551,7 +527,10 @@ export function ExpandableDossierCard({
             <span style={{ fontWeight: 700, fontSize: 13, color: "#212A46" }}>{dossier.title}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <span style={{ fontSize: 11, color: "#9B9B9B" }}>{dossier.date}</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+              <span style={{ fontSize: 10, color: "#9B9B9B" }}>Criado: {dossier.createdAt}</span>
+              <span style={{ fontSize: 10, color: "#9B9B9B" }}>Editado: {dossier.updatedAt}</span>
+            </div>
 
             {/* ── Three-dot menu ── */}
             <div style={{ position: "relative" }}>
@@ -618,14 +597,13 @@ export function ExpandableDossierCard({
           </div>
         </div>
 
-        {/* Row 2: excerpt */}
-        <p style={{ fontSize: 12, color: "#6B7280", margin: 0, lineHeight: 1.5 }}>{dossier.excerpt}</p>
-
         {/* Row 3: contacts/author */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 8, borderTop: "1px solid #F7F8FB" }}>
           <div>
             {isContato && dossier.contacts.length > 0 ? (
-              <StackedAvatars names={dossier.contacts} />
+              <span style={{ fontSize: 11, color: "#9B9B9B" }}>
+                {dossier.contacts.length} contato{dossier.contacts.length !== 1 ? "s" : ""} • por {dossier.author}
+              </span>
             ) : (
               <span style={{ fontSize: 11, color: "#9B9B9B" }}>por {dossier.author}</span>
             )}

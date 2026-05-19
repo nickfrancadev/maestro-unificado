@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, ChangeEvent } from "react";
 import {
   Building2,
   Users,
@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ArrowUp,
   ArrowDown,
+  ArrowUpDown,
   Clock,
   CheckCircle2,
   XCircle,
@@ -27,6 +28,8 @@ import {
   Archive,
   ClipboardCheck,
   MessageCircle,
+  Search,
+  UserCircle2,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
@@ -78,7 +81,7 @@ function TouchpointDrawer({ task, onClose }: { task: Task; onClose: () => void }
     c.name.toLowerCase().includes(mentionSearch.toLowerCase())
   );
 
-  const handleNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleNoteChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     const cursorPos = e.target.selectionStart;
     setNoteText(text);
@@ -115,9 +118,9 @@ function TouchpointDrawer({ task, onClose }: { task: Task; onClose: () => void }
     : { bg: "bg-[#c8e6c9]", text: "text-[#2e7d32]", iconBg: "bg-[#4a90e2]" };
 
   const mockSubtasks = [
-    { id: "s1", title: "Preparar apresentação de slides", completed: true },
-    { id: "s2", title: "Confirmar presença dos participantes", completed: false },
-    { id: "s3", title: "Enviar agenda com antecedência", completed: false },
+    { id: "s1", title: "Preparar apresentação de slides", completed: true, assignee: 'João Silva', dueDate: '2026-04-18' },
+    { id: "s2", title: "Confirmar presença dos participantes", completed: false, assignee: 'Maria Santos', dueDate: '2026-04-19' },
+    { id: "s3", title: "Enviar agenda com antecedência", completed: false, assignee: 'Pedro Costa', dueDate: '2026-04-20' },
   ];
 
   const mockAttachments = [
@@ -190,7 +193,7 @@ function TouchpointDrawer({ task, onClose }: { task: Task; onClose: () => void }
                         <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
                         <path d="M9 14l2 2 4-4" />
                       </svg>
-                      TAREFA INTERNA
+                      TASKPOINT INTERNA
                     </>
                   ) : (
                     <>
@@ -240,19 +243,37 @@ function TouchpointDrawer({ task, onClose }: { task: Task; onClose: () => void }
                 </div>
               </div>
 
-              {/* Subtarefas */}
+              {/* Subtaskpoints */}
               <div className="mb-6">
-                <h4 className="text-sm font-bold text-[#212a46] mb-3">Subtarefas</h4>
+                <h4 className="text-sm font-bold text-[#212a46] mb-3">Subtaskpoints</h4>
                 {mockSubtasks.map((subtask) => (
-                  <div key={subtask.id} className="flex items-center gap-2 mb-2">
-                    <input type="checkbox" defaultChecked={subtask.completed} className="w-3.5 h-3.5 rounded border-gray-300" />
-                    <span className={`text-sm ${subtask.completed ? "line-through text-gray-500" : "text-gray-800"}`}>
-                      {subtask.title}
-                    </span>
+                  <div key={subtask.id} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 mb-2">
+                    <input type="checkbox" defaultChecked={subtask.completed} className="w-3.5 h-3.5 rounded border-gray-300 accent-[#4a90e2]" />
+                    <div className="flex-1 flex flex-col">
+                      <span className={`text-sm ${subtask.completed ? "line-through text-gray-500" : "text-gray-800"}`}>
+                        {subtask.title}
+                      </span>
+                      {(subtask.assignee || subtask.dueDate) && (
+                        <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-1">
+                          {subtask.assignee && (
+                            <span className="flex items-center gap-1">
+                              <UserCircle2 className="w-3 h-3" />
+                              {subtask.assignee}
+                            </span>
+                          )}
+                          {subtask.dueDate && (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {subtask.dueDate.split('-').reverse().join('/')}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
                 <button className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 mt-3 transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> Nova subtarefa
+                  <Plus className="w-3.5 h-3.5" /> Nova subtaskpoint
                 </button>
               </div>
 
@@ -359,7 +380,7 @@ function TouchpointDrawer({ task, onClose }: { task: Task; onClose: () => void }
               </div>
               <div className="flex items-end">
                 <button className="w-full py-2 bg-[#5cb85c] text-white rounded font-bold text-[11px] hover:bg-[#4cae4c] transition-colors">
-                  {isTask ? "TAREFA EXECUTADA" : "TOUCHPOINT EXECUTADO"}
+                  {isTask ? "TASKPOINT EXECUTADA" : "TOUCHPOINT EXECUTADO"}
                 </button>
               </div>
               <div>
@@ -368,7 +389,7 @@ function TouchpointDrawer({ task, onClose }: { task: Task; onClose: () => void }
               </div>
               <div className="flex items-end">
                 <button className="w-full py-2 bg-[#3571de] text-white rounded font-bold text-[11px] hover:bg-[#2557b8] transition-colors">
-                  {isTask ? "CONCLUIR TAREFA" : "CONCLUIR TOUCHPOINT"}
+                  {isTask ? "CONCLUIR TASKPOINT" : "CONCLUIR TOUCHPOINT"}
                 </button>
               </div>
             </div>
@@ -473,8 +494,15 @@ function TouchpointDrawer({ task, onClose }: { task: Task; onClose: () => void }
 
 /* ─── HomePage ─── */
 export function HomePage() {
-  const [taskTab, setTaskTab] = useState<"hoje" | "semana" | "futuro">("hoje");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  // Responsabilidades filters
+  const [respTipoFilter, setRespTipoFilter] = useState("all");
+  const [respContaFilter, setRespContaFilter] = useState("");
+  const [respPlayFilter, setRespPlayFilter] = useState("");
+  const [respStatusFilter, setRespStatusFilter] = useState("all");
+  const [respDateFilter, setRespDateFilter] = useState("");
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>({ key: "status", direction: "asc" });
 
   const engagementData = useMemo(() => [
     { id: "seg", name: "Seg", value: 45 },
@@ -515,35 +543,85 @@ export function HomePage() {
     { label: "Programados", value: "312", icon: Clock, change: "+89", trend: "up", comparison: "próximos 7 dias", color: "#F59E0B", bgColor: "#FFFBEB" },
   ];
 
-  const todayTasks: Task[] = [
-    { id: "t1", title: "Follow-up Natura — Proposta Q1", account: "Natura", type: "Reunião", time: "14:00", priority: "high", status: "pending", contact: "Carlos Silva", contactRole: "CEO", channel: "Zoom" },
-    { id: "t2", title: "Enviar contrato Magazine Luiza", account: "Magazine Luiza", type: "Documento", time: "16:00", priority: "high", status: "pending", contact: "Maria Santos", contactRole: "CMO", channel: "Email" },
-    { id: "t3", title: "Reativar conta Stone (30 dias sem contato)", account: "Stone", type: "Outreach", time: "Atrasado 2 dias", priority: "high", status: "overdue", contact: "Rafael Torres", contactRole: "VP Sales", channel: "LinkedIn" },
-    { id: "t4", title: "Demo de produto para iFood", account: "iFood", type: "Reunião", time: "11:00", priority: "medium", status: "pending", contact: "Fernanda Lima", contactRole: "Head de Produto", channel: "Google Meet" },
-    { id: "t5", title: "Email de check-in — Ambev", account: "Ambev", type: "Email", time: "Atrasado 1 dia", priority: "medium", status: "overdue", contact: "João Faria", contactRole: "Diretor Comercial", channel: "Email" },
-    { id: "t6", title: "Atualizar CRM com dados da call", account: "Bradesco", type: "Interno", time: "09:00", priority: "low", status: "pending", contact: "—", contactRole: "—", channel: "Interno" },
-  ];
+  const mockResponsabilidades = useMemo(() => [
+    { id: "r1", tipo: "Touchpoint", titulo: "Follow-up Natura — Proposta Q1", dataExecucao: "22/04/2026", dataConclusao: "22/04/2026", conta: "Natura", play: "Vendas Q1", diasDiferenca: 0, status: "No prazo" },
+    { id: "r2", tipo: "Taskpoint", titulo: "Preparar contrato STAR BANK", dataExecucao: "20/04/2026", dataConclusao: "", conta: "STAR BANK", play: "Expansão Enterprise", diasDiferenca: -2, status: "Atrasado 2 dias" },
+    { id: "r3", tipo: "Subtaskpoint", titulo: "Enviar link do Zoom para Call", dataExecucao: "23/04/2026", dataConclusao: "", conta: "iFood", play: "Onboarding", diasDiferenca: 1, status: "Adiantado 1 dia" },
+    { id: "r4", tipo: "Touchpoint", titulo: "Email de check-in — Ambev", dataExecucao: "21/04/2026", dataConclusao: "", conta: "Ambev", play: "Manutenção", diasDiferenca: -1, status: "Atrasado 1 dia" },
+    { id: "r5", tipo: "Taskpoint", titulo: "Revisar proposta Magazine Luiza", dataExecucao: "25/04/2026", dataConclusao: "", conta: "Magazine Luiza", play: "Upsell Q2", diasDiferenca: 3, status: "Adiantado 3 dias" },
+    { id: "r6", tipo: "Subtaskpoint", titulo: "Confirmar RSVP evento", dataExecucao: "22/04/2026", dataConclusao: "22/04/2026", conta: "Nubank", play: "Partnership", diasDiferenca: 0, status: "No prazo" },
+    { id: "r7", tipo: "Touchpoint", titulo: "LinkedIn touch — Banco Inter", dataExecucao: "19/04/2026", dataConclusao: "", conta: "Banco Inter", play: "Outreach Social", diasDiferenca: -3, status: "Atrasado 3 dias" },
+  ], []);
 
-  const weekTasks: Task[] = [
-    { id: "w1", title: "Call de descoberta — Nubank", account: "Nubank", type: "Reunião", time: "Amanhã, 10:00", priority: "medium", status: "scheduled", contact: "Ana Costa", contactRole: "Head de Parcerias", channel: "Zoom" },
-    { id: "w2", title: "Review de proposta comercial BTG", account: "BTG Pactual", type: "Documento", time: "Quarta, 15:00", priority: "high", status: "scheduled", contact: "Pedro Alves", contactRole: "CFO", channel: "Email" },
-    { id: "w3", title: "LinkedIn touch — Banco Inter", account: "Banco Inter", type: "Social", time: "Quinta, 09:00", priority: "low", status: "scheduled", contact: "Camila Ramos", contactRole: "Gerente de TI", channel: "LinkedIn" },
-    { id: "w4", title: "Renovação de contrato — Itaú", account: "Itaú", type: "Documento", time: "Sexta, 17:00", priority: "high", status: "scheduled", contact: "Roberto Maia", contactRole: "VP Jurídico", channel: "Email" },
-    { id: "w5", title: "Apresentação de QBR — Vivo", account: "Vivo", type: "Reunião", time: "Quinta, 14:00", priority: "medium", status: "scheduled", contact: "Luciana Braz", contactRole: "Diretora de Marketing", channel: "Presencial" },
-    { id: "w6", title: "Sequência de email — PagSeguro", account: "PagSeguro", type: "Email", time: "Quarta, 08:00", priority: "medium", status: "scheduled", contact: "Marcos Pinto", contactRole: "Head de Growth", channel: "Email" },
-  ];
+  const filteredResponsabilidades = useMemo(() => {
+    return mockResponsabilidades.filter(item => {
+      const matchesTipo = respTipoFilter === "all" || item.tipo === respTipoFilter;
+      const matchesConta = item.conta.toLowerCase().includes(respContaFilter.toLowerCase());
+      const matchesPlay = item.play.toLowerCase().includes(respPlayFilter.toLowerCase());
+      const matchesDate = item.dataExecucao.includes(respDateFilter) || (item.dataConclusao || "").includes(respDateFilter);
+      
+      let matchesStatus = true;
+      if (respStatusFilter === "atrasado") matchesStatus = item.status === "Atrasado" || item.status.includes("Atrasado");
+      else if (respStatusFilter === "adiantado") matchesStatus = item.status === "Adiantado" || item.status.includes("Adiantado");
+      else if (respStatusFilter === "no-prazo") matchesStatus = item.status === "No prazo" || item.status.includes("No prazo");
 
-  const futureTasks: Task[] = [
-    { id: "f1", title: "Quarterly Business Review — Ambev", account: "Ambev", type: "Reunião", time: "20 Abr", priority: "high", status: "scheduled", contact: "João Faria", contactRole: "Diretor Comercial", channel: "Presencial" },
-    { id: "f2", title: "Lançamento campanha awareness — Vivo", account: "Vivo", type: "Marketing", time: "25 Abr", priority: "medium", status: "scheduled", contact: "Luciana Braz", contactRole: "Diretora de Marketing", channel: "Email" },
-    { id: "f3", title: "Onboarding novo contato — Bradesco", account: "Bradesco", type: "Onboarding", time: "1 Mai", priority: "medium", status: "scheduled", contact: "Thiago Neves", contactRole: "Analista Sênior", channel: "Zoom" },
-    { id: "f4", title: "Renovação anual — Localiza", account: "Localiza", type: "Contrato", time: "5 Mai", priority: "high", status: "scheduled", contact: "Sandra Freitas", contactRole: "Gerente de Frota", channel: "Email" },
-    { id: "f5", title: "Expansão de conta — Magazine Luiza", account: "Magazine Luiza", type: "Reunião", time: "12 Mai", priority: "low", status: "scheduled", contact: "Maria Santos", contactRole: "CMO", channel: "Google Meet" },
-  ];
+      return matchesTipo && matchesConta && matchesPlay && matchesDate && matchesStatus;
+    });
+  }, [mockResponsabilidades, respTipoFilter, respContaFilter, respPlayFilter, respStatusFilter, respDateFilter]);
 
-  const tasksByTab: Record<string, Task[]> = { hoje: todayTasks, semana: weekTasks, futuro: futureTasks };
-  const currentTasks = tasksByTab[taskTab];
-  const overdueCount = todayTasks.filter(t => t.status === "overdue").length;
+  const sortedResponsabilidades = useMemo(() => {
+    let sortableItems = [...filteredResponsabilidades];
+    if (sortConfig !== null) {
+      sortableItems.sort((a, b) => {
+        let aValue: any = a[sortConfig.key as keyof typeof a];
+        let bValue: any = b[sortConfig.key as keyof typeof b];
+
+        if (sortConfig.key === "dataExecucao") {
+          const [dayA, monthA, yearA] = (aValue as string).split("/");
+          const [dayB, monthB, yearB] = (bValue as string).split("/");
+          aValue = new Date(`${yearA}-${monthA}-${dayA}`).getTime();
+          bValue = new Date(`${yearB}-${monthB}-${dayB}`).getTime();
+        } else if (sortConfig.key === "status") {
+          aValue = a.diasDiferenca;
+          bValue = b.diasDiferenca;
+        }
+
+        if (aValue < bValue) {
+          return sortConfig.direction === "asc" ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === "asc" ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [filteredResponsabilidades, sortConfig]);
+
+  const handleSort = (key: string) => {
+    let direction: "asc" | "desc" = "asc";
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key: string) => {
+    if (sortConfig?.key !== key) return <ArrowUpDown size={12} className="opacity-50" />;
+    return sortConfig.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+  };
+
+  const getStatusColor = (dias: number) => {
+    if (dias < 0) return "#EF4444";
+    if (dias > 0) return "#3B82F6";
+    return "#10B981";
+  };
+
+  const getHealthColor = (score: number) => {
+    if (score >= 80) return "#10B981";
+    if (score >= 60) return "#F59E0B";
+    return "#EF4444";
+  };
 
   const needsAttention = [
     { name: "iFood", reason: "Sem interação há 45 dias", contacts: 19, lastValue: "R$ 180K", healthScore: 35 },
@@ -563,61 +641,6 @@ export function HomePage() {
     { type: "call", text: "Chamada perdida de Roberto (iFood)", time: "2h atrás", status: "warning" },
     { type: "message", text: "Nova mensagem no LinkedIn - Nubank", time: "3h atrás", status: "info" },
   ];
-
-  const getHealthColor = (score: number) => {
-    if (score >= 70) return "#10B981";
-    if (score >= 40) return "#F59E0B";
-    return "#EF4444";
-  };
-
-  const getPriorityColor = (priority: TaskPriority) => {
-    if (priority === "high") return "#EF4444";
-    if (priority === "medium") return "#F59E0B";
-    return "#6B7280";
-  };
-
-  const getPriorityLabel = (priority: TaskPriority) => {
-    if (priority === "high") return "Alta";
-    if (priority === "medium") return "Média";
-    return "Baixa";
-  };
-
-  const getStatusIcon = (status: TaskStatus) => {
-    if (status === "overdue") return <XCircle size={16} style={{ color: "#EF4444" }} />;
-    if (status === "pending") return <Clock size={16} style={{ color: "#F59E0B" }} />;
-    return <CheckCircle2 size={16} style={{ color: "#10B981" }} />;
-  };
-
-  const tabConfig = [
-    {
-      key: "hoje" as const,
-      label: "Hoje",
-      icon: <AlertCircle size={15} />,
-      count: todayTasks.length,
-      badge: overdueCount > 0 ? `${overdueCount} atrasada${overdueCount > 1 ? "s" : ""}` : null,
-      badgeColor: "#EF4444",
-      badgeBg: "#FEE2E2",
-      activeColor: "#FF5F39",
-    },
-    {
-      key: "semana" as const,
-      label: "Esta Semana",
-      icon: <CalendarDays size={15} />,
-      count: weekTasks.length,
-      badge: null,
-      activeColor: "#3B82F6",
-    },
-    {
-      key: "futuro" as const,
-      label: "Futuro",
-      icon: <CalendarClock size={15} />,
-      count: futureTasks.length,
-      badge: null,
-      activeColor: "#8B5CF6",
-    },
-  ];
-
-  const activeTabConfig = tabConfig.find(t => t.key === taskTab)!;
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: "#EEF0F5" }}>
@@ -685,199 +708,151 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* ===== TAREFAS ===== */}
+        {/* ===== RESPONSABILIDADES ===== */}
         <div className="bg-white rounded-xl border border-[#d8d8d8] mb-6 overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          {/* Tab Bar */}
-          <div className="flex items-stretch border-b border-[#E5E7EB]" style={{ background: "#F9FAFB" }}>
-            {tabConfig.map((tab) => {
-              const isActive = taskTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setTaskTab(tab.key)}
-                  className="relative flex items-center gap-2 px-7 py-4 transition-all"
-                  style={{
-                    borderBottom: isActive ? `2px solid ${tab.activeColor}` : "2px solid transparent",
-                    background: isActive ? "white" : "transparent",
-                    marginBottom: -1,
-                  }}
-                >
-                  <span style={{ color: isActive ? tab.activeColor : "#9CA3AF" }}>{tab.icon}</span>
-                  <span className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 14, fontWeight: isActive ? 600 : 500, color: isActive ? "#212A46" : "#6B7280" }}>
-                    {tab.label}
-                  </span>
-                  <span
-                    className="flex items-center justify-center rounded-full font-['Euclid_Circular_A',sans-serif]"
-                    style={{ minWidth: 22, height: 22, fontSize: 11, fontWeight: 600, background: isActive ? tab.activeColor : "#E5E7EB", color: isActive ? "white" : "#6B7280", paddingLeft: 6, paddingRight: 6 }}
-                  >
-                    {tab.count}
-                  </span>
-                  {tab.badge && (
-                    <span className="px-2 py-0.5 rounded-full font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 10, fontWeight: 600, background: tab.badgeBg, color: tab.badgeColor }}>
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            <div className="flex-1" />
-            <div className="flex items-center px-6 gap-3">
-              <button className="font-['Euclid_Circular_A',sans-serif] flex items-center gap-1 hover:text-[#FF5F39] transition-colors" style={{ fontSize: 13, color: "#6B7280", fontWeight: 500 }}>
-                Ver todas <ChevronRight size={14} />
-              </button>
+          <div className="p-6 border-b border-[#E5E7EB] flex items-center justify-between">
+            <h2 className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 20, fontWeight: 700, color: "#212A46" }}>
+              Responsabilidades
+            </h2>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-[#828282] font-medium">
+                Mostrando {sortedResponsabilidades.length} itens
+              </span>
             </div>
           </div>
 
-          {/* Task List */}
-          <div className="p-6">
-            <div className="flex flex-col gap-2">
-              {currentTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="col-span-full flex items-center gap-0 rounded-lg transition-all cursor-pointer group overflow-hidden"
-                  style={{
-                    border: `1px solid ${task.status === "overdue" ? "#FCA5A5" : "#E5E7EB"}`,
-                    background: task.status === "overdue" ? "#FFF5F5" : "white",
-                  }}
-                  onClick={() => setSelectedTask(task)}
-                >
-                  {/* Left accent bar — taskpoint=green, overdue=red, else blue */}
-                  <div
-                    className="w-1 self-stretch shrink-0"
-                    style={{
-                      background: task.type === "Interno"
-                        ? "#81c784"
-                        : task.status === "overdue"
-                        ? "#EF4444"
-                        : "#3571DE",
-                    }}
-                  />
-
-                  {/* Item-type pill */}
-                  <div
-                    className="shrink-0 flex items-center gap-1 px-2.5 py-1 mx-3 my-2 rounded font-['Euclid_Circular_A',sans-serif]"
-                    style={{
-                      fontSize: 9, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
-                      background: task.type === "Interno" ? "#e8f5e9" : task.status === "overdue" ? "#FEE2E2" : "#EFF6FF",
-                      color: task.type === "Interno" ? "#2e7d32" : task.status === "overdue" ? "#EF4444" : "#3571DE",
-                    }}
-                  >
-                    {task.type === "Interno" ? (
-                      <ClipboardCheck size={10} />
-                    ) : (
-                      <MessageCircle size={10} />
-                    )}
-                    {task.type === "Interno" ? "Taskpoint" : "Touchpoint"}
-                  </div>
-
-                  {/* Title */}
-                  <p
-                    className="font-['Euclid_Circular_A',sans-serif] flex-1 min-w-0 truncate group-hover:text-[#3571DE] transition-colors"
-                    style={{ fontSize: 13, fontWeight: 600, color: "#212A46" }}
-                  >
-                    {task.title}
-                  </p>
-
-                  {/* Channel badge */}
-                  {task.channel && (
-                    <span
-                      className="shrink-0 px-2 py-0.5 rounded font-['Euclid_Circular_A',sans-serif] mx-1"
-                      style={{ fontSize: 10, fontWeight: 600, background: "#F3F4F6", color: "#6B7280" }}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-['Euclid_Circular_A',sans-serif]">
+              <thead className="bg-[#F9FAFB] border-b border-[#E5E7EB]">
+                <tr>
+                  <th className="px-6 py-4 text-[10px] font-bold text-[#828282] uppercase tracking-wider">
+                    <div 
+                      className="flex items-center gap-1.5 cursor-pointer hover:text-[#FF5F39] transition-colors"
+                      onClick={() => handleSort("tipo")}
                     >
-                      {task.channel}
-                    </span>
-                  )}
-
-                  {/* Account badge */}
-                  <span
-                    className="shrink-0 px-2 py-0.5 rounded font-['Euclid_Circular_A',sans-serif] mx-1"
-                    style={{ fontSize: 10, fontWeight: 600, background: "#F0F4FF", color: "#3571DE" }}
-                  >
-                    {task.account}
-                  </span>
-
-                  {/* Priority dot */}
-                  <div className="shrink-0 flex items-center gap-1 px-2 mx-1">
-                    <div className="w-2 h-2 rounded-full" style={{ background: getPriorityColor(task.priority) }} />
-                    <span
-                      className="font-['Euclid_Circular_A',sans-serif]"
-                      style={{ fontSize: 9, fontWeight: 700, color: getPriorityColor(task.priority), textTransform: "uppercase", letterSpacing: "0.03em" }}
+                      <span>Tipo / Título</span>
+                      {getSortIcon("tipo")}
+                    </div>
+                  </th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-[#828282] uppercase tracking-wider">
+                    <div 
+                      className="flex items-center gap-1.5 cursor-pointer hover:text-[#FF5F39] transition-colors"
+                      onClick={() => handleSort("dataExecucao")}
                     >
-                      {getPriorityLabel(task.priority)}
-                    </span>
-                  </div>
-
-                  {/* Time */}
-                  <span
-                    className="shrink-0 font-['Euclid_Circular_A',sans-serif] px-3"
-                    style={{
-                      fontSize: 11,
-                      color: task.status === "overdue" ? "#EF4444" : "#9CA3AF",
-                      fontWeight: task.status === "overdue" ? 700 : 400,
-                      minWidth: 100,
-                      textAlign: "right",
-                    }}
+                      <span>Execução / Conclusão</span>
+                      {getSortIcon("dataExecucao")}
+                    </div>
+                  </th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-[#828282] uppercase tracking-wider">
+                    <div 
+                      className="flex items-center gap-1.5 cursor-pointer hover:text-[#FF5F39] transition-colors"
+                      onClick={() => handleSort("conta")}
+                    >
+                      <span>Conta</span>
+                      {getSortIcon("conta")}
+                    </div>
+                  </th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-[#828282] uppercase tracking-wider">
+                    <div 
+                      className="flex items-center gap-1.5 cursor-pointer hover:text-[#FF5F39] transition-colors"
+                      onClick={() => handleSort("play")}
+                    >
+                      <span>Play</span>
+                      {getSortIcon("play")}
+                    </div>
+                  </th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-[#828282] uppercase tracking-wider">
+                    <div 
+                      className="flex items-center gap-1.5 cursor-pointer hover:text-[#FF5F39] transition-colors"
+                      onClick={() => handleSort("status")}
+                    >
+                      <span>Status</span>
+                      {getSortIcon("status")}
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E5E7EB]">
+                {sortedResponsabilidades.map((item) => (
+                  <tr 
+                    key={item.id} 
+                    className="hover:bg-gray-50 transition-colors group cursor-pointer"
+                    onClick={() => setSelectedTask({
+                      id: item.id,
+                      title: item.titulo,
+                      account: item.conta,
+                      type: item.tipo === "Touchpoint" ? "LinkedIn" : "Interno",
+                      time: item.dataExecucao,
+                      priority: "medium",
+                      status: item.diasDiferenca < 0 ? "overdue" : "pending"
+                    })}
                   >
-                    {task.status === "overdue" && "⚠ "}{task.time}
-                  </span>
-
-                  {/* Open hint */}
-                  <ChevronRight size={14} style={{ color: "#D1D5DB" }} className="shrink-0 mr-3 group-hover:text-[#3571DE] transition-colors" />
-                </div>
-              ))}
-            </div>
-
-            {/* Summary bar */}
-            <div className="mt-5 pt-4 flex items-center gap-6 border-t border-[#F3F4F6]">
-              {taskTab === "hoje" && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <XCircle size={14} style={{ color: "#EF4444" }} />
-                    <span className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 12, color: "#6B7280" }}>
-                      <span style={{ fontWeight: 600, color: "#EF4444" }}>{todayTasks.filter(t => t.status === "overdue").length}</span> em atraso
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock size={14} style={{ color: "#F59E0B" }} />
-                    <span className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 12, color: "#6B7280" }}>
-                      <span style={{ fontWeight: 600, color: "#F59E0B" }}>{todayTasks.filter(t => t.status === "pending").length}</span> pendentes
-                    </span>
-                  </div>
-                </>
-              )}
-              {taskTab === "semana" && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <Calendar size={14} style={{ color: "#3B82F6" }} />
-                    <span className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 12, color: "#6B7280" }}>
-                      <span style={{ fontWeight: 600, color: "#3B82F6" }}>{weekTasks.length}</span> tarefas programadas
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <AlertCircle size={14} style={{ color: "#EF4444" }} />
-                    <span className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 12, color: "#6B7280" }}>
-                      <span style={{ fontWeight: 600, color: "#EF4444" }}>{weekTasks.filter(t => t.priority === "high").length}</span> de alta prioridade
-                    </span>
-                  </div>
-                </>
-              )}
-              {taskTab === "futuro" && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <CalendarClock size={14} style={{ color: "#8B5CF6" }} />
-                    <span className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 12, color: "#6B7280" }}>
-                      <span style={{ fontWeight: 600, color: "#8B5CF6" }}>{futureTasks.length}</span> tarefas planejadas
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <AlertCircle size={14} style={{ color: "#EF4444" }} />
-                    <span className="font-['Euclid_Circular_A',sans-serif]" style={{ fontSize: 12, color: "#6B7280" }}>
-                      <span style={{ fontWeight: 600, color: "#EF4444" }}>{futureTasks.filter(t => t.priority === "high").length}</span> de alta prioridade
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          item.tipo === "Taskpoint" ? "bg-amber-500" : item.tipo === "Touchpoint" ? "bg-blue-500" : "bg-purple-500"
+                        }`} />
+                        <div>
+                          <p className="text-[10px] font-bold text-[#828282] uppercase mb-0.5">{item.tipo}</p>
+                          <p className="text-sm font-semibold text-[#212A46] group-hover:text-[#FF5F39] transition-colors">{item.titulo}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5 text-xs text-[#212A46] font-medium">
+                          <Calendar size={12} className="text-[#828282]" />
+                          Exec: {item.dataExecucao}
+                        </div>
+                        {item.dataConclusao ? (
+                          <div className="flex items-center gap-1.5 text-[11px] text-[#10B981] mt-1">
+                            <CheckCircle2 size={11} />
+                            Conc: {item.dataConclusao}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-[11px] text-[#828282] mt-1">
+                            <Clock size={11} />
+                            Pendente
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2.5 py-1 rounded bg-[#F0F4FF] text-[#3571DE] text-xs font-bold">
+                        {item.conta}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs text-[#212A46] font-medium border-b border-dotted border-[#d8d8d8]">
+                        {item.play}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div 
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                        style={{ 
+                          background: `${getStatusColor(item.diasDiferenca)}15`,
+                          color: getStatusColor(item.diasDiferenca)
+                        }}
+                      >
+                        {item.diasDiferenca < 0 ? <AlertCircle size={12} /> : item.diasDiferenca > 0 ? <TrendingUp size={12} /> : <CheckCircle2 size={12} />}
+                        {item.status}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedResponsabilidades.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center gap-2 opacity-40">
+                        <Search size={32} />
+                        <p className="text-sm font-medium">Nenhum item encontrado com os filtros aplicados</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 

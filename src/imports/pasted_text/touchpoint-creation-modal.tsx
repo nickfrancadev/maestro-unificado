@@ -193,7 +193,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
     let type = 'OUTROS';
     
     if (selectedItemType === 'task') {
-      type = 'TAREFA';
+      type = 'TASKPOINT';
     } else {
       if (customCategory === 'Autoridade') {
         type = 'AUTORIDADE';
@@ -355,7 +355,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
                 <CheckSquare className="w-7 h-7 text-[#6BCF7F]" strokeWidth={2.5} />
               </div>
               <div className="flex-1 text-left">
-                <h3 className="text-base font-bold text-[#212a46] mb-1">Tarefa Interna</h3>
+                <h3 className="text-base font-bold text-[#212a46] mb-1">Taskpoint Interna</h3>
                 <p className="text-sm text-gray-600">
                   Ações internas da equipe que não envolvem contato direto com o cliente, como pesquisas, preparações e análises.
                 </p>
@@ -388,7 +388,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
               <ChevronDown className="w-5 h-5 text-gray-500 rotate-90" />
             </button>
             <h2 className="text-lg font-bold text-[#212a46]">
-              {selectedItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Tarefa Interna'}
+              {selectedItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Taskpoint Interna'}
             </h2>
           </div>
           <button
@@ -405,7 +405,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder={selectedItemType === 'touchpoint' ? 'Buscar touchpoint...' : 'Buscar tarefa...'}
+              placeholder={selectedItemType === 'touchpoint' ? 'Buscar touchpoint...' : 'Buscar taskpoint...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] focus:border-transparent"
@@ -448,7 +448,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {selectedItemType === 'touchpoint' ? 'Título do Touchpoint' : 'Título da Tarefa'}
+                  {selectedItemType === 'touchpoint' ? 'Título do Touchpoint' : 'Título da Taskpoint'}
                 </label>
                 <input
                   type="text"
@@ -517,7 +517,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
                 disabled={!customTitle.trim()}
                 className="w-full bg-[#4a90e2] text-white py-3 px-4 rounded-lg hover:bg-[#3a79c0] transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
               >
-                {selectedItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Tarefa'}
+                {selectedItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Taskpoint'}
               </button>
             </div>
           ) : (

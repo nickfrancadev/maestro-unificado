@@ -96,12 +96,13 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
   const handleCreate = () => {
     if (!title.trim()) return;
 
-    const type = itemType === 'task' ? 'TAREFA' : categoryToType(category);
+    const type = itemType === 'task' ? 'TASKPOINT' : categoryToType(category);
+    const finalCategory = itemType === 'task' ? taskCategory : category;
 
     onCreateTouchpoint({
       type,
       title: title.trim(),
-      category: itemType === 'task' ? taskCategory : category,
+      category: finalCategory,
       weight: weight || undefined,
       insertPosition: insertPosition || undefined,
       itemType,
@@ -159,7 +160,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
               }`}
             >
               <CheckSquare className="w-4 h-4" />
-              Tarefa Interna
+              Taskpoint Interna
             </button>
           </div>
         </div>
@@ -181,7 +182,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
             />
           </div>
 
-          {/* Categoria (só para tarefa) - abaixo do título */}
+          {/* Categoria (só para taskpoint) - abaixo do título */}
           {itemType === 'task' && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
@@ -376,7 +377,7 @@ export function TouchpointCreationModal({ isOpen, onClose, onCreateTouchpoint, i
                 : 'bg-[#6BCF7F] hover:bg-[#57be6d]'
             }`}
           >
-            {itemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Tarefa'}
+            {itemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Taskpoint'}
           </button>
         </div>
       </div>

@@ -51,7 +51,7 @@ interface TouchpointAIAssistantProps {
 const QUICK_COMMANDS = [
   { label: '📋 Listar itens', command: 'liste todos os itens da timeline' },
   { label: '➕ Criar touchpoint', command: 'crie um touchpoint de engajamento via LinkedIn' },
-  { label: '✅ Criar tarefa', command: 'crie uma tarefa interna chamada Pesquisa de concorrentes' },
+  { label: '✅ Criar taskpoint', command: 'crie uma taskpoint interna chamada Pesquisa de concorrentes' },
   { label: '📊 Resumo da play', command: 'me dê um resumo desta play' },
   { label: '🎯 Próximo passo', command: 'sugira o próximo touchpoint ideal para esta play' },
 ];
@@ -97,9 +97,9 @@ function buildPlayItems(account: string, contato: string, produto: string) {
     },
     {
       itemType: 'task' as const,
-      type: 'TAREFA',
+      type: 'TASKPOINT',
       title: 'Pesquisa aprofundada da stack tecnológica',
-      category: 'Tarefa',
+      category: 'Pesquisa',
       channel: '-',
       weight: 'Médio' as const,
       description: `Mapear as ferramentas e sistemas utilizados atualmente por ${account}. Identificar pontos de integração com ${produto} e possíveis friction points técnicos.`,
@@ -145,9 +145,9 @@ function buildPlayItems(account: string, contato: string, produto: string) {
     },
     {
       itemType: 'task' as const,
-      type: 'TAREFA',
+      type: 'TASKPOINT',
       title: 'Preparar proposta de valor customizada',
-      category: 'Tarefa',
+      category: 'Pesquisa',
       channel: '-',
       weight: 'Alto' as const,
       description: `Montar proposta comercial personalizada para ${account} com base nas dores identificadas na call de descoberta. Destacar ROI de 3x em 6 meses e incluir plano de onboarding dedicado.`,
@@ -197,7 +197,7 @@ function parseCommand(
       return { reply: 'A timeline ainda está vazia. Que tal criar o primeiro touchpoint?' };
     }
     const lines = touchpoints.map((t, i) =>
-      `**${i + 1}. ${t.title}** — ${t.itemType === 'task' ? '✅ Tarefa' : '💬 Touch'} | ${t.status} | ${t.channel}`
+      `**${i + 1}. ${t.title}** — ${t.itemType === 'task' ? '✅ Taskpoint' : '💬 Touch'} | ${t.status} | ${t.channel}`
     ).join('\n');
     return {
       reply: `Aqui estão os ${touchpoints.length} itens da timeline:\n\n${lines}`,
@@ -211,7 +211,7 @@ function parseCommand(
     const tasks = touchpoints.filter(t => t.itemType === 'task').length;
     const touches = touchpoints.filter(t => t.itemType === 'touchpoint').length;
     return {
-      reply: `📊 **Resumo da Play "${playName || 'atual'}"** para ${accountName || 'a conta'}:\n\n• **${touchpoints.length}** itens no total\n• **${touches}** touchpoints e **${tasks}** tarefas internas\n• **${done}** executados ✅ e **${inProgress}** em andamento 🔄`,
+      reply: `📊 **Resumo da Play "${playName || 'atual'}"** para ${accountName || 'a conta'}:\n\n• **${touchpoints.length}** itens no total\n• **${touches}** touchpoints e **${tasks}** taskpoints internas\n• **${done}** executados ✅ e **${inProgress}** em andamento 🔄`,
       actions: [{ label: 'Sugerir próximo passo', command: 'sugira o próximo touchpoint ideal' }]
     };
   }
@@ -270,8 +270,8 @@ function parseCommand(
     return { reply: 'Qual item deseja marcar como executado? Ex: _"marque o item 1 como executado"_' };
   }
 
-  if (lower.includes('crie') || lower.includes('criar') || lower.includes('adicione') || lower.includes('novo touchpoint') || lower.includes('nova tarefa')) {
-    const isTask = lower.includes('tarefa') || lower.includes('task');
+  if (lower.includes('crie') || lower.includes('criar') || lower.includes('adicione') || lower.includes('novo touchpoint') || lower.includes('nova taskpoint')) {
+    const isTask = lower.includes('taskpoint') || lower.includes('task');
     const channels: Record<string, string> = {
       linkedin: 'LinkedIn', email: 'Email', whatsapp: 'WhatsApp',
       telefone: 'Telefone', presencial: 'Presencial', videoconferência: 'Videoconferência'
@@ -280,18 +280,19 @@ function parseCommand(
     const channel = channelKey ? channels[channelKey] : 'LinkedIn';
     const quoteMatch = input.match(/"([^"]+)"/);
     const chamadaMatch = input.match(/chamad[ao]\s+(.+?)(?:\s+via|\s+por|$)/i);
-    const title = quoteMatch?.[1] || chamadaMatch?.[1] || (isTask ? 'Nova Tarefa Interna' : `Touchpoint via ${channel}`);
-    const type = isTask ? 'TAREFA' : 'ENGAJAMENTO';
-    onAddTouchpoint({ type, title, category: type, itemType: isTask ? 'task' : 'touchpoint', channel: isTask ? '-' : channel });
+    const title = quoteMatch?.[1] || chamadaMatch?.[1] || (isTask ? 'Nova Taskpoint Interna' : `Touchpoint via ${channel}`);
+    const type = isTask ? 'TASKPOINT' : 'ENGAJAMENTO';
+    const category = isTask ? 'Atividade' : 'Engajamento';
+    onAddTouchpoint({ type, title, category, itemType: isTask ? 'task' : 'touchpoint', channel: isTask ? '-' : channel });
     return {
-      reply: `✅ ${isTask ? 'Tarefa' : 'Touchpoint'} **"${title}"** criado na timeline!`,
+      reply: `✅ ${isTask ? 'Taskpoint' : 'Touchpoint'} **"${title}"** criado na timeline!`,
       actions: [{ label: 'Ver todos', command: 'liste todos os itens da timeline' }]
     };
   }
 
   if (lower.includes('ajuda') || lower.includes('help') || lower.includes('o que você pode')) {
     return {
-      reply: '🤖 Posso te ajudar com:\n\n• **Listar** todos os itens\n• **Criar** touchpoints ou tarefas\n• **Renomear** qualquer item\n• **Mudar canal** de touchpoints\n• **Marcar** como executado\n• **Resumir** a play\n• **Sugerir** próximos passos',
+      reply: '🤖 Posso te ajudar com:\n\n• **Listar** todos os itens\n• **Criar** touchpoints ou taskpoints\n• **Renomear** qualquer item\n• **Mudar canal** de touchpoints\n• **Marcar** como executado\n• **Resumir** a play\n• **Sugerir** próximos passos',
       actions: QUICK_COMMANDS.slice(0, 3).map(q => ({ label: q.label, command: q.command }))
     };
   }
@@ -499,7 +500,7 @@ export function TouchpointAIAssistant({
             setMessages(prev => [...prev, {
               id: 'final-summary',
               role: 'assistant',
-              content: `🎯 **Play estruturada com sucesso!**\n\nCriei **${playItems.filter(i => i.itemType === 'touchpoint').length} touchpoints** e **${playItems.filter(i => i.itemType === 'task').length} tarefas internas**, cada um com descrição detalhada e subtarefas.\n\nAgora você pode editar qualquer item, adicionar contatos, ajustar datas ou pedir mais sugestões. Como posso ajudar?`,
+              content: `🎯 **Play estruturada com sucesso!**\n\nCriei **${playItems.filter(i => i.itemType === 'touchpoint').length} touchpoints** e **${playItems.filter(i => i.itemType === 'task').length} taskpoints internas**, cada um com descrição detalhada e subtaskpoints.\n\nAgora você pode editar qualquer item, adicionar contatos, ajustar datas ou pedir mais sugestões. Como posso ajudar?`,
               timestamp: new Date(),
               actions: [
                 { label: 'Listar todos os itens', command: 'liste todos os itens da timeline' },
@@ -563,7 +564,7 @@ export function TouchpointAIAssistant({
       setMessages([{
         id: '0',
         role: 'assistant',
-        content: `Olá! Sou o assistente desta play. Posso te ajudar a gerenciar touchpoints, tarefas, dossiês e estratégias de GTM.\n\nO que você gostaria de fazer?`,
+        content: `Olá! Sou o assistente desta play. Posso te ajudar a gerenciar touchpoints, taskpoints, dossiês e estratégias de GTM.\n\nO que você gostaria de fazer?`,
         timestamp: new Date(),
         actions: QUICK_COMMANDS.slice(0, 4).map(q => ({ label: q.label, command: q.command }))
       }]);

@@ -4,7 +4,8 @@ import { X, Search } from "lucide-react";
 interface DossierItem {
   id: number;
   title: string;
-  date: string;
+  createdAt: string;
+  updatedAt: string;
   author: string;
 }
 
@@ -276,7 +277,7 @@ export function CreateSegmentDrawer({
                   checked={selDossiers.has(d.id)}
                   onToggle={() => toggle(selDossiers, setSelDossiers, d.id)}
                   title={d.title}
-                  subtitle={`${d.date} · ${d.author}`}
+                  subtitle={`${d.createdAt} · ${d.author}`}
                 />
               ))}
             </div>
@@ -295,7 +296,7 @@ export function CreateSegmentDrawer({
                   checked={selContactDossiers.has(d.id)}
                   onToggle={() => toggle(selContactDossiers, setSelContactDossiers, d.id)}
                   title={d.title}
-                  subtitle={`${d.date} · ${d.author}`}
+                  subtitle={`${d.createdAt} · ${d.author}`}
                 />
               ))}
             </div>

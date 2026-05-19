@@ -7,8 +7,8 @@ import { MobileTouchpointModal } from '@/app/components/MobileTouchpointModal';
 
 export interface Touchpoint {
   id: number;
-  itemType: 'touchpoint' | 'task'; // Novo campo para diferenciar touchpoints de tarefas internas
-  type: 'AUTORIDADE' | 'ATENÇÃO' | 'INTERESSE' | 'DESEJO' | 'AÇÃO' | 'TAREFA';
+  itemType: 'touchpoint' | 'task'; // Novo campo para diferenciar touchpoints de taskpoints internas
+  type: 'AUTORIDADE' | 'ATENÇÃO' | 'INTERESSE' | 'DESEJO' | 'AÇÃO' | 'TASKPOINT';
   title: string;
   channel: string;
   responsibles: string[];
@@ -55,7 +55,7 @@ export default function App() {
     {
       id: 2,
       itemType: 'task',
-      type: 'TAREFA',
+      type: 'TASKPOINT',
       title: 'Pesquisar sobre a empresa e seus concorrentes',
       channel: '-',
       responsibles: ['Carlos Mendes'],

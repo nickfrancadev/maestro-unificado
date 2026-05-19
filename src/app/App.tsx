@@ -41,7 +41,7 @@ export default function App() {
       {/* Main content */}
       <div className="flex-1 overflow-y-auto">
         {activePage === "home" && <HomePage />}
-        {activePage === "contas" && <AccountsPage />}
+        {activePage === "contas" && <AccountsPage onOpenPlay={handleSelectPlay} />}
         {activePage === "dashboard" && <Home />}
         {activePage === "plays" && <PlaysOverviewPage onSelectPlay={handleSelectPlay} onOpenNewPlay={handleOpenNewPlay} />}
         {activePage === "play-details" && selectedPlay && (

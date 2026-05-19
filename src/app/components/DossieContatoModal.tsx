@@ -21,7 +21,6 @@ interface ContatoData {
 
 interface DossieContatoFormData {
   titulo: string;
-  tipo: string;
   contatoIds: number[];
   contatoData: Record<number, Partial<ContatoData>>;
 }
@@ -48,8 +47,6 @@ const inputStyle: React.CSSProperties = {
   boxShadow: "none",
   resize: "vertical",
 };
-
-const TIPOS = ["Sale", "Relacionamento", "Renovação", "Expansão", "Parceria"];
 
 const FUNCOES_COMPRA = [
   "Decisor",
@@ -127,7 +124,8 @@ function ContactPicker({
   const filtered = available.filter(
     (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.role.toLowerCase().includes(search.toLowerCase())
+      c.role.toLowerCase().includes(search.toLowerCase()) ||
+      c.email.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -270,7 +268,6 @@ function TextAreaField({ label, value, onChange, placeholder, rows = 3 }: {
 
 export function DossieContatoModal({ accountName, availableContacts, onClose, onSave }: DossieContatoModalProps) {
   const [titulo, setTitulo] = useState("");
-  const [tipo, setTipo] = useState("");
   const [contatoIds, setContatoIds] = useState<number[]>([]);
   const [activeContatoId, setActiveContatoId] = useState<number | null>(null);
   const [contatoData, setContatoData] = useState<Record<number, Partial<ContatoData>>>({});
@@ -283,7 +280,8 @@ export function DossieContatoModal({ accountName, availableContacts, onClose, on
   const filteredContacts = availableContacts.filter(
     (c) =>
       c.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
-      c.role.toLowerCase().includes(contactSearch.toLowerCase())
+      c.role.toLowerCase().includes(contactSearch.toLowerCase()) ||
+      c.email.toLowerCase().includes(contactSearch.toLowerCase())
   );
 
   const toggleContato = (id: number) => {
@@ -322,7 +320,7 @@ export function DossieContatoModal({ accountName, availableContacts, onClose, on
   const activeContact = availableContacts.find((c) => c.id === activeContatoId) ?? null;
 
   const handleSave = () => {
-    onSave?.({ titulo, tipo, contatoIds, contatoData });
+    onSave?.({ titulo, contatoIds, contatoData });
     onClose();
   };
 
@@ -382,11 +380,6 @@ export function DossieContatoModal({ accountName, availableContacts, onClose, on
               placeholder="Título do dossiê"
               style={{ ...inputStyle, fontSize: 15, fontWeight: 600, padding: "10px 14px", background: "#F7F8FB" }}
             />
-          </div>
-
-          {/* Tipo */}
-          <div style={{ marginBottom: 24 }}>
-            <SelectField label="Tipo" value={tipo} options={TIPOS} onChange={setTipo} />
           </div>
 
           {/* ── Contatos ── */}
@@ -543,7 +536,6 @@ export function DossieContatoModal({ accountName, availableContacts, onClose, on
                         transition: "color 0.15s",
                       }}
                     >
-                      <Avatar name={c.name} size={20} active={isTab} />
                       {c.name.split(" ")[0]}
                     </button>
                   );

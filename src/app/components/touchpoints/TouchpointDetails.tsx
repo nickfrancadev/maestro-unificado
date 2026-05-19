@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Archive, Copy, Edit3, Plus, FileText, ClipboardCheck, MessageCircle, CheckSquare, Users, Target, Heart, Sparkles, TrendingUp, Mail, Search, Activity, BarChart2, BookOpen, ChevronDown, X } from 'lucide-react';
+import { Archive, Copy, Edit3, Plus, FileText, ClipboardCheck, MessageCircle, CheckSquare, Users, Target, Heart, Sparkles, TrendingUp, Mail, Search, Activity, BarChart2, BookOpen, ChevronDown, X, UserCircle2, Calendar } from 'lucide-react';
 import type { Touchpoint } from './TouchpointTimeline';
 
 const TOUCHPOINT_CATEGORIES = [
@@ -65,8 +65,10 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
   const [draftResponsibleInput, setDraftResponsibleInput] = useState('');
   const [showResponsibleDropdown, setShowResponsibleDropdown] = useState(false);
   const [draftDescription, setDraftDescription] = useState('');
-  const [draftSubtasks, setDraftSubtasks] = useState<{ id: string; title: string; completed: boolean }[]>([]);
+  const [draftSubtasks, setDraftSubtasks] = useState<{ id: string; title: string; completed: boolean; assignee?: string; dueDate?: string }[]>([]);
   const [draftSubtaskInput, setDraftSubtaskInput] = useState('');
+  const [draftSubtaskAssignee, setDraftSubtaskAssignee] = useState('');
+  const [draftSubtaskDueDate, setDraftSubtaskDueDate] = useState('');
   const [draftExecutionDate, setDraftExecutionDate] = useState('');
   const [draftCompletionDate, setDraftCompletionDate] = useState('');
   const [draftBudget, setDraftBudget] = useState('');
@@ -74,12 +76,21 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
   const [draftContactSearch, setDraftContactSearch] = useState('');
   const [showContactDropdown, setShowContactDropdown] = useState(false);
   const draftTitleRef = useRef<HTMLInputElement>(null);
+  
+  // Non-draft subtask addition state
+  const [isAddingSubtask, setIsAddingSubtask] = useState(false);
+  const [newSubtaskInput, setNewSubtaskInput] = useState('');
+  const [newSubtaskAssignee, setNewSubtaskAssignee] = useState('');
+  const [newSubtaskDueDate, setNewSubtaskDueDate] = useState('');
+
+  const [isEditing, setIsEditing] = useState(false);
 
   const isDraft = !!touchpoint.isDraft;
-  const isTask = isDraft ? draftItemType === 'task' : touchpoint.itemType === 'task';
+  const isTask = (isDraft || isEditing) ? draftItemType === 'task' : touchpoint.itemType === 'task';
 
-  // Reset draft state whenever a new draft touchpoint is selected
+  // Reset draft/edit state whenever a new touchpoint is selected
   useEffect(() => {
+    setIsEditing(false);
     if (isDraft) {
       setDraftItemType('touchpoint');
       setDraftTitle('');
@@ -93,6 +104,8 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
       setDraftDescription('');
       setDraftSubtasks([]);
       setDraftSubtaskInput('');
+      setDraftSubtaskAssignee('');
+      setDraftSubtaskDueDate('');
       setDraftExecutionDate('');
       setDraftCompletionDate('');
       setDraftBudget('');
@@ -103,6 +116,54 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
     }
   }, [touchpoint.id, isDraft]);
 
+  const handleStartEdit = () => {
+    if (!touchpoint) return;
+    
+    // 1. Prepare all data first
+    const newItemType = touchpoint.itemType || 'touchpoint';
+    const newTitle = touchpoint.title || '';
+    const newCategory = touchpoint.category || (newItemType === 'task' ? 'Atividade' : 'Engajamento');
+    const newChannel = touchpoint.channel || '';
+    const newWeight = touchpoint.weight || 'Médio';
+    const newResponsibles = touchpoint.responsibles || [];
+    const newDescription = touchpoint.description || '';
+    const newSubtasks = touchpoint.subtasks || [];
+    const newExecutionDate = touchpoint.executionDate || '';
+    const newCompletionDate = touchpoint.completionDate || '';
+    const newBudget = touchpoint.budget?.toString() || '';
+    const newContactIds = touchpoint.contactIds || [];
+
+    // 2. Set all state
+    setDraftItemType(newItemType);
+    setDraftTitle(newTitle);
+    if (newItemType === 'task') {
+      setDraftTaskCategory(newCategory);
+      setDraftCategory('Engajamento');
+    } else {
+      setDraftCategory(newCategory);
+      setDraftTaskCategory('Atividade');
+    }
+    setDraftChannel(newChannel);
+    
+    let isoDate = '';
+    if (touchpoint.date) {
+      const parts = touchpoint.date.split('-');
+      if (parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    setDraftDate(isoDate);
+    setDraftWeight(newWeight);
+    setDraftResponsibles(newResponsibles);
+    setDraftDescription(newDescription);
+    setDraftSubtasks(newSubtasks);
+    setDraftExecutionDate(newExecutionDate);
+    setDraftCompletionDate(newCompletionDate);
+    setDraftBudget(newBudget);
+    setDraftContactIds(newContactIds);
+    
+    // 3. Finalize
+    setIsExpanded(true);
+    setIsEditing(true);
+  };
   const toggleDraftResponsible = (member: string) => {
     setDraftResponsibles(prev =>
       prev.includes(member) ? prev.filter(r => r !== member) : [...prev, member]
@@ -113,15 +174,19 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
     m.toLowerCase().includes(draftResponsibleInput.toLowerCase()) && !draftResponsibles.includes(m)
   );
 
-  const handleDraftSubmit = () => {
+  const handleSubmit = () => {
     if (!draftTitle.trim()) { draftTitleRef.current?.focus(); return; }
-    const type = draftItemType === 'task' ? 'TAREFA' : categoryToType(draftCategory);
-    let formattedDate = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+    const type = draftItemType === 'task' ? 'TASKPOINT' : categoryToType(draftCategory);
+    
+    let formattedDate = touchpoint.date;
     if (draftDate) {
-      const d = new Date(draftDate + 'T12:00:00');
-      formattedDate = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+      const parts = draftDate.split('-');
+      if (parts.length === 3) formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    } else if (isDraft) {
+      formattedDate = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
     }
-    onConfirmDraft?.({
+
+    const updated = {
       ...touchpoint,
       itemType: draftItemType,
       type,
@@ -138,7 +203,14 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
       completionDate: draftCompletionDate,
       budget: draftBudget ? parseFloat(draftBudget) : undefined,
       contactIds: draftContactIds,
-    });
+    };
+
+    if (isDraft) {
+      onConfirmDraft?.(updated);
+    } else {
+      onUpdate(updated);
+      setIsEditing(false);
+    }
   };
 
   // ── Non-draft helpers ──────────────────────────────────────────────────────
@@ -220,6 +292,8 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
         <div className="flex items-center gap-2">
           {isDraft ? (
             <h2 className="text-white text-base font-bold">Novo Item</h2>
+          ) : isEditing ? (
+            <h2 className="text-white text-base font-bold">Editando Item</h2>
           ) : (
             <>
               <h2 className="text-white text-base font-bold">Em andamento</h2>
@@ -227,9 +301,12 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
             </>
           )}
         </div>
-        {isDraft ? (
+        {(isDraft || isEditing) ? (
           <button
-            onClick={() => onCancelDraft?.()}
+            onClick={() => {
+              if (isDraft) onCancelDraft?.();
+              else setIsEditing(false);
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-transparent border border-white/40 rounded text-white/70 text-xs hover:bg-white/10 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
@@ -243,12 +320,12 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
         )}
       </div>
 
-      <div className="p-4 max-w-6xl mx-auto overflow-y-auto max-h-[calc(100vh-180px)]">
+      <div className="p-4 w-full h-full overflow-y-auto max-h-[calc(100vh-180px)]">
         {/* Main card */}
         <div className="bg-white rounded-lg p-4 mb-3">
           {/* Header */}
           <div className={`flex items-center gap-3 mb-6 ${isExpanded ? 'pb-6 border-b border-gray-200' : ''}`}>
-            {!isDraft && (
+            {!(isDraft || isEditing) && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0 group"
@@ -263,13 +340,13 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
               </button>
             )}
 
-            <div className={`w-[60px] h-[60px] ${isDraft ? draftIconBg : typeStyle.iconBg} rounded-xl flex items-center justify-center flex-shrink-0`}>
+            <div className={`w-[60px] h-[60px] ${(isDraft || isEditing) ? draftIconBg : typeStyle.iconBg} rounded-xl flex items-center justify-center flex-shrink-0`}>
               {getIcon()}
             </div>
 
             <div className="flex-1 min-w-0">
-              {isDraft ? (
-                /* Draft: toggle Touchpoint / Tarefa */
+              {(isDraft || isEditing) ? (
+                /* Draft/Edit: toggle Touchpoint / Taskpoint */
                 <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5 mb-2 w-fit">
                   <button
                     onClick={() => setDraftItemType('touchpoint')}
@@ -287,36 +364,18 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                   </button>
                 </div>
               ) : (
-                /* Read: type badge */
-                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold mb-1.5 ${typeStyle.bg} ${typeStyle.text}`}>
-                  {touchpoint.itemType === 'task' ? (
-                    <>
-                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
-                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-                        <path d="M9 14l2 2 4-4"/>
-                      </svg>
-                      TAREFA INTERNA
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                      </svg>
-                      {touchpoint.type}
-                    </>
-                  )}
-                </div>
+                /* Read: Title section without inline badge */
+                <div className="mb-1.5" />
               )}
 
               {/* Title */}
-              {isDraft ? (
+              {(isDraft || isEditing) ? (
                 <input
                   ref={draftTitleRef}
                   type="text"
                   value={draftTitle}
                   onChange={e => setDraftTitle(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleDraftSubmit()}
+                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                   placeholder={draftItemType === 'touchpoint' ? 'Ex: Enviar proposta personalizada...' : 'Ex: Pesquisar sobre a empresa...'}
                   className="w-full text-lg font-bold text-[#212a46] border-b-2 border-[#4a90e2] outline-none bg-transparent pb-1 placeholder:text-gray-300 placeholder:font-normal"
                 />
@@ -325,20 +384,23 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
               )}
             </div>
 
-            {isDraft ? (
+            {(isDraft || isEditing) ? (
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => onCancelDraft?.()}
+                  onClick={() => {
+                    if (isDraft) onCancelDraft?.();
+                    else setIsEditing(false);
+                  }}
                   className="px-3 py-2 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
-                  onClick={handleDraftSubmit}
+                  onClick={handleSubmit}
                   disabled={!draftTitle.trim()}
                   className={`px-4 py-2 rounded-lg text-xs font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed ${draftItemType === 'touchpoint' ? 'bg-[#4a90e2] hover:bg-[#3a79c0]' : 'bg-[#6BCF7F] hover:bg-[#57be6d]'}`}
                 >
-                  {draftItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Tarefa'}
+                  {isDraft ? (draftItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Taskpoint') : 'Salvar'}
                 </button>
               </div>
             ) : (
@@ -346,10 +408,10 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                 <button className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0">
                   <Copy className="w-4 h-4 text-gray-600" />
                 </button>
-                <button className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0">
+                <button onClick={handleStartEdit} className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0">
                   <Edit3 className="w-4 h-4 text-gray-600" />
                 </button>
-                {touchpoint.itemType !== 'task' && (
+                {touchpoint.itemType !== 'task' && touchpoint.score !== undefined && (
                   <div className="text-center flex-shrink-0 ml-2 px-2 py-1">
                     <div className="text-2xl font-bold text-[#212a46]">{touchpoint.score}</div>
                     <div className="text-[9px] text-gray-500">Score do Touch</div>
@@ -365,7 +427,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
               isExpanded ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
             }`}
           >
-            {isDraft ? (
+            {(isDraft || isEditing) ? (
               /* ── Draft fields ─────────────────────────────────────────── */
               <div className="space-y-5">
                 {/* Categoria */}
@@ -374,7 +436,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                     Tipo / Categoria
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {draftCats.filter(cat => cat.name !== 'Outros').map(cat => {
+                    {draftCats.map(cat => {
                       const Icon = cat.icon;
                       const isSelected = draftSelectedCat === cat.name;
                       return (
@@ -393,68 +455,35 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                   </div>
                 </div>
 
-                {/* Canal, Responsáveis e Peso — mesma linha */}
-                <div className={`grid gap-4 ${draftItemType === 'touchpoint' ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                  {/* Canal (só touchpoint) */}
-                  {draftItemType === 'touchpoint' && (
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Canal</label>
-                      <div className="relative">
-                        <select
-                          value={draftChannel}
-                          onChange={e => setDraftChannel(e.target.value)}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] appearance-none bg-white"
-                        >
-                          <option value="">Selecione um canal</option>
-                          {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Responsáveis */}
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Responsáveis</label>
-                    {draftResponsibles.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-1.5">
-                        {draftResponsibles.map(r => (
-                          <span key={r} className="flex items-center gap-1 px-2 py-0.5 bg-[#4a90e2]/10 text-[#4a90e2] rounded-full text-xs font-medium">
-                            {r}
-                            <button onClick={() => toggleDraftResponsible(r)} className="hover:text-red-400 transition-colors">
-                              <X className="w-2.5 h-2.5" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                {/* Canal (só touchpoint) */}
+                {draftItemType === 'touchpoint' && (
+                  <div className="mb-4">
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Canal</label>
                     <div className="relative">
-                      <input
-                        type="text"
-                        value={draftResponsibleInput}
-                        onChange={e => setDraftResponsibleInput(e.target.value)}
-                        onFocus={() => setShowResponsibleDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowResponsibleDropdown(false), 150)}
-                        placeholder="Buscar membro..."
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2]"
-                      />
-                      {showResponsibleDropdown && filteredDraftMembers.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
-                          {filteredDraftMembers.map(member => (
-                            <button
-                              key={member}
-                              onMouseDown={() => { toggleDraftResponsible(member); setDraftResponsibleInput(''); }}
-                              className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors text-gray-700"
-                            >
-                              {member}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <select
+                        value={draftChannel}
+                        onChange={e => setDraftChannel(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] appearance-none bg-white"
+                      >
+                        <option value="">Selecione um canal</option>
+                        {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                     </div>
                   </div>
+                )}
 
-                  {/* Peso */}
+                {/* Data e Peso em linha */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Data prevista</label>
+                    <input
+                      type="date"
+                      value={draftDate}
+                      onChange={e => setDraftDate(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2]"
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Peso</label>
                     <div className="relative">
@@ -463,10 +492,51 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                         onChange={e => setDraftWeight(e.target.value as Touchpoint['weight'])}
                         className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] appearance-none bg-white"
                       >
-                        {['Muito Baixo', 'Baixo', 'Médio', 'Alto', 'Muito Alto'].map(w => <option key={w} value={w}>{w}</option>)}
+                        {['Muito Baixo', 'Baixo', 'Médio', 'Acima da média', 'Alto', 'Muito Alto'].map(w => <option key={w} value={w}>{w}</option>)}
                       </select>
                       <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                     </div>
+                  </div>
+                </div>
+
+                {/* Responsáveis */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Responsáveis</label>
+                  {draftResponsibles.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {draftResponsibles.map(r => (
+                        <span key={r} className="flex items-center gap-1 px-2 py-0.5 bg-[#4a90e2]/10 text-[#4a90e2] rounded-full text-xs font-medium">
+                          {r}
+                          <button onClick={() => toggleDraftResponsible(r)} className="hover:text-red-400 transition-colors">
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={draftResponsibleInput}
+                      onChange={e => setDraftResponsibleInput(e.target.value)}
+                      onFocus={() => setShowResponsibleDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowResponsibleDropdown(false), 150)}
+                      placeholder="Buscar membro..."
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2]"
+                    />
+                    {showResponsibleDropdown && filteredDraftMembers.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
+                        {filteredDraftMembers.map(member => (
+                          <button
+                            key={member}
+                            onMouseDown={() => { toggleDraftResponsible(member); setDraftResponsibleInput(''); }}
+                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors text-gray-700"
+                          >
+                            {member}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -490,9 +560,9 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                   />
                 </div>
 
-                {/* Subtarefas */}
+                {/* Subtaskpoints */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Subtarefas</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Subtaskpoints</label>
                   {draftSubtasks.length > 0 && (
                     <div className="space-y-1.5 mb-2">
                       {draftSubtasks.map(st => (
@@ -503,7 +573,25 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                             onChange={() => setDraftSubtasks(prev => prev.map(s => s.id === st.id ? { ...s, completed: !s.completed } : s))}
                             className="w-3.5 h-3.5 rounded border-gray-300 accent-[#4a90e2]"
                           />
-                          <span className={`flex-1 text-sm ${st.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>{st.title}</span>
+                          <div className="flex-1 flex flex-col">
+                            <span className={`text-sm ${st.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>{st.title}</span>
+                            {(st.assignee || st.dueDate) && (
+                              <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-1">
+                                {st.assignee && (
+                                  <span className="flex items-center gap-1">
+                                    <UserCircle2 className="w-3 h-3" />
+                                    {st.assignee}
+                                  </span>
+                                )}
+                                {st.dueDate && (
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {st.dueDate.split('-').reverse().join('/')}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           <button
                             onClick={() => setDraftSubtasks(prev => prev.filter(s => s.id !== st.id))}
                             className="text-gray-400 hover:text-red-400 transition-colors"
@@ -514,25 +602,55 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                       ))}
                     </div>
                   )}
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center mt-2">
                     <input
                       type="text"
                       value={draftSubtaskInput}
                       onChange={e => setDraftSubtaskInput(e.target.value)}
                       onKeyDown={e => {
                         if (e.key === 'Enter' && draftSubtaskInput.trim()) {
-                          setDraftSubtasks(prev => [...prev, { id: Date.now().toString(), title: draftSubtaskInput.trim(), completed: false }]);
+                          setDraftSubtasks(prev => [...prev, {
+                            id: Date.now().toString(),
+                            title: draftSubtaskInput.trim(),
+                            completed: false,
+                            assignee: draftSubtaskAssignee || undefined,
+                            dueDate: draftSubtaskDueDate || undefined
+                          }]);
                           setDraftSubtaskInput('');
+                          setDraftSubtaskAssignee('');
+                          setDraftSubtaskDueDate('');
                         }
                       }}
-                      placeholder="Adicionar subtarefa e pressionar Enter..."
+                      placeholder="Adicionar subtaskpoint..."
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2]"
+                    />
+                    <select
+                      value={draftSubtaskAssignee}
+                      onChange={e => setDraftSubtaskAssignee(e.target.value)}
+                      className="w-36 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] bg-white text-gray-600"
+                    >
+                      <option value="">Responsável</option>
+                      {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <input
+                      type="date"
+                      value={draftSubtaskDueDate}
+                      onChange={e => setDraftSubtaskDueDate(e.target.value)}
+                      className="w-32 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] text-gray-600"
                     />
                     <button
                       onClick={() => {
                         if (draftSubtaskInput.trim()) {
-                          setDraftSubtasks(prev => [...prev, { id: Date.now().toString(), title: draftSubtaskInput.trim(), completed: false }]);
+                          setDraftSubtasks(prev => [...prev, {
+                            id: Date.now().toString(),
+                            title: draftSubtaskInput.trim(),
+                            completed: false,
+                            assignee: draftSubtaskAssignee || undefined,
+                            dueDate: draftSubtaskDueDate || undefined
+                          }]);
                           setDraftSubtaskInput('');
+                          setDraftSubtaskAssignee('');
+                          setDraftSubtaskDueDate('');
                         }
                       }}
                       className="px-3 py-2 bg-[#4a90e2] text-white rounded-lg hover:bg-[#3a79c0] transition-colors"
@@ -635,17 +753,20 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                 {/* Botões de confirmação */}
                 <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
                   <button
-                    onClick={() => onCancelDraft?.()}
+                    onClick={() => {
+                      if (isDraft) onCancelDraft?.();
+                      else setIsEditing(false);
+                    }}
                     className="px-5 py-2.5 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
                   >
                     Cancelar
                   </button>
                   <button
-                    onClick={handleDraftSubmit}
+                    onClick={handleSubmit}
                     disabled={!draftTitle.trim()}
                     className={`px-6 py-2.5 rounded-lg text-sm font-medium text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed ${draftItemType === 'touchpoint' ? 'bg-[#4a90e2] hover:bg-[#3a79c0]' : 'bg-[#6BCF7F] hover:bg-[#57be6d]'}`}
                   >
-                    {draftItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Tarefa'}
+                    {isDraft ? (draftItemType === 'touchpoint' ? 'Criar Touchpoint' : 'Criar Taskpoint') : 'Salvar'}
                   </button>
                 </div>
               </div>
@@ -668,22 +789,135 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                   </div>
                 </div>
 
-                {/* Subtarefas */}
-                {touchpoint.subtasks && touchpoint.subtasks.length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="text-sm font-bold text-[#212a46] mb-3">Subtarefas</h4>
-                    {touchpoint.subtasks.map((subtask) => (
-                      <div key={subtask.id} className="flex items-center gap-2 mb-2">
-                        <input type="checkbox" checked={subtask.completed} className="w-3.5 h-3.5 rounded border-gray-300" readOnly />
-                        <span className={`text-sm ${subtask.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>{subtask.title}</span>
-                      </div>
-                    ))}
-                    <button className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 mt-3 transition-colors">
+                {/* Subtaskpoints */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-bold text-[#212a46] mb-3">Subtaskpoints</h4>
+                  {touchpoint.subtasks && touchpoint.subtasks.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      {touchpoint.subtasks.map((subtask: any) => (
+                        <div key={subtask.id} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                          <input 
+                            type="checkbox" 
+                            checked={subtask.completed} 
+                            onChange={() => {
+                              onUpdate({
+                                ...touchpoint,
+                                subtasks: touchpoint.subtasks!.map((s: any) => s.id === subtask.id ? { ...s, completed: !s.completed } : s)
+                              });
+                            }}
+                            className="w-3.5 h-3.5 rounded border-gray-300 accent-[#4a90e2]" 
+                          />
+                          <div className="flex-1 flex flex-col">
+                            <span className={`text-sm ${subtask.completed ? 'line-through text-gray-500' : 'text-gray-800'}`}>{subtask.title}</span>
+                            {(subtask.assignee || subtask.dueDate) && (
+                              <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-1">
+                                {subtask.assignee && (
+                                  <span className="flex items-center gap-1">
+                                    <UserCircle2 className="w-3 h-3" />
+                                    {subtask.assignee}
+                                  </span>
+                                )}
+                                {subtask.dueDate && (
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {subtask.dueDate.split('-').reverse().join('/')}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              onUpdate({
+                                ...touchpoint,
+                                subtasks: touchpoint.subtasks!.filter((s: any) => s.id !== subtask.id)
+                              });
+                            }}
+                            className="text-gray-400 hover:text-red-400 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {isAddingSubtask ? (
+                    <div className="flex gap-2 items-center mt-2">
+                      <input
+                        type="text"
+                        value={newSubtaskInput}
+                        onChange={e => setNewSubtaskInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && newSubtaskInput.trim()) {
+                            onUpdate({
+                              ...touchpoint,
+                              subtasks: [...(touchpoint.subtasks || []), {
+                                id: Date.now().toString(),
+                                title: newSubtaskInput.trim(),
+                                completed: false,
+                                assignee: newSubtaskAssignee || undefined,
+                                dueDate: newSubtaskDueDate || undefined
+                              }]
+                            });
+                            setNewSubtaskInput('');
+                            setNewSubtaskAssignee('');
+                            setNewSubtaskDueDate('');
+                            setIsAddingSubtask(false);
+                          }
+                        }}
+                        placeholder="Título da subtaskpoint..."
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2]"
+                        autoFocus
+                      />
+                      <select
+                        value={newSubtaskAssignee}
+                        onChange={e => setNewSubtaskAssignee(e.target.value)}
+                        className="w-36 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] bg-white text-gray-600"
+                      >
+                        <option value="">Responsável</option>
+                        {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <input
+                        type="date"
+                        value={newSubtaskDueDate}
+                        onChange={e => setNewSubtaskDueDate(e.target.value)}
+                        className="w-32 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#4a90e2] text-gray-600"
+                      />
+                      <button
+                        onClick={() => {
+                          if (newSubtaskInput.trim()) {
+                            onUpdate({
+                              ...touchpoint,
+                              subtasks: [...(touchpoint.subtasks || []), {
+                                id: Date.now().toString(),
+                                title: newSubtaskInput.trim(),
+                                completed: false,
+                                assignee: newSubtaskAssignee || undefined,
+                                dueDate: newSubtaskDueDate || undefined
+                              }]
+                            });
+                          }
+                          setNewSubtaskInput('');
+                          setNewSubtaskAssignee('');
+                          setNewSubtaskDueDate('');
+                          setIsAddingSubtask(false);
+                        }}
+                        className="px-3 py-2 bg-[#4a90e2] text-white rounded-lg hover:bg-[#3a79c0] transition-colors flex items-center justify-center"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => setIsAddingSubtask(true)}
+                      className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 mt-3 transition-colors"
+                    >
                       <Plus className="w-3.5 h-3.5" />
-                      Nova subtarefa
+                      Nova subtaskpoint
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Anexos */}
                 {touchpoint.attachments && touchpoint.attachments.length > 0 && (
@@ -712,26 +946,50 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                 <div className="mb-6">
                   <h4 className="text-sm font-bold text-[#212a46] mb-3">📝 Notas e Histórico</h4>
                   <div className="space-y-2 mb-3">
-                    <div className="bg-[#f8faff] rounded-lg p-3 border border-[#e3ecf7]">
-                      <div className="flex items-start justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-full bg-[#4a90e2] flex items-center justify-center text-[9px] text-white font-bold">JD</div>
-                          <span className="text-xs font-bold text-[#212a46]">João Silva</span>
+                    {touchpoint.notes && touchpoint.notes.length > 0 ? (
+                      touchpoint.notes.map(note => (
+                        <div key={note.id} className="bg-[#f8faff] rounded-lg p-3 border border-[#e3ecf7]">
+                          <div className="flex items-start justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] text-white font-bold" style={{ backgroundColor: note.color }}>{note.initials}</div>
+                              <span className="text-xs font-bold text-[#212a46]">{note.author}</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500">{note.date}</span>
+                          </div>
+                          <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">{note.content}</p>
+                          {note.mentions && note.mentions.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {note.mentions.map(mention => (
+                                <span key={mention} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[9px] font-medium">@{mention}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <span className="text-[10px] text-gray-500">Hoje às 14:30</span>
-                      </div>
-                      <p className="text-xs text-gray-700 leading-relaxed">Cliente demonstrou interesse no produto premium. Agendada reunião de apresentação para próxima semana.</p>
-                    </div>
-                    <div className="bg-[#f8faff] rounded-lg p-3 border border-[#e3ecf7]">
-                      <div className="flex items-start justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-full bg-[#ff9b83] flex items-center justify-center text-[9px] text-white font-bold">MS</div>
-                          <span className="text-xs font-bold text-[#212a46]">Maria Santos</span>
+                      ))
+                    ) : (
+                      <>
+                        <div className="bg-[#f8faff] rounded-lg p-3 border border-[#e3ecf7]">
+                          <div className="flex items-start justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-full bg-[#4a90e2] flex items-center justify-center text-[9px] text-white font-bold">JD</div>
+                              <span className="text-xs font-bold text-[#212a46]">João Silva</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500">Hoje às 14:30</span>
+                          </div>
+                          <p className="text-xs text-gray-700 leading-relaxed">Cliente demonstrou interesse no produto premium. Agendada reunião de apresentação para próxima semana.</p>
                         </div>
-                        <span className="text-[10px] text-gray-500">Ontem às 16:45</span>
-                      </div>
-                      <p className="text-xs text-gray-700 leading-relaxed">Primeiro contato realizado via LinkedIn. Prospect abriu a mensagem mas ainda não respondeu.</p>
-                    </div>
+                        <div className="bg-[#f8faff] rounded-lg p-3 border border-[#e3ecf7]">
+                          <div className="flex items-start justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-full bg-[#ff9b83] flex items-center justify-center text-[9px] text-white font-bold">MS</div>
+                              <span className="text-xs font-bold text-[#212a46]">Maria Santos</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500">Ontem às 16:45</span>
+                          </div>
+                          <p className="text-xs text-gray-700 leading-relaxed">Primeiro contato realizado via LinkedIn. Prospect abriu a mensagem mas ainda não respondeu.</p>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="relative border-2 border-dashed border-gray-300 rounded-lg p-3 hover:border-[#4a90e2] transition-colors">
                     <textarea
@@ -769,7 +1027,30 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                     )}
                     <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200">
                       <span className="text-[10px] text-gray-500">💡 Use @ para mencionar contatos</span>
-                      <button className="px-3 py-1.5 bg-[#4a90e2] text-white rounded text-xs font-bold hover:bg-[#3571de] transition-colors">Adicionar Nota</button>
+                      <button 
+                        onClick={() => {
+                          if (noteText.trim()) {
+                            const newNote = {
+                              id: Date.now().toString(),
+                              author: 'Você', // Simulated logged in user
+                              initials: 'VC',
+                              color: '#9c27b0',
+                              date: 'Agora mesmo',
+                              content: noteText.trim(),
+                              mentions: mentionedContacts.map(id => availableContacts.find(c => c.id === id)?.name || '')
+                            };
+                            onUpdate({
+                              ...touchpoint,
+                              notes: [...(touchpoint.notes || []), newNote]
+                            });
+                            setNoteText('');
+                            setMentionedContacts([]);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-[#4a90e2] text-white rounded text-xs font-bold hover:bg-[#3571de] transition-colors"
+                      >
+                        Adicionar Nota
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -788,7 +1069,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
         </div>
 
         {/* Action Buttons Section - Only in read mode */}
-        {!isDraft && (
+        {!isDraft && !isEditing && (
           <div className="bg-white rounded-lg p-4 mb-3">
             <div className="grid grid-cols-4 gap-3 mb-4">
               <div>
@@ -802,7 +1083,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
               </div>
               <div className="flex items-end">
                 <button className="w-full py-2 bg-[#5cb85c] text-white rounded font-bold text-[11px] hover:bg-[#4cae4c] transition-colors">
-                  {isTask ? 'TAREFA EXECUTADA' : 'TOUCHPOINT EXECUTADO'}
+                  {isTask ? 'TASKPOINT EXECUTADA' : 'TOUCHPOINT EXECUTADO'}
                 </button>
               </div>
               <div>
@@ -816,7 +1097,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
               </div>
               <div className="flex items-end">
                 <button className="w-full py-2 bg-[#3571de] text-white rounded font-bold text-[11px] hover:bg-[#2557b8] transition-colors">
-                  {isTask ? 'CONCLUIR TAREFA' : 'CONCLUIR TOUCHPOINT'}
+                  {isTask ? 'CONCLUIR TASKPOINT' : 'CONCLUIR TOUCHPOINT'}
                 </button>
               </div>
             </div>
@@ -872,7 +1153,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
         )}
 
         {/* Interações Block - Only for Touchpoints in read mode */}
-        {!isDraft && !isTask && touchpoint.interactions && touchpoint.interactions.length > 0 && (
+        {!isDraft && !isEditing && !isTask && touchpoint.interactions && touchpoint.interactions.length > 0 && (
           <div className="bg-white rounded-lg p-4 mb-3">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-sm font-bold text-[#212a46]">Interações dos Contatos</h4>

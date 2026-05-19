@@ -6,7 +6,8 @@ import { X, FileText, Check, ChevronDown } from "lucide-react";
 interface AccountDossier {
   id: number;
   title: string;
-  date: string;
+  createdAt: string;
+  updatedAt: string;
   author: string;
 }
 
@@ -295,7 +296,7 @@ export function SegmentCreateModal({
                                   {d.title}
                                 </p>
                                 <p style={{ margin: 0, fontSize: 11, color: "#9B9B9B" }}>
-                                  por {d.author} · {d.date}
+                                  por {d.author} · {d.createdAt}
                                 </p>
                               </div>
                               {selected && <Check size={14} style={{ color: "#FF5F39", flexShrink: 0 }} />}

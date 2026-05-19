@@ -361,42 +361,41 @@ export function DossieCreateModal({ accountName, onClose, onSave, defaultType = 
         {/* ── Scrollable body ── */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 8px" }}>
 
-          {/* ── Campos comuns (conta + contato) ── */}
-          {tipo === "conta" && (
-            <>
-              <Field label="Localização da Sede">
-                <input style={inputStyle} value={form.localizacaoSede} onChange={(e) => set("localizacaoSede", e.target.value)} placeholder="Localização" />
-              </Field>
+          {/* ── Campos da Conta ── */}
+          <>
+            <Field label="Localização da Sede">
+              <input style={inputStyle} value={form.localizacaoSede} onChange={(e) => set("localizacaoSede", e.target.value)} placeholder="Localização" />
+            </Field>
 
-              <Field label="Qual oportunidade vou trabalhar na conta?">
-                <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.oportunidade} onChange={(e) => set("oportunidade", e.target.value)} placeholder="Informe oferta que será trabalhada" />
-              </Field>
+            <Field label="Qual oportunidade vou trabalhar na conta?">
+              <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.oportunidade} onChange={(e) => set("oportunidade", e.target.value)} placeholder="Informe oferta que será trabalhada" />
+            </Field>
 
-              <Field label="Quais os diferenciais da sua oferta?">
-                <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.diferenciais} onChange={(e) => set("diferenciais", e.target.value)} placeholder="Oferta" />
-              </Field>
+            <Field label="Quais os diferenciais da sua oferta?">
+              <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.diferenciais} onChange={(e) => set("diferenciais", e.target.value)} placeholder="Oferta" />
+            </Field>
 
-              <Field label="Cultura da Empresa" hint="(Inovadora/Reservada)">
-                <div style={{ position: "relative" }}>
-                  <select style={selectStyle} value={form.culturaEmpresa} onChange={(e) => set("culturaEmpresa", e.target.value)}>
-                    <option value="">Selecione</option>
-                    {CULTURAS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <ChevronDown size={14} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "#9B9B9B", pointerEvents: "none" }} />
-                </div>
-              </Field>
+            <Field label="Cultura da Empresa" hint="(Inovadora/Reservada)">
+              <div style={{ position: "relative" }}>
+                <select style={selectStyle} value={form.culturaEmpresa} onChange={(e) => set("culturaEmpresa", e.target.value)}>
+                  <option value="">Selecione</option>
+                  {CULTURAS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <ChevronDown size={14} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "#9B9B9B", pointerEvents: "none" }} />
+              </div>
+            </Field>
 
-              <Field label="Eventos que vão patrocinar">
-                <textarea style={{ ...inputStyle, minHeight: 56 }} value={form.eventosPatrocinar} onChange={(e) => set("eventosPatrocinar", e.target.value)} placeholder="Eventos a serem patrocinados" />
-              </Field>
+            <Field label="Eventos que vão patrocinar">
+              <textarea style={{ ...inputStyle, minHeight: 56 }} value={form.eventosPatrocinar} onChange={(e) => set("eventosPatrocinar", e.target.value)} placeholder="Eventos a serem patrocinados" />
+            </Field>
 
-              <Field label="Eventos do setor" hint="(Sem patrocínio necessariamente)">
-                <textarea style={{ ...inputStyle, minHeight: 56 }} value={form.eventoSetor} onChange={(e) => set("eventoSetor", e.target.value)} placeholder="Eventos do setor" />
-              </Field>
+            <Field label="Eventos do setor" hint="(Sem patrocínio necessariamente)">
+              <textarea style={{ ...inputStyle, minHeight: 56 }} value={form.eventoSetor} onChange={(e) => set("eventoSetor", e.target.value)} placeholder="Eventos do setor" />
+            </Field>
 
-              <Field label="Fase atual da negociação">
-                <FaseNegociacaoSelect value={form.faseNegociacao} onChange={(v) => set("faseNegociacao", v)} />
-              </Field>
+            <Field label="Fase atual da negociação">
+              <FaseNegociacaoSelect value={form.faseNegociacao} onChange={(v) => set("faseNegociacao", v)} />
+            </Field>
 
               <Field label="Novidades / Ações publicadas">
                 <textarea style={{ ...inputStyle, minHeight: 56 }} value={form.novidades} onChange={(e) => set("novidades", e.target.value)} placeholder="Novidades" />
@@ -406,42 +405,6 @@ export function DossieCreateModal({ accountName, onClose, onSave, defaultType = 
                 <textarea style={{ ...inputStyle, minHeight: 56 }} value={form.statusConta} onChange={(e) => set("statusConta", e.target.value)} placeholder="Descreva o status da conta" />
               </Field>
             </>
-          )}
-
-          {/* ── Campos exclusivos dossiê de CONTATO ── */}
-          {tipo === "contato" && (
-            <>
-              <Field label="Qual oportunidade vou trabalhar com este contato?">
-                <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.oportunidade} onChange={(e) => set("oportunidade", e.target.value)} placeholder="Informe a oferta que será trabalhada" />
-              </Field>
-
-              <Field label="Relacionamento com o contato">
-                <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.relacionamento ?? ""} onChange={(e) => set("relacionamento", e.target.value)} placeholder="Descreva o tipo de relacionamento e histórico com o contato" />
-              </Field>
-
-              <Field label="Dores e desafios">
-                <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.doresDesafios ?? ""} onChange={(e) => set("doresDesafios", e.target.value)} placeholder="Principais problemas e desafios que o contato enfrenta" />
-              </Field>
-
-              <Field label="Objetivos pessoais e profissionais">
-                <textarea style={{ ...inputStyle, minHeight: 64 }} value={form.objetivosPessoais ?? ""} onChange={(e) => set("objetivosPessoais", e.target.value)} placeholder="O que motiva este contato?" />
-              </Field>
-
-              <Field label="Tom de comunicação">
-                <div style={{ position: "relative" }}>
-                  <select style={selectStyle} value={form.tomComunicacao ?? ""} onChange={(e) => set("tomComunicacao", e.target.value)}>
-                    <option value="">Selecionar</option>
-                    {TOM_COMUNICACAO.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <ChevronDown size={14} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "#9B9B9B", pointerEvents: "none" }} />
-                </div>
-              </Field>
-
-              <Field label="Fase atual da negociação">
-                <FaseNegociacaoSelect value={form.faseNegociacao} onChange={(v) => set("faseNegociacao", v)} />
-              </Field>
-            </>
-          )}
 
           {/* ── Notas (comum) ── */}
           <Field label="Notas">

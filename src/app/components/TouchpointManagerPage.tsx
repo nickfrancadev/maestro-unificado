@@ -50,6 +50,7 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
       itemType: 'touchpoint',
       type: 'AUTORIDADE',
       title: 'Conectar LinkedIn',
+      category: 'Autoridade',
       channel: 'LinkedIn',
       responsibles: ['João Silva'],
       date: '15-01-2026',
@@ -65,17 +66,18 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
     {
       id: 2,
       itemType: 'task',
-      type: 'TAREFA',
+      type: 'TASKPOINT',
       title: 'Pesquisar sobre a empresa e seus concorrentes',
+      category: 'Pesquisa',
       channel: '-',
       responsibles: ['Carlos Mendes'],
       date: '18-01-2026',
       status: 'Em andamento',
       description: 'Realizar pesquisa profunda sobre a empresa alvo, identificando suas principais necessidades, desafios atuais e concorrentes diretos no mercado.',
       subtasks: [
-        { id: 'st-t1', title: 'Analisar site institucional', completed: true },
-        { id: 'st-t2', title: 'Pesquisar notícias recentes', completed: true },
-        { id: 'st-t3', title: 'Mapear concorrentes', completed: false }
+        { id: 'st-t1', title: 'Analisar site institucional', completed: true, assignee: 'Carlos Mendes', dueDate: '2026-01-16' },
+        { id: 'st-t2', title: 'Pesquisar notícias recentes', completed: true, assignee: 'João Silva', dueDate: '2026-01-17' },
+        { id: 'st-t3', title: 'Mapear concorrentes', completed: false, assignee: 'Ana Lima', dueDate: '2026-01-18' }
       ],
       attachments: [],
       budget: 0,
@@ -88,14 +90,15 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
       itemType: 'touchpoint',
       type: 'ATENÇÃO',
       title: 'Email do especialista do projeto',
+      category: 'Relacionamento',
       channel: 'LinkedIn',
       responsibles: ['Maria Santos'],
       date: '20-01-2026',
       status: 'Em andamento',
       description: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque vitae semper velit. Fusce nec lacinia dolor. Cras non hendrerit massa, in imperdiet ligula.',
       subtasks: [
-        { id: 'st1', title: 'Preparar conteúdo do email', completed: true },
-        { id: 'st2', title: 'Revisar ortografia', completed: false }
+        { id: 'st1', title: 'Preparar conteúdo do email', completed: true, assignee: 'Maria Santos', dueDate: '2026-01-19' },
+        { id: 'st2', title: 'Revisar ortografia', completed: false, assignee: 'Rafael Oliveira', dueDate: '2026-01-20' }
       ],
       attachments: [
         { id: 'att1', name: 'Titulo-do-anexo.png', addedAt: 'Adicionado há 2 horas atrás' }
@@ -114,6 +117,7 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
       itemType: 'touchpoint',
       type: 'ATENÇÃO',
       title: 'Envio de vídeo por inbox',
+      category: 'Engajamento',
       channel: 'LinkedIn',
       responsibles: ['Pedro Costa'],
       date: '20-01-2026',
@@ -191,6 +195,7 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
         itemType: touchpointData.itemType || 'touchpoint',
         type: touchpointData.type as Touchpoint['type'],
         title: touchpointData.title,
+        category: touchpointData.category,
         channel: touchpointData.channel || (touchpointData.itemType === 'task' ? '-' : 'LinkedIn'),
         responsibles: touchpointData.responsibles || [],
         date: formattedDate,
@@ -229,6 +234,7 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
         itemType: 'touchpoint',
         type: 'ATENÇÃO',
         title: '',
+        category: 'Engajamento',
         channel: '',
         responsibles: [],
         date: '',

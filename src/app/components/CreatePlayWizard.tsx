@@ -159,18 +159,25 @@ export function CreatePlayWizard({ isOpen, onClose, onCreatePlay }: CreatePlayWi
   const [selectedDossiêsContatos, setSelectedDossiêsContatos] = useState<Set<string>>(new Set());
 
   // Step 4 – GTM
-  const [selectedGTM, setSelectedGTM] = useState<string>("");
+  const [selectedGTM, setSelectedGTM] = useState<Set<string>>(new Set());
   const [selectedPublico, setSelectedPublico] = useState<Set<string>>(new Set());
   const [selectedMercado, setSelectedMercado] = useState<Set<string>>(new Set());
 
   if (!isOpen) return null;
 
   /* ── navigation ── */
+  const isStep1Valid = playName.trim().length > 0 && playType.length > 0 && playObjective.length > 0;
+  const isStep2Valid = selectedContas.size > 0;
+  const isStep3Valid = selectedContas.size > 1 || (selectedDossiêsContas.size > 0 && selectedDossiêsContatos.size > 0);
+  const isStep4Valid = selectedGTM.size > 0 && selectedPublico.size > 0 && selectedMercado.size > 0;
+
+  const isWizardComplete = isStep1Valid && isStep2Valid && isStep3Valid && isStep4Valid;
+
   const canGoNext = () => {
-    if (currentStep === 1) return playName.trim().length > 0 && playType.length > 0 && playObjective.length > 0;
-    if (currentStep === 2) return selectedContas.size > 0;
+    if (currentStep === 1) return isStep1Valid;
+    if (currentStep === 2) return isStep2Valid;
     if (currentStep === 3) return selectedDossiêsContas.size > 0 && selectedDossiêsContatos.size > 0;
-    if (currentStep === 4) return selectedGTM.length > 0 && selectedPublico.size > 0 && selectedMercado.size > 0;
+    if (currentStep === 4) return isStep4Valid;
     return true;
   };
 
@@ -203,10 +210,13 @@ export function CreatePlayWizard({ isOpen, onClose, onCreatePlay }: CreatePlayWi
   };
 
   const handleFinish = (withAI = false) => {
+    if (withAI && !isWizardComplete) return;
+    if (!withAI && !canGoNext() && currentStep === STEPS.length) return;
+
     const resolvedContas = mockContas.filter((c) => selectedContas.has(c.id));
     const resolvedDossieContas = mockDossiêsContas.filter((d) => selectedDossiêsContas.has(d.id));
     const resolvedDossieContatos = mockDossiêsContatos.filter((d) => selectedDossiêsContatos.has(d.id));
-    const resolvedProduto = defaultProdutos.find((p) => p.id === selectedGTM) ?? null;
+    const resolvedProdutos = defaultProdutos.filter((p) => selectedGTM.has(p.id));
     const resolvedPublicos = defaultPublicos.filter((p) => selectedPublico.has(p.id));
     const resolvedMomentos = defaultMomentos.filter((m) => selectedMercado.has(m.id));
 
@@ -230,7 +240,7 @@ export function CreatePlayWizard({ isOpen, onClose, onCreatePlay }: CreatePlayWi
       dossiêsContatos: resolvedDossieContatos.map((d) => ({
         id: d.id, name: d.name, role: d.role, company: d.company,
       })),
-      produto: resolvedProduto,
+      produtos: resolvedProdutos,
       publicos: resolvedPublicos,
       momentos: resolvedMomentos,
       withAI,
@@ -246,7 +256,7 @@ export function CreatePlayWizard({ isOpen, onClose, onCreatePlay }: CreatePlayWi
     setSelectedContas(new Set());
     setDossieTab("contas");
     setSelectedDossiêsContas(new Set()); setSelectedDossiêsContatos(new Set());
-    setSelectedGTM(""); setSelectedPublico(new Set()); setSelectedMercado(new Set());
+    setSelectedGTM(new Set()); setSelectedPublico(new Set()); setSelectedMercado(new Set());
   };
 
   const handleClose = () => { handleReset(); onClose(); };
@@ -888,21 +898,21 @@ export function CreatePlayWizard({ isOpen, onClose, onCreatePlay }: CreatePlayWi
                 {/* Produto / Serviço */}
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: "#374151", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Produto / Serviço <span style={{ color: "#FF5F39" }}>*</span>
+                    Produtos / Serviços <span style={{ color: "#FF5F39" }}>*</span>
                   </label>
-                  {!selectedGTM && (
-                    <p style={{ fontSize: 11, color: "#EF4444", marginBottom: 8 }}>Selecione um produto ou serviço</p>
+                  {selectedGTM.size === 0 && (
+                    <p style={{ fontSize: 11, color: "#EF4444", marginBottom: 8 }}>Selecione ao menos um produto ou serviço</p>
                   )}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {defaultProdutos.map((p) => {
-                      const isSelected = selectedGTM === p.id;
+                      const isSelected = selectedGTM.has(p.id);
                       const tipoColor: Record<string, string> = { Produto: "#166534", Serviço: "#FF5F39", Treinamento: "#1e40af" };
                       const tipoBg: Record<string, string> = { Produto: "#dcfce7", Serviço: "#FFEDD5", Treinamento: "#dbeafe" };
                       const TipoIcon = p.tipo === "Produto" ? Package : p.tipo === "Serviço" ? Wrench : GraduationCap;
                       return (
                         <button
                           key={p.id}
-                          onClick={() => setSelectedGTM(isSelected ? "" : p.id)}
+                          onClick={() => setSelectedGTM(toggleSet(selectedGTM, p.id))}
                           style={{
                             padding: "13px 16px", borderRadius: 8, textAlign: "left",
                             border: `1.5px solid ${isSelected ? "#3571DE" : "#E5E7EB"}`,
@@ -1040,13 +1050,16 @@ export function CreatePlayWizard({ isOpen, onClose, onCreatePlay }: CreatePlayWi
                 </button>
               )}
               <button
-                onClick={() => handleFinish(true)}
+                onClick={() => isWizardComplete && handleFinish(true)}
+                disabled={!isWizardComplete}
                 style={{
                   padding: "10px 20px", borderRadius: 8, border: "none",
-                  background: "linear-gradient(135deg, #7C3AED, #4F46E5)",
+                  background: isWizardComplete ? "linear-gradient(135deg, #7C3AED, #4F46E5)" : "#D1D5DB",
                   color: "white", fontSize: 12, fontWeight: 700,
-                  cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s",
+                  cursor: isWizardComplete ? "pointer" : "not-allowed",
+                  fontFamily: "inherit", transition: "all 0.2s",
                   display: "flex", alignItems: "center", gap: 6,
+                  opacity: isWizardComplete ? 1 : 0.7,
                 }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

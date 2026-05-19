@@ -11,6 +11,7 @@ import {
   Download,
   Trash2,
   MoreVertical,
+  Pencil,
   Users,
   Zap,
   SlidersHorizontal,
@@ -18,8 +19,10 @@ import {
   ExternalLink,
   X,
 } from "lucide-react";
-import type { AccountDetail } from "./AccountDetailPage";
+import { AccountDetailPage, type AccountDetail } from "./AccountDetailPage";
 import { ContactEditDrawer } from "./ContactEditDrawer";
+import { AccountEditDrawer } from "./AccountEditDrawer";
+import { AccountCreateModal } from "./AccountCreateModal";
 import { DossieCreateModal } from "./DossieCreateModal";
 import { OrgChart } from "./OrgChart";
 import { PlaysTab } from "./PlaysTab";
@@ -36,19 +39,20 @@ const mockAccounts: AccountDetail[] = [
     origin: "RD",
     playsAtivas: 3,
     dossierCount: 4,
+    registeredBy: "Admin",
     contactsList: [
-      { id: 1,  name: "Alexandra Gutmann",   role: "Global Usability R...",    email: "mer133@gmail.com",           phone: "598-572-9096", birthdate: "15-07-2025", linkedin: "linkedin.com/in/alexandra",  instagram: "instagram.com/alexandra",  twitter: "x.com/alexandra",  origin: "RD" },
-      { id: 2,  name: "Anna Rosenbaum I",     role: "Senior Branding T...",    email: "ellis_cormier@yahoo.com",    phone: "592-204-6928", birthdate: undefined,      linkedin: "linkedin.com/in/anna",        instagram: "instagram.com/anna",        twitter: "x.com/anna",        origin: "RD" },
-      { id: 3,  name: "April Johnston",       role: "Forward Commu...",        email: "zlta16@gmail.com",           phone: "328-712-2279", birthdate: undefined,      linkedin: "linkedin.com/in/april",       instagram: "instagram.com/april",       twitter: "x.com/april",       origin: "RD" },
-      { id: 4,  name: "Arlene Mann",          role: "Forward Identity...",     email: "velda21@yahoo.com",          phone: "248-246-2319", birthdate: undefined,      linkedin: "linkedin.com/in/arlene",      instagram: "instagram.com/arlene",      twitter: "x.com/arlene",      origin: "RD" },
-      { id: 5,  name: "Ashley Conroy",        role: "Direct Brand Rep...",     email: "kattie_stracke39@gmail.com", phone: "564-863-8371", birthdate: undefined,      linkedin: "linkedin.com/in/ashley",      instagram: "instagram.com/ashley",      twitter: "x.com/ashley",      origin: "RD" },
-      { id: 6,  name: "Bernard Herzog I",     role: "Legacy Paradigm...",      email: "eric.balistrer@hotmail.com", phone: "522-837-6806", birthdate: undefined,      linkedin: "linkedin.com/in/bernard",     instagram: "instagram.com/bernard",     twitter: "x.com/bernard",     origin: "RD" },
-      { id: 7,  name: "Billie Sanford",       role: "Dynamic Security...",     email: "aurelia3@yahoo.com",         phone: "404-511-4890", birthdate: undefined,      linkedin: "linkedin.com/in/billie",      instagram: "instagram.com/billie",      twitter: "x.com/billie",      origin: "RD" },
-      { id: 8,  name: "Christina Jacobi",     role: "Corporate Functi...",     email: "kyra_koepp@gmail.com",       phone: "850-480-3470", birthdate: "17-07-2025",   linkedin: "linkedin.com/in/christina",   instagram: "instagram.com/christina",   twitter: "x.com/christina",   origin: "RD" },
-      { id: 9,  name: "Claude Nicolas",       role: "International Crea...",   email: "lon.gaylord18@hotmail.com",  phone: "966-395-0794", birthdate: "22-07-2025",   linkedin: "linkedin.com/in/claude",      instagram: "instagram.com/claude",      twitter: "x.com/claude",      origin: "RD" },
-      { id: 10, name: "Courtney Bogisich DVM",role: "Senior Response...",      email: "leopold.kreiger56@gmail.com",phone: "757-748-6509", birthdate: undefined,      linkedin: "linkedin.com/in/courtney",    instagram: "instagram.com/courtney",    twitter: "x.com/courtney",    origin: "RD" },
-      { id: 11, name: "Daisy Hartmann",       role: "Product Manager",         email: "daisy.h@gmail.com",          phone: "312-555-0101", birthdate: "05-03-1990",   linkedin: "linkedin.com/in/daisy",       instagram: "instagram.com/daisy",       twitter: "x.com/daisy",       origin: "RD" },
-      { id: 12, name: "Eduardo Ferreira",     role: "VP de Vendas",            email: "edu.ferreira@gmail.com",     phone: "11-98765-4321", birthdate: undefined,     linkedin: "linkedin.com/in/eduardo",     instagram: "instagram.com/eduardo",     twitter: "x.com/eduardo",     origin: "RD" },
+      { id: 1,  name: "Alexandra Gutmann",   role: "Global Usability R...",    email: "mer133@gmail.com",           phone: "598-572-9096", birthdate: "15-07-2025", linkedin: "linkedin.com/in/alexandra",  instagram: "instagram.com/alexandra",  twitter: "x.com/alexandra",  origin: "RD", registeredBy: "Admin" },
+      { id: 2,  name: "Anna Rosenbaum I",     role: "Senior Branding T...",    email: "ellis_cormier@yahoo.com",    phone: "592-204-6928", birthdate: undefined,      linkedin: "linkedin.com/in/anna",        instagram: "instagram.com/anna",        twitter: "x.com/anna",        origin: "RD", registeredBy: "Admin" },
+      { id: 3,  name: "April Johnston",       role: "Forward Commu...",        email: "zlta16@gmail.com",           phone: "328-712-2279", birthdate: undefined,      linkedin: "linkedin.com/in/april",       instagram: "instagram.com/april",       twitter: "x.com/april",       origin: "RD", registeredBy: "Editor" },
+      { id: 4,  name: "Arlene Mann",          role: "Forward Identity...",     email: "velda21@yahoo.com",          phone: "248-246-2319", birthdate: undefined,      linkedin: "linkedin.com/in/arlene",      instagram: "instagram.com/arlene",      twitter: "x.com/arlene",      origin: "RD", registeredBy: "Admin" },
+      { id: 5,  name: "Ashley Conroy",        role: "Direct Brand Rep...",     email: "kattie_stracke39@gmail.com", phone: "564-863-8371", birthdate: undefined,      linkedin: "linkedin.com/in/ashley",      instagram: "instagram.com/ashley",      twitter: "x.com/ashley",      origin: "RD", registeredBy: "Admin" },
+      { id: 6,  name: "Bernard Herzog I",     role: "Legacy Paradigm...",      email: "eric.balistrer@hotmail.com", phone: "522-837-6806", birthdate: undefined,      linkedin: "linkedin.com/in/bernard",     instagram: "instagram.com/bernard",     twitter: "x.com/bernard",     origin: "RD", registeredBy: "Editor" },
+      { id: 7,  name: "Billie Sanford",       role: "Dynamic Security...",     email: "aurelia3@yahoo.com",         phone: "404-511-4890", birthdate: undefined,      linkedin: "linkedin.com/in/billie",      instagram: "instagram.com/billie",      twitter: "x.com/billie",      origin: "RD", registeredBy: "Admin" },
+      { id: 8,  name: "Christina Jacobi",     role: "Corporate Functi...",     email: "kyra_koepp@gmail.com",       phone: "850-480-3470", birthdate: "17-07-2025",   linkedin: "linkedin.com/in/christina",   instagram: "instagram.com/christina",   twitter: "x.com/christina",   origin: "RD", registeredBy: "Admin" },
+      { id: 9,  name: "Claude Nicolas",       role: "International Crea...",   email: "lon.gaylord18@hotmail.com",  phone: "966-395-0794", birthdate: "22-07-2025",   linkedin: "linkedin.com/in/claude",      instagram: "instagram.com/claude",      twitter: "x.com/claude",      origin: "RD", registeredBy: "Editor" },
+      { id: 10, name: "Courtney Bogisich DVM",role: "Senior Response...",      email: "leopold.kreiger56@gmail.com",phone: "757-748-6509", birthdate: undefined,      linkedin: "linkedin.com/in/courtney",    instagram: "instagram.com/courtney",    twitter: "x.com/courtney",    origin: "RD", registeredBy: "Admin" },
+      { id: 11, name: "Daisy Hartmann",       role: "Product Manager",         email: "daisy.h@gmail.com",          phone: "312-555-0101", birthdate: "05-03-1990",   linkedin: "linkedin.com/in/daisy",       instagram: "instagram.com/daisy",       twitter: "x.com/daisy",       origin: "RD", registeredBy: "Admin" },
+      { id: 12, name: "Eduardo Ferreira",     role: "VP de Vendas",            email: "edu.ferreira@gmail.com",     phone: "11-98765-4321", birthdate: undefined,     linkedin: "linkedin.com/in/eduardo",     instagram: "instagram.com/eduardo",     twitter: "x.com/eduardo",     origin: "RD", registeredBy: "Editor" },
     ],
   },
   {
@@ -61,6 +65,7 @@ const mockAccounts: AccountDetail[] = [
     origin: "RD",
     playsAtivas: 1,
     dossierCount: 2,
+    registeredBy: "Editor",
     contactsList: [],
   },
   {
@@ -73,11 +78,12 @@ const mockAccounts: AccountDetail[] = [
     origin: "Maestro",
     playsAtivas: 5,
     dossierCount: 3,
+    registeredBy: "Admin",
     contactsList: [
-      { id: 13, name: "Pedro Alves",    role: "CEO",                email: "pedro@maestroabm.com",  phone: "(11) 8888-0001", birthdate: "10-01-1985", linkedin: "linkedin.com/in/pedroalves",  instagram: "instagram.com/pedroalves",  twitter: "x.com/pedroalves",  origin: "Maestro" },
-      { id: 14, name: "Sofia Ramos",    role: "Head de Marketing",  email: "sofia@maestroabm.com",  phone: "(11) 8888-0002", birthdate: undefined,    linkedin: "linkedin.com/in/sofiaramos",  instagram: "instagram.com/sofiaramos",  twitter: "x.com/sofiaramos",  origin: "Maestro" },
-      { id: 15, name: "Thiago Costa",   role: "CTO",                email: "thiago@maestroabm.com", phone: "(11) 8888-0003", birthdate: "22-06-1990", linkedin: "linkedin.com/in/thiagocosta", instagram: "instagram.com/thiagocosta", twitter: "x.com/thiagocosta", origin: "Maestro" },
-      { id: 16, name: "Laura Neves",    role: "Analista de Vendas", email: "laura@maestroabm.com",  phone: "(11) 8888-0004", birthdate: undefined,    linkedin: "linkedin.com/in/lauraneves",  instagram: "instagram.com/lauraneves",  twitter: "x.com/lauraneves",  origin: "Maestro" },
+      { id: 13, name: "Pedro Alves",    role: "CEO",                email: "pedro@maestroabm.com",  phone: "(11) 8888-0001", birthdate: "10-01-1985", linkedin: "linkedin.com/in/pedroalves",  instagram: "instagram.com/pedroalves",  twitter: "x.com/pedroalves",  origin: "Maestro", registeredBy: "Admin" },
+      { id: 14, name: "Sofia Ramos",    role: "Head de Marketing",  email: "sofia@maestroabm.com",  phone: "(11) 8888-0002", birthdate: undefined,    linkedin: "linkedin.com/in/sofiaramos",  instagram: "instagram.com/sofiaramos",  twitter: "x.com/sofiaramos",  origin: "Maestro", registeredBy: "Admin" },
+      { id: 15, name: "Thiago Costa",   role: "CTO",                email: "thiago@maestroabm.com", phone: "(11) 8888-0003", birthdate: "22-06-1990", linkedin: "linkedin.com/in/thiagocosta", instagram: "instagram.com/thiagocosta", twitter: "x.com/thiagocosta", origin: "Maestro", registeredBy: "Admin" },
+      { id: 16, name: "Laura Neves",    role: "Analista de Vendas", email: "laura@maestroabm.com",  phone: "(11) 8888-0004", birthdate: undefined,    linkedin: "linkedin.com/in/lauraneves",  instagram: "instagram.com/lauraneves",  twitter: "x.com/lauraneves",  origin: "Maestro", registeredBy: "Admin" },
     ],
   },
   {
@@ -90,44 +96,45 @@ const mockAccounts: AccountDetail[] = [
     origin: "Maestro",
     playsAtivas: 2,
     dossierCount: 4,
+    registeredBy: "Admin",
     contactsList: [
-      { id: 17, name: "Miguel Salabarez",   role: "CEO",                       email: "miguel.salabarez@nubank.com.br",    phone: "(11) 9 9001-0001", birthdate: "12-03-1978", linkedin: "linkedin.com/in/miguelsalabarez",   instagram: "instagram.com/miguels",    twitter: "x.com/miguels",    origin: "Maestro"   },
-      { id: 18, name: "Carlos Henrique",    role: "Head de Marketing",         email: "carlos.henrique@nubank.com.br",     phone: "(11) 9 9001-0002", birthdate: undefined,    linkedin: "linkedin.com/in/carloshenrique",   instagram: "instagram.com/carlosh",    twitter: "x.com/carlosh",    origin: "Maestro"   },
-      { id: 19, name: "Mariana Oliveira",   role: "CFO",                       email: "mariana.oliveira@nubank.com.br",    phone: "(11) 9 9001-0003", birthdate: "30-11-1985", linkedin: "linkedin.com/in/marianaoli",        instagram: "instagram.com/marianao",   twitter: "x.com/marianao",   origin: "Maestro"   },
-      { id: 20, name: "Lucas Fontanelli",   role: "Analista de Vendas",        email: "lucas.fontanelli@nubank.com.br",    phone: "(11) 9 9001-0004", birthdate: undefined,    linkedin: "linkedin.com/in/lucasfont",         instagram: "instagram.com/lucasf",     twitter: "x.com/lucasf",     origin: "Maestro"   },
-      { id: 21, name: "Aline Macedo",       role: "Executivo de Vendas",       email: "aline.macedo@nubank.com.br",        phone: "(11) 9 9001-0005", birthdate: undefined,    linkedin: "linkedin.com/in/alinemacedo",       instagram: "instagram.com/alinem",     twitter: "x.com/alinem",     origin: "Maestro"   },
-      { id: 22, name: "Gustavo Silva",      role: "Executivo de Vendas",       email: "gustavo.silva@nubank.com.br",       phone: "(11) 9 9001-0006", birthdate: undefined,    linkedin: "linkedin.com/in/gustavosilva",      instagram: "instagram.com/gustavos",   twitter: "x.com/gustavos",   origin: "Maestro"   },
-      { id: 23, name: "Silmara Vieira",     role: "Analista de Marketing",     email: "silmara.vieira@nubank.com.br",      phone: "(11) 9 9001-0007", birthdate: "04-09-1992", linkedin: "linkedin.com/in/silmarav",          instagram: "instagram.com/silmarav",   twitter: "x.com/silmarav",   origin: "Maestro"   },
-      { id: 24, name: "Fernanda Garcia",    role: "Pré-vendas",                email: "fernanda.garcia@nubank.com.br",     phone: "(11) 9 9001-0008", birthdate: undefined,    linkedin: "linkedin.com/in/fernandagarcia",    instagram: "instagram.com/fernandg",   twitter: "x.com/fernandg",   origin: "Maestro"   },
-      { id: 25, name: "Rafael Brito",       role: "VP de Produto",             email: "rafael.brito@nubank.com.br",        phone: "(11) 9 9001-0009", birthdate: "15-06-1983", linkedin: "linkedin.com/in/rafaelbrito",        instagram: "instagram.com/rafaelb",    twitter: "x.com/rafaelb",    origin: "LinkedIn"  },
-      { id: 26, name: "Camila Teixeira",    role: "Product Manager",           email: "camila.teixeira@nubank.com.br",     phone: "(11) 9 9001-0010", birthdate: undefined,    linkedin: "linkedin.com/in/camilateixeira",    instagram: "instagram.com/camilat",    twitter: "x.com/camilat",    origin: "LinkedIn"  },
-      { id: 27, name: "Bruno Castilho",     role: "Engenheiro de Software",    email: "bruno.castilho@nubank.com.br",      phone: "(11) 9 9001-0011", birthdate: "22-01-1990", linkedin: "linkedin.com/in/brunocastilho",      instagram: "instagram.com/brunoc",     twitter: "x.com/brunoc",     origin: "Indicação" },
-      { id: 28, name: "Patrícia Munhoz",    role: "Head de RH",                email: "patricia.munhoz@nubank.com.br",     phone: "(11) 9 9001-0012", birthdate: undefined,    linkedin: "linkedin.com/in/patriciamunhoz",    instagram: "instagram.com/patriciam",  twitter: "x.com/patriciam",  origin: "Maestro"   },
-      { id: 29, name: "Diego Saraiva",      role: "Cientista de Dados",        email: "diego.saraiva@nubank.com.br",       phone: "(11) 9 9001-0013", birthdate: "07-04-1994", linkedin: "linkedin.com/in/diegosaraiva",       instagram: "instagram.com/diegos",     twitter: "x.com/diegos",     origin: "LinkedIn"  },
-      { id: 30, name: "Juliana Prado",      role: "Coordenadora Comercial",    email: "juliana.prado@nubank.com.br",       phone: "(11) 9 9001-0014", birthdate: undefined,    linkedin: "linkedin.com/in/julianaprado",       instagram: "instagram.com/julianap",   twitter: "x.com/julianap",   origin: "Inbound"   },
-      { id: 31, name: "André Roque",        role: "DevOps Engineer",           email: "andre.roque@nubank.com.br",         phone: "(11) 9 9001-0015", birthdate: "19-09-1988", linkedin: "linkedin.com/in/andreroque",         instagram: "instagram.com/andrer",     twitter: "x.com/andrer",     origin: "LinkedIn"  },
-      { id: 32, name: "Isabela Fonseca",    role: "Designer UX",               email: "isabela.fonseca@nubank.com.br",     phone: "(11) 9 9001-0016", birthdate: undefined,    linkedin: "linkedin.com/in/isabelafonseca",    instagram: "instagram.com/isabelaf",   twitter: "x.com/isabelaf",   origin: "Indicação" },
-      { id: 33, name: "Mateus Loureiro",    role: "Arquiteto de Soluções",     email: "mateus.loureiro@nubank.com.br",     phone: "(11) 9 9001-0017", birthdate: "03-12-1986", linkedin: "linkedin.com/in/mateusloureiro",    instagram: "instagram.com/mateusl",    twitter: "x.com/mateusl",    origin: "Maestro"   },
-      { id: 34, name: "Larissa Campos",     role: "Analista Financeiro",       email: "larissa.campos@nubank.com.br",      phone: "(11) 9 9001-0018", birthdate: undefined,    linkedin: "linkedin.com/in/larissacampos",     instagram: "instagram.com/larissac",   twitter: "x.com/larissac",   origin: "Inbound"   },
-      { id: 35, name: "Felipe Neto",        role: "COO",                       email: "felipe.neto@nubank.com.br",         phone: "(11) 9 9001-0019", birthdate: "28-07-1980", linkedin: "linkedin.com/in/felipeneto",         instagram: "instagram.com/felipen",    twitter: "x.com/felipen",    origin: "Maestro"   },
-      { id: 36, name: "Vanessa Correia",    role: "Gerente de Projetos",       email: "vanessa.correia@nubank.com.br",     phone: "(11) 9 9001-0020", birthdate: undefined,    linkedin: "linkedin.com/in/vanessacorreia",    instagram: "instagram.com/vanessac",   twitter: "x.com/vanessac",   origin: "LinkedIn"  },
-      { id: 37, name: "Rodrigo Mendes",     role: "Gerente Comercial",         email: "rodrigo.mendes@nubank.com.br",      phone: "(11) 9 9001-0021", birthdate: "11-02-1987", linkedin: "linkedin.com/in/rodrigomendes",      instagram: "instagram.com/rodrigom",   twitter: "x.com/rodrigom",   origin: "Maestro"   },
-      { id: 38, name: "Amanda Rocha",       role: "Especialista de Produto",   email: "amanda.rocha@nubank.com.br",        phone: "(11) 9 9001-0022", birthdate: undefined,    linkedin: "linkedin.com/in/amandarocha",        instagram: "instagram.com/amandar",    twitter: "x.com/amandar",    origin: "Indicação" },
-      { id: 39, name: "Leandro Pinheiro",   role: "Scrum Master",              email: "leandro.pinheiro@nubank.com.br",    phone: "(11) 9 9001-0023", birthdate: "25-05-1991", linkedin: "linkedin.com/in/leandropinheiro",    instagram: "instagram.com/leandrop",   twitter: "x.com/leandrop",   origin: "LinkedIn"  },
-      { id: 40, name: "Débora Azevedo",     role: "SDR",                       email: "debora.azevedo@nubank.com.br",      phone: "(11) 9 9001-0024", birthdate: undefined,    linkedin: "linkedin.com/in/deboraazevedo",      instagram: "instagram.com/debora.a",   twitter: "x.com/debora.a",   origin: "Inbound"   },
-      { id: 41, name: "Henrique Bastos",    role: "Diretor de TI",             email: "henrique.bastos@nubank.com.br",     phone: "(11) 9 9001-0025", birthdate: "14-08-1979", linkedin: "linkedin.com/in/henriquebastos",    instagram: "instagram.com/henriqueb",  twitter: "x.com/henriqueb",  origin: "Maestro"   },
-      { id: 42, name: "Natália Freitas",    role: "Estrategista de Conteúdo",  email: "natalia.freitas@nubank.com.br",     phone: "(11) 9 9001-0026", birthdate: undefined,    linkedin: "linkedin.com/in/nataliafreitas",    instagram: "instagram.com/nataliaf",   twitter: "x.com/nataliaf",   origin: "Inbound"   },
-      { id: 43, name: "Paulo Albuquerque",  role: "Consultor de Negócios",     email: "paulo.albuquerque@nubank.com.br",   phone: "(11) 9 9001-0027", birthdate: "09-10-1984", linkedin: "linkedin.com/in/pauloalbuquerque",  instagram: "instagram.com/pauloa",     twitter: "x.com/pauloa",     origin: "Evento"    },
-      { id: 44, name: "Simone Tavares",     role: "Gerente de Marketing",      email: "simone.tavares@nubank.com.br",      phone: "(11) 9 9001-0028", birthdate: undefined,    linkedin: "linkedin.com/in/simonetavares",     instagram: "instagram.com/simonet",    twitter: "x.com/simonet",    origin: "Maestro"   },
-      { id: 45, name: "Roberto Cunha",      role: "Agile Coach",               email: "roberto.cunha@nubank.com.br",       phone: "(11) 9 9001-0029", birthdate: "17-03-1989", linkedin: "linkedin.com/in/robertocunha",       instagram: "instagram.com/robertoc",   twitter: "x.com/robertoc",   origin: "LinkedIn"  },
-      { id: 46, name: "Cláudia Vargas",     role: "Product Owner",             email: "claudia.vargas@nubank.com.br",      phone: "(11) 9 9001-0030", birthdate: undefined,    linkedin: "linkedin.com/in/claudiavargas",     instagram: "instagram.com/claudiav",   twitter: "x.com/claudiav",   origin: "Indicação" },
-      { id: 47, name: "Sérgio Monteiro",    role: "VP de Tecnologia",          email: "sergio.monteiro@nubank.com.br",     phone: "(11) 9 9001-0031", birthdate: "06-06-1977", linkedin: "linkedin.com/in/sergiomonteiro",    instagram: "instagram.com/sergiom",    twitter: "x.com/sergiom",    origin: "Maestro"   },
-      { id: 48, name: "Priscila Barbosa",   role: "Analista de TI",            email: "priscila.barbosa@nubank.com.br",    phone: "(11) 9 9001-0032", birthdate: undefined,    linkedin: "linkedin.com/in/priscilabarbosa",  instagram: "instagram.com/priscilb",   twitter: "x.com/priscilb",   origin: "Inbound"   },
-      { id: 49, name: "Marcelo Andrade",    role: "Diretor Comercial",         email: "marcelo.andrade@nubank.com.br",     phone: "(11) 9 9001-0033", birthdate: "23-11-1981", linkedin: "linkedin.com/in/marceloandrade",    instagram: "instagram.com/marceloa",   twitter: "x.com/marceloa",   origin: "Maestro"   },
-      { id: 50, name: "Adriana Melo",       role: "Consultora de Vendas",      email: "adriana.melo@nubank.com.br",        phone: "(11) 9 9001-0034", birthdate: undefined,    linkedin: "linkedin.com/in/adrianamelo",        instagram: "instagram.com/adrianam",   twitter: "x.com/adrianam",   origin: "Evento"    },
-      { id: 51, name: "Fábio Carvalho",     role: "Desenvolvedor Senior",      email: "fabio.carvalho@nubank.com.br",      phone: "(11) 9 9001-0035", birthdate: "01-04-1993", linkedin: "linkedin.com/in/fabiocarvalho",     instagram: "instagram.com/fabioc",     twitter: "x.com/fabioc",     origin: "LinkedIn"  },
-      { id: 52, name: "Tatiane Ribeiro",    role: "Coordenadora de Marketing", email: "tatiane.ribeiro@nubank.com.br",     phone: "(11) 9 9001-0036", birthdate: undefined,    linkedin: "linkedin.com/in/tatianeribeiro",    instagram: "instagram.com/tatianer",   twitter: "x.com/tatianer",   origin: "Inbound"   },
-      { id: 53, name: "Leonardo Pires",     role: "CTO",                       email: "leonardo.pires@nubank.com.br",      phone: "(11) 9 9001-0037", birthdate: "30-08-1975", linkedin: "linkedin.com/in/leonardopires",     instagram: "instagram.com/leonardop",  twitter: "x.com/leonardop",  origin: "Maestro"   },
+      { id: 17, name: "Miguel Salabarez",   role: "CEO",                       email: "miguel.salabarez@nubank.com.br",    phone: "(11) 9 9001-0001", birthdate: "12-03-1978", linkedin: "linkedin.com/in/miguelsalabarez",   instagram: "instagram.com/miguels",    twitter: "x.com/miguels",    origin: "Maestro", registeredBy: "Admin"   },
+      { id: 18, name: "Carlos Henrique",    role: "Head de Marketing",         email: "carlos.henrique@nubank.com.br",     phone: "(11) 9 9001-0002", birthdate: undefined,    linkedin: "linkedin.com/in/carloshenrique",   instagram: "instagram.com/carlosh",    twitter: "x.com/carlosh",    origin: "Maestro", registeredBy: "Admin"   },
+      { id: 19, name: "Mariana Oliveira",   role: "CFO",                       email: "mariana.oliveira@nubank.com.br",    phone: "(11) 9 9001-0003", birthdate: "30-11-1985", linkedin: "linkedin.com/in/marianaoli",        instagram: "instagram.com/marianao",   twitter: "x.com/marianao",   origin: "Maestro", registeredBy: "Editor"   },
+      { id: 20, name: "Lucas Fontanelli",   role: "Analista de Vendas",        email: "lucas.fontanelli@nubank.com.br",    phone: "(11) 9 9001-0004", birthdate: undefined,    linkedin: "linkedin.com/in/lucasfont",         instagram: "instagram.com/lucasf",     twitter: "x.com/lucasf",     origin: "Maestro", registeredBy: "Admin"   },
+      { id: 21, name: "Aline Macedo",       role: "Executivo de Vendas",       email: "aline.macedo@nubank.com.br",        phone: "(11) 9 9001-0005", birthdate: undefined,    linkedin: "linkedin.com/in/alinemacedo",       instagram: "instagram.com/alinem",     twitter: "x.com/alinem",     origin: "Maestro", registeredBy: "Admin"   },
+      { id: 22, name: "Gustavo Silva",      role: "Executivo de Vendas",       email: "gustavo.silva@nubank.com.br",       phone: "(11) 9 9001-0006", birthdate: undefined,    linkedin: "linkedin.com/in/gustavosilva",      instagram: "instagram.com/gustavos",   twitter: "x.com/gustavos",   origin: "Maestro", registeredBy: "Admin"   },
+      { id: 23, name: "Silmara Vieira",     role: "Analista de Marketing",     email: "silmara.vieira@nubank.com.br",      phone: "(11) 9 9001-0007", birthdate: "04-09-1992", linkedin: "linkedin.com/in/silmarav",          instagram: "instagram.com/silmarav",   twitter: "x.com/silmarav",   origin: "Maestro", registeredBy: "Editor"   },
+      { id: 24, name: "Fernanda Garcia",    role: "Pré-vendas",                email: "fernanda.garcia@nubank.com.br",     phone: "(11) 9 9001-0008", birthdate: undefined,    linkedin: "linkedin.com/in/fernandagarcia",    instagram: "instagram.com/fernandg",   twitter: "x.com/fernandg",   origin: "Maestro", registeredBy: "Admin"   },
+      { id: 25, name: "Rafael Brito",       role: "VP de Produto",             email: "rafael.brito@nubank.com.br",        phone: "(11) 9 9001-0009", birthdate: "15-06-1983", linkedin: "linkedin.com/in/rafaelbrito",        instagram: "instagram.com/rafaelb",    twitter: "x.com/rafaelb",    origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 26, name: "Camila Teixeira",    role: "Product Manager",           email: "camila.teixeira@nubank.com.br",     phone: "(11) 9 9001-0010", birthdate: undefined,    linkedin: "linkedin.com/in/camilateixeira",    instagram: "instagram.com/camilat",    twitter: "x.com/camilat",    origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 27, name: "Bruno Castilho",     role: "Engenheiro de Software",    email: "bruno.castilho@nubank.com.br",      phone: "(11) 9 9001-0011", birthdate: "22-01-1990", linkedin: "linkedin.com/in/brunocastilho",      instagram: "instagram.com/brunoc",     twitter: "x.com/brunoc",     origin: "Indicação", registeredBy: "Editor" },
+      { id: 28, name: "Patrícia Munhoz",    role: "Head de RH",                email: "patricia.munhoz@nubank.com.br",     phone: "(11) 9 9001-0012", birthdate: undefined,    linkedin: "linkedin.com/in/patriciamunhoz",    instagram: "instagram.com/patriciam",  twitter: "x.com/patriciam",  origin: "Maestro", registeredBy: "Admin"   },
+      { id: 29, name: "Diego Saraiva",      role: "Cientista de Dados",        email: "diego.saraiva@nubank.com.br",       phone: "(11) 9 9001-0013", birthdate: "07-04-1994", linkedin: "linkedin.com/in/diegosaraiva",       instagram: "instagram.com/diegos",     twitter: "x.com/diegos",     origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 30, name: "Juliana Prado",      role: "Coordenadora Comercial",    email: "juliana.prado@nubank.com.br",       phone: "(11) 9 9001-0014", birthdate: undefined,    linkedin: "linkedin.com/in/julianaprado",       instagram: "instagram.com/julianap",   twitter: "x.com/julianap",   origin: "Inbound", registeredBy: "Editor"   },
+      { id: 31, name: "André Roque",        role: "DevOps Engineer",           email: "andre.roque@nubank.com.br",         phone: "(11) 9 9001-0015", birthdate: "19-09-1988", linkedin: "linkedin.com/in/andreroque",         instagram: "instagram.com/andrer",     twitter: "x.com/andrer",     origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 32, name: "Isabela Fonseca",    role: "Designer UX",               email: "isabela.fonseca@nubank.com.br",     phone: "(11) 9 9001-0016", birthdate: undefined,    linkedin: "linkedin.com/in/isabelafonseca",    instagram: "instagram.com/isabelaf",   twitter: "x.com/isabelaf",   origin: "Indicação", registeredBy: "Admin" },
+      { id: 33, name: "Mateus Loureiro",    role: "Arquiteto de Soluções",     email: "mateus.loureiro@nubank.com.br",     phone: "(11) 9 9001-0017", birthdate: "03-12-1986", linkedin: "linkedin.com/in/mateusloureiro",    instagram: "instagram.com/mateusl",    twitter: "x.com/mateusl",    origin: "Maestro", registeredBy: "Admin"   },
+      { id: 34, name: "Larissa Campos",     role: "Analista Financeiro",       email: "larissa.campos@nubank.com.br",      phone: "(11) 9 9001-0018", birthdate: undefined,    linkedin: "linkedin.com/in/larissacampos",     instagram: "instagram.com/larissac",   twitter: "x.com/larissac",   origin: "Inbound", registeredBy: "Editor"   },
+      { id: 35, name: "Felipe Neto",        role: "COO",                       email: "felipe.neto@nubank.com.br",         phone: "(11) 9 9001-0019", birthdate: "28-07-1980", linkedin: "linkedin.com/in/felipeneto",         instagram: "instagram.com/felipen",    twitter: "x.com/felipen",    origin: "Maestro", registeredBy: "Admin"   },
+      { id: 36, name: "Vanessa Correia",    role: "Gerente de Projetos",       email: "vanessa.correia@nubank.com.br",     phone: "(11) 9 9001-0020", birthdate: undefined,    linkedin: "linkedin.com/in/vanessacorreia",    instagram: "instagram.com/vanessac",   twitter: "x.com/vanessac",   origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 37, name: "Rodrigo Mendes",     role: "Gerente Comercial",         email: "rodrigo.mendes@nubank.com.br",      phone: "(11) 9 9001-0021", birthdate: "11-02-1987", linkedin: "linkedin.com/in/rodrigomendes",      instagram: "instagram.com/rodrigom",   twitter: "x.com/rodrigom",   origin: "Maestro", registeredBy: "Admin"   },
+      { id: 38, name: "Amanda Rocha",       role: "Especialista de Produto",   email: "amanda.rocha@nubank.com.br",        phone: "(11) 9 9001-0022", birthdate: undefined,    linkedin: "linkedin.com/in/amandarocha",        instagram: "instagram.com/amandar",    twitter: "x.com/amandar",    origin: "Indicação", registeredBy: "Editor" },
+      { id: 39, name: "Leandro Pinheiro",   role: "Scrum Master",              email: "leandro.pinheiro@nubank.com.br",    phone: "(11) 9 9001-0023", birthdate: "25-05-1991", linkedin: "linkedin.com/in/leandropinheiro",    instagram: "instagram.com/leandrop",   twitter: "x.com/leandrop",   origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 40, name: "Débora Azevedo",     role: "SDR",                       email: "debora.azevedo@nubank.com.br",      phone: "(11) 9 9001-0024", birthdate: undefined,    linkedin: "linkedin.com/in/deboraazevedo",      instagram: "instagram.com/debora.a",   twitter: "x.com/debora.a",   origin: "Inbound", registeredBy: "Admin"   },
+      { id: 41, name: "Henrique Bastos",    role: "Diretor de TI",             email: "henrique.bastos@nubank.com.br",     phone: "(11) 9 9001-0025", birthdate: "14-08-1979", linkedin: "linkedin.com/in/henriquebastos",    instagram: "instagram.com/henriqueb",  twitter: "x.com/henriqueb",  origin: "Maestro", registeredBy: "Admin"   },
+      { id: 42, name: "Natália Freitas",    role: "Estrategista de Conteúdo",  email: "natalia.freitas@nubank.com.br",     phone: "(11) 9 9001-0026", birthdate: undefined,    linkedin: "linkedin.com/in/nataliafreitas",    instagram: "instagram.com/nataliaf",   twitter: "x.com/nataliaf",   origin: "Inbound", registeredBy: "Editor"   },
+      { id: 43, name: "Paulo Albuquerque",  role: "Consultor de Negócios",     email: "paulo.albuquerque@nubank.com.br",   phone: "(11) 9 9001-0027", birthdate: "09-10-1984", linkedin: "linkedin.com/in/pauloalbuquerque",  instagram: "instagram.com/pauloa",     twitter: "x.com/pauloa",     origin: "Evento", registeredBy: "Admin"    },
+      { id: 44, name: "Simone Tavares",     role: "Gerente de Marketing",      email: "simone.tavares@nubank.com.br",      phone: "(11) 9 9001-0028", birthdate: undefined,    linkedin: "linkedin.com/in/simonetavares",     instagram: "instagram.com/simonet",    twitter: "x.com/simonet",    origin: "Maestro", registeredBy: "Admin"   },
+      { id: 45, name: "Roberto Cunha",      role: "Agile Coach",               email: "roberto.cunha@nubank.com.br",       phone: "(11) 9 9001-0029", birthdate: "17-03-1989", linkedin: "linkedin.com/in/robertocunha",       instagram: "instagram.com/robertoc",   twitter: "x.com/robertoc",   origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 46, name: "Cláudia Vargas",     role: "Product Owner",             email: "claudia.vargas@nubank.com.br",      phone: "(11) 9 9001-0030", birthdate: undefined,    linkedin: "linkedin.com/in/claudiavargas",     instagram: "instagram.com/claudiav",   twitter: "x.com/claudiav",   origin: "Indicação", registeredBy: "Editor" },
+      { id: 47, name: "Sérgio Monteiro",    role: "VP de Tecnologia",          email: "sergio.monteiro@nubank.com.br",     phone: "(11) 9 9001-0031", birthdate: "06-06-1977", linkedin: "linkedin.com/in/sergiomonteiro",    instagram: "instagram.com/sergiom",    twitter: "x.com/sergiom",    origin: "Maestro", registeredBy: "Admin"   },
+      { id: 48, name: "Priscila Barbosa",   role: "Analista de TI",            email: "priscila.barbosa@nubank.com.br",    phone: "(11) 9 9001-0032", birthdate: undefined,    linkedin: "linkedin.com/in/priscilabarbosa",  instagram: "instagram.com/priscilb",   twitter: "x.com/priscilb",   origin: "Inbound", registeredBy: "Admin"   },
+      { id: 49, name: "Marcelo Andrade",    role: "Diretor Comercial",         email: "marcelo.andrade@nubank.com.br",     phone: "(11) 9 9001-0033", birthdate: "23-11-1981", linkedin: "linkedin.com/in/marceloandrade",    instagram: "instagram.com/marceloa",   twitter: "x.com/marceloa",   origin: "Maestro", registeredBy: "Admin"   },
+      { id: 50, name: "Adriana Melo",       role: "Consultora de Vendas",      email: "adriana.melo@nubank.com.br",        phone: "(11) 9 9001-0034", birthdate: undefined,    linkedin: "linkedin.com/in/adrianamelo",        instagram: "instagram.com/adrianam",   twitter: "x.com/adrianam",   origin: "Evento", registeredBy: "Editor"    },
+      { id: 51, name: "Fábio Carvalho",     role: "Desenvolvedor Senior",      email: "fabio.carvalho@nubank.com.br",      phone: "(11) 9 9001-0035", birthdate: "01-04-1993", linkedin: "linkedin.com/in/fabiocarvalho",     instagram: "instagram.com/fabioc",     twitter: "x.com/fabioc",     origin: "LinkedIn", registeredBy: "Admin"  },
+      { id: 52, name: "Tatiane Ribeiro",    role: "Coordenadora de Marketing", email: "tatiane.ribeiro@nubank.com.br",     phone: "(11) 9 9001-0036", birthdate: undefined,    linkedin: "linkedin.com/in/tatianeribeiro",    instagram: "instagram.com/tatianer",   twitter: "x.com/tatianer",   origin: "Inbound", registeredBy: "Admin"   },
+      { id: 53, name: "Leonardo Pires",     role: "CTO",                       email: "leonardo.pires@nubank.com.br",      phone: "(11) 9 9001-0037", birthdate: "30-08-1975", linkedin: "linkedin.com/in/leonardopires",     instagram: "instagram.com/leonardop",  twitter: "x.com/leonardop",  origin: "Maestro", registeredBy: "Admin"   },
     ],
   },
   {
@@ -140,6 +147,7 @@ const mockAccounts: AccountDetail[] = [
     origin: "LinkedIn",
     playsAtivas: 12,
     dossierCount: 8,
+    registeredBy: "Editor",
     contactsList: contacts200,
   },
 ];
@@ -151,7 +159,8 @@ const mockDossiers = [
     id: 1,
     kind: "conta",
     title: "Reunião de alinhamento Q1",
-    date: "10/01/2026",
+    createdAt: "10/01/2026",
+    updatedAt: "10/01/2026",
     author: "Pedro Alves",
     type: "Reunião",
     stage: "Descoberta",
@@ -162,7 +171,8 @@ const mockDossiers = [
     id: 2,
     kind: "contato",
     title: "Mapeamento de stakeholders",
-    date: "22/01/2026",
+    createdAt: "22/01/2026",
+    updatedAt: "23/01/2026",
     author: "Sofia Ramos",
     type: "Sale",
     stage: "Qualificação",
@@ -173,7 +183,8 @@ const mockDossiers = [
     id: 3,
     kind: "conta",
     title: "Follow-up pós-demo",
-    date: "05/02/2026",
+    createdAt: "05/02/2026",
+    updatedAt: "06/02/2026",
     author: "Thiago Costa",
     type: "Follow-up",
     stage: "Proposta",
@@ -184,7 +195,8 @@ const mockDossiers = [
     id: 4,
     kind: "contato",
     title: "Análise de compradores",
-    date: "18/02/2026",
+    createdAt: "18/02/2026",
+    updatedAt: "18/02/2026",
     author: "Laura Neves",
     type: "Relacionamento",
     stage: undefined,
@@ -524,7 +536,7 @@ function SegmentBody({
         {filteredD.length === 0 && (
           <p style={{ margin: 0, fontSize: 12, color: "#9B9B9B", textAlign: "center", padding: "8px 0" }}>Nenhum dossiê de conta encontrado</p>
         )}
-        {filteredD.map((d) => checkboxRow(selDossiers.has(d.id), () => toggleD(d.id), d.title, `${d.date} · ${d.author}`, d.id))}
+        {filteredD.map((d) => checkboxRow(selDossiers.has(d.id), () => toggleD(d.id), d.title, `${d.createdAt} · ${d.author}`, d.id))}
       </div>
 
       {/* ── Dossiês de Contato ── */}
@@ -534,7 +546,7 @@ function SegmentBody({
         {filteredCD.length === 0 && (
           <p style={{ margin: 0, fontSize: 12, color: "#9B9B9B", textAlign: "center", padding: "8px 0" }}>Nenhum dossiê de contato encontrado</p>
         )}
-        {filteredCD.map((d) => checkboxRow(selContactDossiers.has(d.id), () => toggleCD(d.id), d.title, `${d.date} · ${d.author}`, d.id))}
+        {filteredCD.map((d) => checkboxRow(selContactDossiers.has(d.id), () => toggleCD(d.id), d.title, `${d.createdAt} · ${d.author}`, d.id))}
       </div>
 
       {/* ── Contatos ── */}
@@ -564,11 +576,83 @@ function SegmentBody({
   );
 }
 
-function ContactsPanel({ account, onContactSelectionChange }: { account: AccountDetail; onContactSelectionChange?: (ids: Set<number>) => void }) {
-  const [activeTab, setActiveTab] = useState<"contatos" | "dossie" | "organograma" | "plays">("contatos");
+// ─── Account row actions menu ─────────────────────────────────────────────────
+
+function AccountActionsMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        title="Opções"
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        style={{ color: "#848484", background: "none", border: "none", cursor: "pointer", boxShadow: "none", padding: 0 }}
+      >
+        <MoreVertical size={14} />
+      </button>
+
+      {open && (
+        <>
+          <div
+            onClick={() => setOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 99 }}
+          />
+          <div style={{
+            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
+            background: "white", borderRadius: 10, border: "1px solid #E2E8F0",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: 160, overflow: "hidden",
+          }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, width: "100%",
+                padding: "10px 16px", background: "none", border: "none",
+                fontSize: 13, color: "#212A46", cursor: "pointer", textAlign: "left",
+                borderBottom: "1px solid #F1F5F9",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#F7F8FB")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+            >
+              <Pencil size={14} style={{ color: "#6B7280" }} />
+              Editar conta
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setOpen(false); alert('Exportação em desenvolvimento'); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, width: "100%",
+                padding: "10px 16px", background: "none", border: "none",
+                fontSize: 13, color: "#212A46", cursor: "pointer", textAlign: "left",
+                borderBottom: "1px solid #F1F5F9",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#F7F8FB")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+            >
+              <Download size={14} style={{ color: "#6B7280" }} />
+              Exportar
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, width: "100%",
+                padding: "10px 16px", background: "none", border: "none",
+                fontSize: 13, color: "#EF4444", cursor: "pointer", textAlign: "left",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#FEF2F2")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+            >
+              <Trash2 size={14} />
+              Excluir
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ContactsPanel({ account, onContactSelectionChange, onOpenPlay }: { account: AccountDetail; onContactSelectionChange?: (ids: Set<number>) => void; onOpenPlay?: (accountId: string, playId: string) => void }) {
+  const [activeTab, setActiveTab] = useState<"contatos" | "dossie" | "plays" | "organograma">("contatos");
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
   const [editingContact, setEditingContact] = useState<(typeof account.contactsList)[0] | null>(null);
   const [showDossieModal, setShowDossieModal] = useState(false);
@@ -579,19 +663,20 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
   const [contactPage, setContactPage] = useState(1);
   const CONTACT_PAGE_SIZE = 25;
 
-  const allRoles = Array.from(new Set(account.contactsList.map((c) => c.role))).sort();
-  const roleOptions = roleFilter.trim()
-    ? allRoles.filter((r) => r.toLowerCase().includes(roleFilter.toLowerCase()))
-    : allRoles;
-
   const filtered = account.contactsList.filter((c) => {
     const s = search.toLowerCase();
     const matchSearch =
       c.name.toLowerCase().includes(s) ||
       c.role.toLowerCase().includes(s) ||
-      c.email.toLowerCase().includes(s);
-    const matchRole = roleFilter.trim() === "" || c.role.toLowerCase() === roleFilter.toLowerCase();
-    return matchSearch && matchRole;
+      c.email.toLowerCase().includes(s) ||
+      c.phone.toLowerCase().includes(s) ||
+      (c.birthdate || "").toLowerCase().includes(s) ||
+      c.origin.toLowerCase().includes(s) ||
+      (c.registeredBy || "").toLowerCase().includes(s) ||
+      (c.linkedin || "").toLowerCase().includes(s) ||
+      (c.instagram || "").toLowerCase().includes(s) ||
+      (c.twitter || "").toLowerCase().includes(s);
+    return matchSearch;
   });
 
   const totalContactPages = Math.max(1, Math.ceil(filtered.length / CONTACT_PAGE_SIZE));
@@ -632,19 +717,19 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
 
   const tabs = [
     { key: "contatos", label: "Contatos" },
-    { key: "dossie",   label: "Dossiê" },
-    { key: "organograma", label: "Organograma" },
+    { key: "dossie",   label: "Dossiês" },
     { key: "plays",    label: "Plays" },
+    { key: "organograma", label: "Organograma" },
   ] as const;
 
   return (
     <tr>
-      <td colSpan={8} style={{ padding: 0 }}>
+      <td colSpan={10} style={{ padding: 0 }}>
         <div
           style={{ background: "#F7F8FB", borderTop: "1px solid #E2E8F0", borderLeft: "4px solid #FF5F39" }}
         >
           {/* Tab bar */}
-          <div style={{ display: "flex", alignItems: "stretch", borderBottom: "1px solid #E2E8F0", background: "white", paddingLeft: 24 }}>
+          <div style={{ display: "flex", alignItems: "stretch", borderBottom: "1px solid #E2E8F0", background: "white", paddingLeft: 68 }}>
             {tabs.map((tab) => {
               const active = activeTab === tab.key;
               return (
@@ -702,54 +787,6 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, boxShadow: "none" }}>
-                  <div style={{ position: "relative" }}>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 8, border: `1px solid ${roleDropdownOpen ? "#FF5F39" : "#9B9B9B"}`, background: "white", fontSize: 12, boxShadow: "none", transition: "border-color 0.15s" }}
-                      onClick={() => setRoleDropdownOpen((v) => !v)}
-                    >
-                      <input
-                        value={roleFilter}
-                        onChange={(e) => { setRoleFilter(e.target.value); setRoleDropdownOpen(true); setContactPage(1); }}
-                        onFocus={() => setRoleDropdownOpen(true)}
-                        placeholder="Filtrar por Cargo"
-                        style={{ outline: "none", border: "none", background: "transparent", fontSize: 12, color: roleFilter ? "#212A46" : "#9B9B9B", width: 110, cursor: "text" }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      {roleFilter ? (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setRoleFilter(""); setRoleDropdownOpen(false); setContactPage(1); }}
-                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", color: "#9B9B9B" }}
-                        >
-                          <X size={13} />
-                        </button>
-                      ) : (
-                        <ChevronDown size={14} style={{ color: "#9B9B9B", flexShrink: 0 }} />
-                      )}
-                    </div>
-                    {roleDropdownOpen && (
-                      <>
-                        {/* backdrop */}
-                        <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setRoleDropdownOpen(false)} />
-                        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100, background: "white", border: "1px solid #E2E8F0", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.10)", minWidth: 190, maxHeight: 220, overflowY: "auto" }}>
-                          {roleOptions.length === 0 ? (
-                            <div style={{ padding: "10px 14px", fontSize: 12, color: "#9B9B9B" }}>Nenhum cargo encontrado</div>
-                          ) : (
-                            roleOptions.map((r) => (
-                              <div
-                                key={r}
-                                onClick={() => { setRoleFilter(r === roleFilter ? "" : r); setRoleDropdownOpen(false); setContactPage(1); }}
-                                style={{ padding: "8px 14px", fontSize: 12, cursor: "pointer", color: r === roleFilter ? "#FF5F39" : "#212A46", background: r === roleFilter ? "rgba(255,95,57,0.06)" : "transparent", fontWeight: r === roleFilter ? 700 : 400, transition: "background 0.1s" }}
-                                onMouseEnter={(e) => { if (r !== roleFilter) (e.currentTarget as HTMLDivElement).style.background = "#F7F8FB"; }}
-                                onMouseLeave={(e) => { if (r !== roleFilter) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                              >
-                                {r}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
                   <button
                     style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 8, background: "#D5D9E6", fontSize: 12, fontWeight: 700, color: "#212A46", border: "none", cursor: "pointer", boxShadow: "none" }}
                   >
@@ -785,10 +822,10 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
                 </div>
               ) : (
                 <div style={{ maxHeight: 320, overflowY: "auto", overflowX: "auto" }}>
-                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", minWidth: 800 }}>
+                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", minWidth: 800, tableLayout: "fixed" }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
-                        <th style={{ paddingLeft: 24, paddingRight: 8, paddingTop: 8, paddingBottom: 8, textAlign: "left", width: 32 }}>
+                        <th style={{ paddingLeft: 44, paddingRight: 8, paddingTop: 8, paddingBottom: 8, textAlign: "left", width: 44 }}>
                           <input
                             type="checkbox"
                             style={{ borderRadius: 4 }}
@@ -797,14 +834,15 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
                             onChange={toggleAll}
                           />
                         </th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>NOME</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>CARGO</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>E-MAIL</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>TELEFONE</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>DATA DE NASC.</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>SOCIAL</th>
+                        <th style={{ padding: "8px 12px", width: "15%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>NOME</th>
+                        <th style={{ padding: "8px 12px", width: "15%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>CARGO</th>
+                        <th style={{ padding: "8px 12px", width: "15%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>E-MAIL</th>
+                        <th style={{ padding: "8px 12px", width: "10%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>TELEFONE</th>
+                        <th style={{ padding: "8px 12px", width: "10%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>DATA DE NASC.</th>
+                        <th style={{ padding: "8px 12px", width: "10%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>SOCIAL</th>
+                        <th style={{ padding: "8px 12px", width: "15%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>CADASTRADO POR</th>
                         <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>ORIGEM</th>
-                        <th style={{ padding: "8px 12px" }} />
+                        <th style={{ padding: "8px 12px", width: 40 }} />
                       </tr>
                     </thead>
                     <tbody>
@@ -813,10 +851,10 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
                           key={c.id}
                           style={{ borderBottom: i < pagedContacts.length - 1 ? "1px solid #E2E8F0" : "none", background: "white" }}
                         >
-                          <td style={{ paddingLeft: 24, paddingRight: 8, paddingTop: 10, paddingBottom: 10 }}>
+                          <td style={{ paddingLeft: 44, paddingRight: 8, paddingTop: 10, paddingBottom: 10, width: 44 }}>
                             <div style={{ flexShrink: 0, width: 16, height: 16 }} />
                           </td>
-                          <td style={{ padding: "10px 12px" }}>
+                          <td style={{ padding: "10px 12px", width: "15%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <input
                                 type="checkbox"
@@ -824,14 +862,19 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
                                 checked={selectedContacts.has(c.id)}
                                 onChange={() => toggleOne(c.id)}
                               />
-                              <span style={{ color: "#FF5F39", fontWeight: 600 }}>{c.name}</span>
+                              <span
+                                onClick={() => setEditingContact(c)}
+                                style={{ color: "#FF5F39", fontWeight: 600, cursor: "pointer" }}
+                              >
+                                {c.name}
+                              </span>
                             </div>
                           </td>
-                          <td style={{ padding: "10px 12px", color: "#333" }}>{c.role}</td>
-                          <td style={{ padding: "10px 12px", color: "#555" }}>{c.email}</td>
-                          <td style={{ padding: "10px 12px", color: "#555" }}>{c.phone}</td>
-                          <td style={{ padding: "10px 12px", color: "#555" }}>{c.birthdate || "—"}</td>
-                          <td style={{ padding: "10px 12px" }}>
+                          <td style={{ padding: "10px 12px", color: "#333", width: "15%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</td>
+                          <td style={{ padding: "10px 12px", color: "#555", width: "15%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.email}</td>
+                          <td style={{ padding: "10px 12px", color: "#555", width: "10%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.phone}</td>
+                          <td style={{ padding: "10px 12px", color: "#555", width: "10%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.birthdate || "—"}</td>
+                          <td style={{ padding: "10px 12px", width: "10%" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                               {[
                                 { title: "LinkedIn", href: c.linkedin },
@@ -845,7 +888,7 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
                                   rel="noreferrer"
                                   title={title}
                                   onClick={(e) => !href && e.preventDefault()}
-                                  style={{ color: "#A0AEC0", opacity: 1, transition: "opacity 0.15s", display: "inline-flex" }}
+                                  style={{ color: href ? "#FF5F39" : "#A0AEC0", opacity: 1, transition: "opacity 0.15s", display: "inline-flex" }}
                                 >
                                   {title === "LinkedIn" && (
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -869,8 +912,9 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
                               ))}
                             </div>
                           </td>
+                          <td style={{ padding: "10px 12px", color: "#555", width: "15%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.registeredBy || "—"}</td>
                           <td style={{ padding: "10px 12px", color: "#555" }}>{c.origin}</td>
-                          <td style={{ padding: "10px 12px" }}>
+                          <td style={{ padding: "10px 12px", width: 40 }}>
                             <ContactActionsMenu onEdit={() => setEditingContact(c)} />
                           </td>
                         </tr>
@@ -966,12 +1010,12 @@ function ContactsPanel({ account, onContactSelectionChange }: { account: Account
 
           {/* ── Organograma tab ── */}
           {activeTab === "organograma" && (
-            <OrgChart contacts={account.contactsList} />
+            <OrgChart contacts={account.contactsList} onEditContact={(c) => setEditingContact(c)} />
           )}
 
           {/* ── Plays tab ── */}
           {activeTab === "plays" && (
-            <PlaysTab account={account} />
+            <PlaysTab account={account} onOpenPlay={onOpenPlay} />
           )}
 
         </div>
@@ -1032,6 +1076,10 @@ function AccountRow({
   onToggleExpand,
   onToggleSelect,
   onContactSelectionChange,
+  onOpenPlay,
+  onSelectAccount,
+  onEditAccount,
+  onDeleteAccount,
 }: {
   account: AccountDetail;
   isExpanded: boolean;
@@ -1039,18 +1087,22 @@ function AccountRow({
   onToggleExpand: () => void;
   onToggleSelect: () => void;
   onContactSelectionChange?: (ids: Set<number>) => void;
+  onOpenPlay?: (accountId: string, playId: string) => void;
+  onSelectAccount: (account: AccountDetail) => void;
+  onEditAccount: () => void;
+  onDeleteAccount: () => void;
 }) {
   return (
     <>
       <tr
+        onClick={() => onSelectAccount(account)}
         style={{
           borderBottom: "1px solid #E2E8F0",
           background: isExpanded ? "#FFF7F5" : "white",
           cursor: "pointer",
           transition: "background 0.15s",
         }}
-      >
-        <td style={{ padding: "12px 8px 12px 20px", width: 32 }}>
+      >        <td style={{ padding: "12px 8px 12px 24px", width: 44 }}>
           <input
             type="checkbox"
             checked={isSelected}
@@ -1059,7 +1111,7 @@ function AccountRow({
             style={{ borderRadius: 4, cursor: "pointer" }}
           />
         </td>
-        <td style={{ padding: "12px" }} onClick={onToggleExpand}>
+        <td style={{ padding: "12px", width: "20%" }} onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ color: isExpanded ? "#FF5F39" : "#9B9B9B", transition: "color 0.15s" }}>
               {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -1067,25 +1119,25 @@ function AccountRow({
             <span style={{ fontWeight: 600, color: "#212A46", fontSize: 13 }}>{account.name}</span>
           </div>
         </td>
-        <td style={{ padding: "12px", fontSize: 13, color: "#555" }} onClick={onToggleExpand}>
+        <td style={{ padding: "12px", fontSize: 13, color: "#555" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Users size={13} style={{ color: "#9B9B9B" }} />
             <span>{account.contacts}</span>
           </div>
         </td>
-        <td style={{ padding: "12px", fontSize: 13, color: "#555" }} onClick={onToggleExpand}>
+        <td style={{ padding: "12px", fontSize: 13, color: "#555" }}>
           <span style={{ fontWeight: 600, color: "#212A46" }}>{(account as any).dossierCount ?? "—"}</span>
         </td>
-        <td style={{ padding: "12px", fontSize: 13, color: "#555" }} onClick={onToggleExpand}>
+        <td style={{ padding: "12px", fontSize: 13, color: "#555" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Zap size={13} style={{ color: "#F59E0B" }} />
             <span style={{ fontWeight: 600, color: "#212A46" }}>{(account as any).playsAtivas ?? account.playsCreated}</span>
           </div>
         </td>
-        <td style={{ padding: "12px", fontSize: 13, color: "#555" }} onClick={onToggleExpand}>
+        <td style={{ padding: "12px", fontSize: 13, color: "#555" }}>
           {account.industry || <span style={{ color: "#CBD5E0" }}>—</span>}
         </td>
-        <td style={{ padding: "12px", fontSize: 13 }} onClick={onToggleExpand}>
+        <td style={{ padding: "12px", fontSize: 13 }}>
           {account.website ? (
             <a
               href={account.website.startsWith("http") ? account.website : `https://${account.website}`}
@@ -1101,7 +1153,10 @@ function AccountRow({
             <span style={{ color: "#CBD5E0" }}>—</span>
           )}
         </td>
-        <td style={{ padding: "12px", fontSize: 13, color: "#555" }} onClick={onToggleExpand}>
+        <td style={{ padding: "12px", fontSize: 13, color: "#555" }}>
+          {account.registeredBy || "—"}
+        </td>
+        <td style={{ padding: "12px", fontSize: 13, color: "#555" }}>
           <span
             style={{
               borderRadius: 6,
@@ -1115,8 +1170,11 @@ function AccountRow({
             {account.origin}
           </span>
         </td>
+        <td style={{ padding: "12px", width: 40 }} onClick={(e) => e.stopPropagation()}>
+          <AccountActionsMenu onEdit={onEditAccount} onDelete={onDeleteAccount} />
+        </td>
       </tr>
-      {isExpanded && <ContactsPanel account={account} onContactSelectionChange={onContactSelectionChange} />}
+      {isExpanded && <ContactsPanel account={account} onContactSelectionChange={onContactSelectionChange} onOpenPlay={onOpenPlay} />}
     </>
   );
 }
@@ -1129,6 +1187,7 @@ type SegmentContact = {
   role: string;
   company: string;
   email: string;
+  registeredBy?: string;
 };
 
 type Segment = {
@@ -1146,11 +1205,11 @@ const mockSegments: Segment[] = [
     color: "#2563EB",
     description: "Contas enterprise da América Latina com alto potencial de expansão.",
     contacts: [
-      { id: 17, name: "Miguel Salabarez",  role: "CEO",               company: "Nubank",        email: "miguel.salabarez@nubank.com.br" },
-      { id: 35, name: "Felipe Neto",       role: "COO",               company: "Nubank",        email: "felipe.neto@nubank.com.br" },
-      { id: 13, name: "Pedro Alves",       role: "CEO",               company: "Maestro ABM",   email: "pedro@maestroabm.com" },
-      { id: 15, name: "Thiago Costa",      role: "CTO",               company: "Maestro ABM",   email: "thiago@maestroabm.com" },
-      { id: 1,  name: "Alexandra Gutmann", role: "Global Usability R.", company: "Empresa teste", email: "mer133@gmail.com" },
+      { id: 17, name: "Miguel Salabarez",  role: "CEO",               company: "Nubank",        email: "miguel.salabarez@nubank.com.br", registeredBy: "Admin" },
+      { id: 35, name: "Felipe Neto",       role: "COO",               company: "Nubank",        email: "felipe.neto@nubank.com.br", registeredBy: "Admin" },
+      { id: 13, name: "Pedro Alves",       role: "CEO",               company: "Maestro ABM",   email: "pedro@maestroabm.com", registeredBy: "Admin" },
+      { id: 15, name: "Thiago Costa",      role: "CTO",               company: "Maestro ABM",   email: "thiago@maestroabm.com", registeredBy: "Admin" },
+      { id: 1,  name: "Alexandra Gutmann", role: "Global Usability R.", company: "Empresa teste", email: "mer133@gmail.com", registeredBy: "Admin" },
     ],
   },
   {
@@ -1159,10 +1218,10 @@ const mockSegments: Segment[] = [
     color: "#16A34A",
     description: "Empresas do setor financeiro com atuação no mercado brasileiro.",
     contacts: [
-      { id: 19, name: "Mariana Oliveira",  role: "CFO",               company: "Nubank",        email: "mariana.oliveira@nubank.com.br" },
-      { id: 47, name: "Sérgio Monteiro",   role: "VP de Tecnologia",  company: "Nubank",        email: "sergio.monteiro@nubank.com.br" },
-      { id: 49, name: "Marcelo Andrade",   role: "Diretor Comercial", company: "Nubank",        email: "marcelo.andrade@nubank.com.br" },
-      { id: 12, name: "Eduardo Ferreira",  role: "VP de Vendas",      company: "Empresa teste", email: "edu.ferreira@gmail.com" },
+      { id: 19, name: "Mariana Oliveira",  role: "CFO",               company: "Nubank",        email: "mariana.oliveira@nubank.com.br", registeredBy: "Editor" },
+      { id: 47, name: "Sérgio Monteiro",   role: "VP de Tecnologia",  company: "Nubank",        email: "sergio.monteiro@nubank.com.br", registeredBy: "Admin" },
+      { id: 49, name: "Marcelo Andrade",   role: "Diretor Comercial", company: "Nubank",        email: "marcelo.andrade@nubank.com.br", registeredBy: "Admin" },
+      { id: 12, name: "Eduardo Ferreira",  role: "VP de Vendas",      company: "Empresa teste", email: "edu.ferreira@gmail.com", registeredBy: "Editor" },
     ],
   },
   {
@@ -1171,46 +1230,134 @@ const mockSegments: Segment[] = [
     color: "#D97706",
     description: "Contas priorizadas para fechamento no segundo trimestre.",
     contacts: [
-      { id: 25, name: "Rafael Brito",      role: "VP de Produto",     company: "Nubank",        email: "rafael.brito@nubank.com.br" },
-      { id: 26, name: "Camila Teixeira",   role: "Product Manager",   company: "Nubank",        email: "camila.teixeira@nubank.com.br" },
-      { id: 14, name: "Sofia Ramos",       role: "Head de Marketing", company: "Maestro ABM",   email: "sofia@maestroabm.com" },
-      { id: 16, name: "Laura Neves",       role: "Analista de Vendas", company: "Maestro ABM",  email: "laura@maestroabm.com" },
-      { id: 11, name: "Daisy Hartmann",    role: "Product Manager",   company: "Empresa teste", email: "daisy.h@gmail.com" },
+      { id: 25, name: "Rafael Brito",      role: "VP de Produto",     company: "Nubank",        email: "rafael.brito@nubank.com.br", registeredBy: "Admin" },
+      { id: 26, name: "Camila Teixeira",   role: "Product Manager",   company: "Nubank",        email: "camila.teixeira@nubank.com.br", registeredBy: "Admin" },
+      { id: 14, name: "Sofia Ramos",       role: "Head de Marketing", company: "Maestro ABM",   email: "sofia@maestroabm.com", registeredBy: "Admin" },
+      { id: 16, name: "Laura Neves",       role: "Analista de Vendas", company: "Maestro ABM",  email: "laura@maestroabm.com", registeredBy: "Admin" },
+      { id: 11, name: "Daisy Hartmann",    role: "Product Manager",   company: "Empresa teste", email: "daisy.h@gmail.com", registeredBy: "Admin" },
     ],
   },
 ];
+
+// ─── Segment row actions menu ──────────────────────────────────────────────────
+
+function SegmentActionsMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        title="Opções"
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); setShowConfirmDelete(false); }}
+        style={{ color: "#848484", background: "none", border: "none", cursor: "pointer", boxShadow: "none", padding: 0 }}
+      >
+        <MoreVertical size={14} />
+      </button>
+
+      {open && (
+        <>
+          <div
+            onClick={() => { setOpen(false); setShowConfirmDelete(false); }}
+            style={{ position: "fixed", inset: 0, zIndex: 99 }}
+          />
+          <div style={{
+            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 100,
+            background: "white", borderRadius: 10, border: "1px solid #E2E8F0",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: 160, overflow: "hidden",
+          }}>
+            {!showConfirmDelete ? (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, width: "100%",
+                    padding: "10px 16px", background: "none", border: "none",
+                    fontSize: 13, color: "#212A46", cursor: "pointer", textAlign: "left",
+                    borderBottom: "1px solid #F1F5F9",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#F7F8FB")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                >
+                  <Pencil size={14} style={{ color: "#6B7280" }} />
+                  Editar segmento
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setOpen(false); alert('Exportação em desenvolvimento'); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, width: "100%",
+                    padding: "10px 16px", background: "none", border: "none",
+                    fontSize: 13, color: "#212A46", cursor: "pointer", textAlign: "left",
+                    borderBottom: "1px solid #F1F5F9",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#F7F8FB")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                >
+                  <Download size={14} style={{ color: "#6B7280" }} />
+                  Exportar
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowConfirmDelete(true); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, width: "100%",
+                    padding: "10px 16px", background: "none", border: "none",
+                    fontSize: 13, color: "#EF4444", cursor: "pointer", textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#FEF2F2")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                >
+                  <Trash2 size={14} />
+                  Excluir
+                </button>
+              </>
+            ) : (
+              <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#212A46", fontWeight: 600 }}>Confirmar exclusão?</p>
+                <p style={{ margin: 0, fontSize: 11, color: "#9B9B9B" }}>Esta ação não pode ser desfeita.</p>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(); }}
+                    style={{ flex: 1, background: "#EF4444", color: "white", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Excluir
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowConfirmDelete(false); }}
+                    style={{ flex: 1, background: "#F1F5F9", color: "#6B7280", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── SegmentTableRows: isolated component to avoid React.Fragment + injected props ───
 function SegmentTableRows({
   seg,
   isExpanded,
   isSelected,
-  menuOpenId,
-  confirmDeleteId,
   onToggleSelect,
   onToggleExpand,
-  onToggleMenu,
-  onCloseMenu,
-  onRequestDelete,
-  onCancelDelete,
   onConfirmDelete,
+  onEditContact,
+  onEditSegment,
 }: {
   seg: Segment;
   isExpanded: boolean;
   isSelected: boolean;
-  menuOpenId: number | null;
-  confirmDeleteId: number | null;
   onToggleSelect: () => void;
   onToggleExpand: () => void;
-  onToggleMenu: () => void;
-  onCloseMenu: () => void;
-  onRequestDelete: () => void;
-  onCancelDelete: () => void;
   onConfirmDelete: () => void;
+  onEditContact: (contact: SegmentContact) => void;
+  onEditSegment: () => void;
 }) {
   const companies = Array.from(new Set(seg.contacts.map((c) => c.company)));
-  const menuOpen = menuOpenId === seg.id;
-  const confirmOpen = confirmDeleteId === seg.id;
 
   return (
     <>
@@ -1218,7 +1365,7 @@ function SegmentTableRows({
         style={{ borderBottom: isExpanded ? "none" : "1px solid #E2E8F0", background: isSelected ? "#FFF7F5" : isExpanded ? "#FFF7F5" : "white", cursor: "pointer", transition: "background 0.15s" }}
         onClick={onToggleExpand}
       >
-        <td style={{ padding: "12px 8px 12px 20px" }} onClick={(e) => e.stopPropagation()}>
+        <td style={{ padding: "12px 8px 12px 24px", width: 44 }} onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={isSelected}
@@ -1226,29 +1373,27 @@ function SegmentTableRows({
             style={{ borderRadius: 4, cursor: "pointer" }}
           />
         </td>
-        <td style={{ padding: "12px 8px 12px 4px" }}>
-          <span style={{ color: isExpanded ? "#FF5F39" : "#9B9B9B", display: "flex", transition: "color 0.15s" }}>
-            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </span>
-        </td>
-        <td style={{ padding: "12px" }}>
+        <td style={{ padding: "12px", width: "15%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ color: isExpanded ? "#FF5F39" : "#9B9B9B", display: "flex", transition: "color 0.15s" }}>
+              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </span>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: seg.color, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600, color: "#212A46", fontSize: 13 }}>{seg.name}</span>
+            <span style={{ fontWeight: 600, color: "#212A46", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{seg.name}</span>
           </div>
         </td>
-        <td style={{ padding: "12px", color: "#6B7280", fontSize: 12, maxWidth: 280 }}>
+        <td style={{ padding: "12px", color: "#6B7280", fontSize: 12, width: "20%" }}>
           <span style={{ display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {seg.description || <span style={{ color: "#CBD5E0" }}>—</span>}
           </span>
         </td>
-        <td style={{ padding: "12px" }}>
+        <td style={{ padding: "12px", width: "15%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Users size={13} style={{ color: "#9B9B9B" }} />
             <span style={{ fontWeight: 600, color: "#212A46" }}>{seg.contacts.length}</span>
           </div>
         </td>
-        <td style={{ padding: "12px" }}>
+        <td style={{ padding: "12px", width: "40%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
             {companies.map((c) => (
               <span key={c} style={{ borderRadius: 6, background: "#EFF6FF", color: "#2563EB", fontSize: 11, fontWeight: 600, padding: "2px 7px" }}>{c}</span>
@@ -1256,46 +1401,10 @@ function SegmentTableRows({
             {companies.length === 0 && <span style={{ color: "#CBD5E0", fontSize: 12 }}>—</span>}
           </div>
         </td>
-        <td style={{ padding: "12px" }} onClick={(e) => e.stopPropagation()}>
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={onToggleMenu}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "#9B9B9B", boxShadow: "none", padding: 2, display: "flex" }}
-            >
-              <MoreVertical size={14} />
-            </button>
-            {menuOpen && (
-              <>
-                <div style={{ position: "fixed", inset: 0, zIndex: 199 }} onClick={onCloseMenu} />
-                <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 200, background: "white", borderRadius: 10, border: "1px solid #E2E8F0", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: 180, overflow: "hidden" }}>
-                  {!confirmOpen ? (
-                    <button
-                      onClick={onRequestDelete}
-                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", background: "none", border: "none", fontSize: 13, color: "#EF4444", cursor: "pointer", textAlign: "left" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#FEF2F2")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-                    >
-                      <Trash2 size={14} /> Excluir segmento
-                    </button>
-                  ) : (
-                    <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-                      <p style={{ margin: 0, fontSize: 12, color: "#212A46", fontWeight: 600 }}>Confirmar exclusão?</p>
-                      <p style={{ margin: 0, fontSize: 11, color: "#9B9B9B" }}>Esta ação não pode ser desfeita.</p>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={onConfirmDelete} style={{ flex: 1, background: "#EF4444", color: "white", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Excluir</button>
-                        <button onClick={onCancelDelete} style={{ flex: 1, background: "#F1F5F9", color: "#6B7280", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, cursor: "pointer" }}>Cancelar</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </td>
       </tr>
       {isExpanded && (
         <tr>
-          <td colSpan={7} style={{ padding: 0 }}>
+          <td colSpan={5} style={{ padding: 0 }}>
             <div style={{ background: "#F7F8FB", borderTop: "1px solid #FDE8E1", borderLeft: "4px solid " + seg.color }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 24px", borderBottom: "1px solid #E2E8F0", background: "white" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1315,26 +1424,33 @@ function SegmentTableRows({
                 </div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", minWidth: 600 }}>
+                  <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", minWidth: 600, tableLayout: "fixed" }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
-                        <th style={{ padding: "8px 12px 8px 24px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>NOME</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>CARGO</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>EMPRESA</th>
-                        <th style={{ padding: "8px 12px", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>E-MAIL</th>
+                        <th style={{ padding: "8px 12px 8px 44px", width: "15%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>NOME</th>
+                        <th style={{ padding: "8px 12px", width: "20%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>CARGO</th>
+                        <th style={{ padding: "8px 12px", width: "15%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>EMPRESA</th>
+                        <th style={{ padding: "8px 12px", width: "25%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>E-MAIL</th>
+                        <th style={{ padding: "8px 12px", width: "20%", textAlign: "left", color: "#212A46", fontWeight: 700, fontSize: 12 }}>CADASTRADO POR</th>
                       </tr>
                     </thead>
                     <tbody>
                       {seg.contacts.map((c, i) => (
                         <tr key={c.id} style={{ borderBottom: i < seg.contacts.length - 1 ? "1px solid #E2E8F0" : "none", background: "white" }}>
-                          <td style={{ padding: "10px 12px 10px 24px" }}>
-                            <span style={{ color: "#FF5F39", fontWeight: 600 }}>{c.name}</span>
+                          <td style={{ padding: "10px 12px 10px 44px", width: "15%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <span
+                              onClick={(e) => { e.stopPropagation(); onEditContact(c); }}
+                              style={{ color: "#FF5F39", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              {c.name}
+                            </span>
                           </td>
-                          <td style={{ padding: "10px 12px", color: "#555" }}>{c.role}</td>
-                          <td style={{ padding: "10px 12px" }}>
+                          <td style={{ padding: "10px 12px", color: "#555", width: "20%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</td>
+                          <td style={{ padding: "10px 12px", width: "15%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             <span style={{ borderRadius: 6, background: "#EFF6FF", color: "#2563EB", fontSize: 11, fontWeight: 600, padding: "2px 7px" }}>{c.company}</span>
                           </td>
-                          <td style={{ padding: "10px 12px", color: "#555" }}>{c.email}</td>
+                          <td style={{ padding: "10px 12px", color: "#555", width: "25%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.email}</td>
+                          <td style={{ padding: "10px 12px", color: "#555", width: "20%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.registeredBy || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1349,11 +1465,18 @@ function SegmentTableRows({
   );
 }
 
-function SegmentsSection() {
-  const [segments, setSegments] = useState<Segment[]>(mockSegments);
+export function SegmentsSection({
+  segments,
+  setSegments,
+  onOpenPlay,
+  onDeleteTarget,
+}: {
+  segments: Segment[];
+  setSegments: React.Dispatch<React.SetStateAction<Segment[]>>;
+  onOpenPlay?: (accountId: string, playId: string) => void;
+  onDeleteTarget: (target: { type: "segments"; ids: number[] } | { type: "segment"; id: number }) => void;
+}) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -1362,11 +1485,33 @@ function SegmentsSection() {
   const [selectedSegIds, setSelectedSegIds] = useState<Set<number>>(new Set());
   const [segPage, setSegPage] = useState(1);
   const [segPageSize, setSegPageSize] = useState(10);
+  const [editingContact, setEditingContact] = useState<any | null>(null);
 
-  const filteredSegs = segments.filter((s) =>
-    s.name.toLowerCase().includes(segSearch.toLowerCase()) ||
-    s.description.toLowerCase().includes(segSearch.toLowerCase())
-  );
+  // ── Filter & Sort State ──
+  type SegSortKey = "name-asc" | "name-desc" | "contacts-desc" | "contacts-asc" | "companies-desc";
+  const [sortKey, setSortKey] = useState<SegSortKey>("name-asc");
+  const [sortOpen, setSortOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterHasContacts, setFilterHasContacts] = useState<boolean | null>(null);
+
+  const filteredSegs = segments.filter((s) => {
+    const matchSearch = s.name.toLowerCase().includes(segSearch.toLowerCase()) || s.description?.toLowerCase().includes(segSearch.toLowerCase());
+    if (!matchSearch) return false;
+    if (filterHasContacts === true && s.contacts.length === 0) return false;
+    if (filterHasContacts === false && s.contacts.length > 0) return false;
+    return true;
+  }).sort((a, b) => {
+    switch (sortKey) {
+      case "name-asc": return a.name.localeCompare(b.name);
+      case "name-desc": return b.name.localeCompare(a.name);
+      case "contacts-desc": return b.contacts.length - a.contacts.length;
+      case "contacts-asc": return a.contacts.length - b.contacts.length;
+      case "companies-desc": return new Set(b.contacts.map(c => c.company)).size - new Set(a.contacts.map(c => c.company)).size;
+      default: return 0;
+    }
+  });
+
+  const activeFilterCount = filterHasContacts !== null ? 1 : 0;
 
   const segTotalPages = Math.max(1, Math.ceil(filteredSegs.length / segPageSize));
   const pagedSegs = filteredSegs.slice((segPage - 1) * segPageSize, segPage * segPageSize);
@@ -1401,8 +1546,6 @@ function SegmentsSection() {
   const handleDelete = (id: number) => {
     setSegments((prev) => prev.filter((s) => s.id !== id));
     setSelectedSegIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
-    setMenuOpenId(null);
-    setConfirmDeleteId(null);
     if (expandedId === id) setExpandedId(null);
   };
 
@@ -1429,7 +1572,12 @@ function SegmentsSection() {
         <div>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: "#212A46", margin: 0 }}>Segmentos</h2>
           <p style={{ fontSize: 13, color: "#9B9B9B", margin: "4px 0 0 0" }}>
-            {segments.length} segmento{segments.length !== 1 ? "s" : ""} · grupos de contatos de múltiplas empresas
+            {filteredSegs.length} segmento{filteredSegs.length !== 1 ? "s" : ""} encontrado{filteredSegs.length !== 1 ? "s" : ""}
+            {activeFilterCount > 0 && (
+              <span style={{ color: "#FF5F39", marginLeft: 6 }}>
+                ({activeFilterCount} filtro{activeFilterCount !== 1 ? "s" : ""} ativo{activeFilterCount !== 1 ? "s" : ""})
+              </span>
+            )}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1443,6 +1591,156 @@ function SegmentsSection() {
               style={{ outline: "none", background: "transparent", fontSize: 12, width: 140, color: "#333" }}
             />
           </div>
+
+          {/* ── FILTROS button + dropdown ── */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => { setFilterOpen((o) => !o); setSortOpen(false); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8,
+                border: `1px solid ${filterOpen || activeFilterCount > 0 ? "#FF5F39" : "#CBD5E0"}`,
+                background: filterOpen || activeFilterCount > 0 ? "#FFF1EC" : "white",
+                fontSize: 13, fontWeight: 600,
+                color: filterOpen || activeFilterCount > 0 ? "#FF5F39" : "#6B7280",
+                cursor: "pointer", boxShadow: "none", transition: "all 0.15s",
+              }}
+            >
+              <SlidersHorizontal size={14} />
+              <span>Filtros</span>
+              {activeFilterCount > 0 && (
+                <span style={{
+                  background: "#FF5F39", color: "white", borderRadius: 9999,
+                  fontSize: 11, fontWeight: 700, padding: "1px 6px", marginLeft: 2,
+                }}>
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {filterOpen && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setFilterOpen(false)} />
+                <div style={{
+                  position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 50,
+                  background: "white", borderRadius: 12, border: "1px solid #E2E8F0",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.13)", width: 280, padding: "16px 0 12px",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px 12px", borderBottom: "1px solid #F1F5F9" }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: "#212A46" }}>Filtros</span>
+                    {activeFilterCount > 0 && (
+                      <button onClick={() => { setFilterHasContacts(null); setSegPage(1); }} style={{ fontSize: 12, color: "#FF5F39", background: "none", border: "none", cursor: "pointer", fontWeight: 600, padding: 0 }}>
+                        Limpar tudo
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ padding: "12px 16px 8px" }}>
+                    <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 700, color: "#9B9B9B", textTransform: "uppercase", letterSpacing: "0.06em" }}>Status de Contatos</p>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {([true, false] as const).map((v) => (
+                        <button
+                          key={String(v)}
+                          onClick={() => { setFilterHasContacts(filterHasContacts === v ? null : v); setSegPage(1); }}
+                          style={{
+                            flex: 1, padding: "6px 0", borderRadius: 7,
+                            border: `1px solid ${filterHasContacts === v ? "#FF5F39" : "#E2E8F0"}`,
+                            background: filterHasContacts === v ? "#FFF1EC" : "white",
+                            color: filterHasContacts === v ? "#FF5F39" : "#6B7280",
+                            fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.12s",
+                          }}
+                        >
+                          {v ? "Com contatos" : "Vazio"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "12px 16px 0", borderTop: "1px solid #F1F5F9" }}>
+                    <button
+                      onClick={() => setFilterOpen(false)}
+                      style={{ width: "100%", padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer", background: "#FF5F39", color: "white", fontSize: 13, fontWeight: 700 }}
+                    >
+                      Aplicar filtros
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── ORDENAR button + dropdown ── */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => { setSortOpen((o) => !o); setFilterOpen(false); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8,
+                border: `1px solid ${sortOpen || sortKey !== "name-asc" ? "#FF5F39" : "#CBD5E0"}`,
+                background: sortOpen || sortKey !== "name-asc" ? "#FFF1EC" : "white",
+                fontSize: 13, fontWeight: 600,
+                color: sortOpen || sortKey !== "name-asc" ? "#FF5F39" : "#6B7280",
+                cursor: "pointer", boxShadow: "none", transition: "all 0.15s",
+              }}
+            >
+              <ArrowUpDown size={14} />
+              <span>
+                {sortKey === "name-asc" ? "Ordenar" :
+                 sortKey === "name-desc" ? "Nome Z → A" :
+                 sortKey === "contacts-desc" ? "Mais contatos" :
+                 sortKey === "contacts-asc" ? "Menos contatos" :
+                 "Mais empresas"}
+              </span>
+            </button>
+
+            {sortOpen && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setSortOpen(false)} />
+                <div style={{
+                  position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 50,
+                  background: "white", borderRadius: 12, border: "1px solid #E2E8F0",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.13)", width: 220, padding: "8px 0",
+                }}>
+                  <p style={{ margin: "0", padding: "4px 16px 10px", fontSize: 11, fontWeight: 700, color: "#9B9B9B", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #F1F5F9" }}>
+                    Ordenar por
+                  </p>
+                  {[
+                    { key: "name-asc", label: "Nome A → Z" },
+                    { key: "name-desc", label: "Nome Z → A" },
+                    { key: "contacts-desc", label: "Mais contatos" },
+                    { key: "contacts-asc", label: "Menos contatos" },
+                    { key: "companies-desc", label: "Mais empresas" }
+                  ].map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => { setSortKey(opt.key as SegSortKey); setSortOpen(false); setSegPage(1); }}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        width: "100%", padding: "9px 16px",
+                        background: sortKey === opt.key ? "#FFF1EC" : "white",
+                        border: "none", cursor: "pointer", fontSize: 13,
+                        color: sortKey === opt.key ? "#FF5F39" : "#212A46",
+                        fontWeight: sortKey === opt.key ? 700 : 400,
+                        textAlign: "left", transition: "background 0.1s",
+                      }}
+                    >
+                      <span>{opt.label}</span>
+                      {sortKey === opt.key && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF5F39" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8, background: "#D5D9E6", fontSize: 13, fontWeight: 700, color: "#212A46", border: "none", cursor: "pointer", boxShadow: "none" }}
+          >
+            <Download size={14} />
+            <span>Exportar</span>
+          </button>
           <button
             onClick={() => setShowCreate(true)}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8, background: "#FF5F39", fontSize: 13, fontWeight: 700, color: "white", border: "none", cursor: "pointer", boxShadow: "none" }}
@@ -1450,6 +1748,29 @@ function SegmentsSection() {
             <Plus size={14} />
             <span>Novo segmento</span>
           </button>
+          {(() => {
+            const hasAny = selectedSegIds.size > 0;
+            const label = hasAny ? `Excluir (${selectedSegIds.size})` : "Excluir";
+            const tip = hasAny ? label : "Selecione ao menos um segmento para excluir";
+            return (
+              <button
+                disabled={!hasAny}
+                title={tip}
+                onClick={() => onDeleteTarget({ type: "segments", ids: Array.from(selectedSegIds) })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8,
+                  border: "none", fontSize: 13, fontWeight: 700, boxShadow: "none",
+                  background: hasAny ? "#EF4444" : "#F1F3F9",
+                  color: hasAny ? "white" : "#B0BAD3",
+                  cursor: hasAny ? "pointer" : "not-allowed",
+                  transition: "background 0.15s, color 0.15s",
+                }}
+              >
+                <Trash2 size={14} />
+                <span>{label}</span>
+              </button>
+            );
+          })()}
         </div>
       </div>
 
@@ -1503,35 +1824,11 @@ function SegmentsSection() {
       )}
 
       {/* Table */}
-      {/* Bulk action bar */}
-      {selectedSegIds.size > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", marginBottom: 8, borderRadius: 10, background: "#212A46", color: "white" }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>
-            {selectedSegIds.size} segmento{selectedSegIds.size !== 1 ? "s" : ""} selecionado{selectedSegIds.size !== 1 ? "s" : ""}
-          </span>
-          <div style={{ flex: 1 }} />
-          <button
-            onClick={handleDeleteSelected}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 7, background: "#EF4444", color: "white", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-          >
-            <Trash2 size={13} />
-            Excluir selecionados
-          </button>
-          <button
-            onClick={() => setSelectedSegIds(new Set())}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 7, background: "rgba(255,255,255,0.12)", color: "white", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
-          >
-            <X size={13} />
-            Limpar seleção
-          </button>
-        </div>
-      )}
-
       <div style={{ background: "white", borderRadius: 12, border: "1px solid #E2E8F0", overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E2E8F0", background: "#FAFBFD" }}>
-              <th style={{ padding: "12px 8px 12px 20px", width: 32 }}>
+              <th style={{ padding: "12px 8px 12px 24px", width: 44, textAlign: "left" }}>
                 <input
                   type="checkbox"
                   checked={allFilteredSelected}
@@ -1540,18 +1837,16 @@ function SegmentsSection() {
                   style={{ borderRadius: 4, cursor: "pointer" }}
                 />
               </th>
-              <th style={{ padding: "12px 8px 12px 4px", width: 32 }} />
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>SEGMENTO</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>DESCRIÇÃO</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>CONTATOS</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>EMPRESAS</th>
-              <th style={{ padding: "12px", width: 40 }} />
+              <th style={{ padding: "12px", width: "15%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>SEGMENTO</th>
+              <th style={{ padding: "12px", width: "20%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>DESCRIÇÃO</th>
+              <th style={{ padding: "12px", width: "15%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>CONTATOS</th>
+              <th style={{ padding: "12px", width: "40%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>EMPRESAS</th>
             </tr>
           </thead>
           <tbody>
             {filteredSegs.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: "32px 0", textAlign: "center", color: "#9B9B9B", fontSize: 13 }}>
+                <td colSpan={5} style={{ padding: "32px 0", textAlign: "center", color: "#9B9B9B", fontSize: 13 }}>
                   {segSearch ? "Nenhum segmento encontrado." : "Nenhum segmento cadastrado."}
                 </td>
               </tr>
@@ -1562,15 +1857,11 @@ function SegmentsSection() {
                 seg={seg}
                 isExpanded={expandedId === seg.id}
                 isSelected={selectedSegIds.has(seg.id)}
-                menuOpenId={menuOpenId}
-                confirmDeleteId={confirmDeleteId}
                 onToggleSelect={() => toggleOneSeg(seg.id)}
                 onToggleExpand={() => setExpandedId(expandedId === seg.id ? null : seg.id)}
-                onToggleMenu={() => { setMenuOpenId(menuOpenId === seg.id ? null : seg.id); setConfirmDeleteId(null); }}
-                onCloseMenu={() => { setMenuOpenId(null); setConfirmDeleteId(null); }}
-                onRequestDelete={() => setConfirmDeleteId(seg.id)}
-                onCancelDelete={() => setConfirmDeleteId(null)}
-                onConfirmDelete={() => handleDelete(seg.id)}
+                onConfirmDelete={() => onDeleteTarget({ type: "segment", id: seg.id })}
+                onEditContact={(c) => setEditingContact(c)}
+                onEditSegment={() => alert('Edição de segmento em desenvolvimento')}
               />
             ))}
           </tbody>
@@ -1637,6 +1928,13 @@ function SegmentsSection() {
           </div>
         </div>
       </div>
+      {editingContact && (
+        <ContactEditDrawer
+          contact={editingContact}
+          onClose={() => setEditingContact(null)}
+          onSave={() => setEditingContact(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1654,17 +1952,19 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "dossiers-desc",  label: "Mais dossiês" },
 ];
 
-const ALL_INDUSTRIES = Array.from(new Set(mockAccounts.map((a) => a.industry).filter(Boolean))).sort() as string[];
-const ALL_ORIGINS    = Array.from(new Set(mockAccounts.map((a) => a.origin).filter(Boolean))).sort() as string[];
-
 function applySortAndFilter(
   accounts: AccountDetail[],
   industries: Set<string>,
   origins: Set<string>,
   hasPlays: boolean | null,
+  searchQuery: string,
   sortKey: SortKey,
 ) {
   let list = [...accounts];
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase();
+    list = list.filter((a) => a.name.toLowerCase().includes(q));
+  }
   if (industries.size) list = list.filter((a) => a.industry && industries.has(a.industry));
   if (origins.size)    list = list.filter((a) => a.origin && origins.has(a.origin));
   if (hasPlays === true)  list = list.filter((a) => ((a as any).playsAtivas ?? a.playsCreated) > 0);
@@ -1683,18 +1983,139 @@ function applySortAndFilter(
   return list;
 }
 
-export function AccountsPage() {
+function ConfirmDeleteModal({
+  title,
+  description,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  description: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <div
+        onClick={onCancel}
+        style={{ position: "fixed", inset: 0, background: "rgba(33,42,70,0.4)", zIndex: 1100, backdropFilter: "blur(2px)" }}
+      />
+      <div
+        style={{
+          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+          width: 400, maxWidth: "90vw", background: "white", borderRadius: 16, zIndex: 1200,
+          boxShadow: "0 24px 64px rgba(33,42,70,0.22)", padding: 24,
+        }}
+      >
+        <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700, color: "#212A46" }}>{title}</h2>
+        <p style={{ margin: "0 0 24px", fontSize: 14, color: "#6B7280", lineHeight: 1.5 }}>{description}</p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+          <button
+            onClick={onCancel}
+            style={{ padding: "10px 20px", borderRadius: 8, border: "1px solid #CBD5E0", background: "white", color: "#6B7280", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: "#EF4444", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            Excluir
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function AccountsPage({ onOpenPlay }: { onOpenPlay?: (accountId: string, playId: string) => void }) {
+  const [accounts, setAccounts] = useState<AccountDetail[]>(mockAccounts);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedAccountForDetail, setSelectedAccountForDetail] = useState<AccountDetail | null>(null);
+  const [editingAccount, setEditingAccount] = useState<AccountDetail | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "account"; id: number } | { type: "bulk" } | { type: "segments"; ids: number[] } | { type: "segment"; id: number } | null>(null);
+
+  const handleUpdateAccount = (updatedAccount: AccountDetail) => {
+    setAccounts(prev => prev.map(acc => acc.id === updatedAccount.id ? updatedAccount : acc));
+    if (selectedAccountForDetail && selectedAccountForDetail.id === updatedAccount.id) {
+      setSelectedAccountForDetail(updatedAccount);
+    }
+    setEditingAccount(null);
+  };
+
+  const confirmDelete = () => {
+    if (deleteTarget?.type === "account") {
+      const id = deleteTarget.id;
+      setAccounts(prev => prev.filter(acc => acc.id !== id));
+      setSelectedAccounts(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (expandedId === id) setExpandedId(null);
+    } else if (deleteTarget?.type === "bulk") {
+      setAccounts(prev => prev.filter(acc => !selectedAccounts.has(acc.id)));
+      setSelectedAccounts(new Set());
+      setSelectedContacts(new Set());
+    } else if (deleteTarget?.type === "segment") {
+      setSegments(prev => prev.filter(s => s.id !== deleteTarget.id));
+    } else if (deleteTarget?.type === "segments") {
+      const ids = new Set(deleteTarget.ids);
+      setSegments(prev => prev.filter(s => !ids.has(s.id)));
+    }
+    setDeleteTarget(null);
+  };
+
+  if (selectedAccountForDetail) {
+    return (
+      <AccountDetailPage
+        account={selectedAccountForDetail}
+        onBack={() => setSelectedAccountForDetail(null)}
+        onUpdate={handleUpdateAccount}
+      />
+    );
+  }
+
+  const ALL_INDUSTRIES = Array.from(new Set(accounts.map((a) => a.industry).filter(Boolean))).sort() as string[];
+  const ALL_ORIGINS    = Array.from(new Set(accounts.map((a) => a.origin).filter(Boolean))).sort() as string[];
+
   const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
   const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
+  const [segments, setSegments] = useState<Segment[]>(mockSegments);
+  
+  const [activeTab, setActiveTab] = useState<"contas" | "segmentos">("contas");
+  
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  const handleSaveAccount = (data: any) => {
+    const newAccount: AccountDetail = {
+      id: Math.max(0, ...accounts.map(a => a.id)) + 1,
+      name: data.name,
+      industry: data.industry,
+      website: data.website,
+      origin: data.origin,
+      playsCreated: 0,
+      contacts: 0,
+      contactsList: [],
+      ...({
+        playsAtivas: 0,
+        dossierCount: 0,
+        registeredBy: "Admin",
+      } as any)
+    };
+    setAccounts([newAccount, ...accounts]);
+    setIsCreateModalOpen(false);
+  };
 
   // ── Filter state ──
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterIndustries, setFilterIndustries] = useState<Set<string>>(new Set());
   const [filterOrigins, setFilterOrigins]       = useState<Set<string>>(new Set());
   const [filterHasPlays, setFilterHasPlays]     = useState<boolean | null>(null);
+  const [searchQuery, setSearchQuery]           = useState("");
 
   // ── Sort state ──
   const [sortOpen, setSortOpen] = useState(false);
@@ -1720,7 +2141,7 @@ export function AccountsPage() {
   };
 
   const filteredSorted = applySortAndFilter(
-    mockAccounts, filterIndustries, filterOrigins, filterHasPlays, sortKey,
+    accounts, filterIndustries, filterOrigins, filterHasPlays, searchQuery, sortKey,
   );
 
   const totalPages = Math.ceil(filteredSorted.length / pageSize);
@@ -1757,7 +2178,47 @@ export function AccountsPage() {
 
   return (
     <div style={{ padding: "24px 32px 24px 18px", flex: 1, overflowY: "auto", background: "#F7F8FB" }}>
-      {/* Header */}
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          title="Confirmar exclusão?"
+          description={
+            deleteTarget.type === "account" || deleteTarget.type === "segment"
+              ? "Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita."
+              : "Tem certeza que deseja excluir os itens selecionados? Esta ação não pode ser desfeita."
+          }
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 24, marginBottom: 24, borderBottom: "1px solid #E2E8F0" }}>
+        <button
+          onClick={() => setActiveTab("contas")}
+          style={{
+            padding: "0 4px 12px", background: "none", border: "none",
+            borderBottom: activeTab === "contas" ? "2px solid #FF5F39" : "2px solid transparent",
+            color: activeTab === "contas" ? "#212A46" : "#6B7280",
+            fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
+          }}
+        >
+          Contas ({accounts.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("segmentos")}
+          style={{
+            padding: "0 4px 12px", background: "none", border: "none",
+            borderBottom: activeTab === "segmentos" ? "2px solid #FF5F39" : "2px solid transparent",
+            color: activeTab === "segmentos" ? "#212A46" : "#6B7280",
+            fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
+          }}
+        >
+          Segmentos ({segments.length})
+        </button>
+      </div>
+
+      {activeTab === "contas" ? (
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+          {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#212A46", margin: 0 }}>Contas</h1>
@@ -1771,6 +2232,17 @@ export function AccountsPage() {
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+
+          {/* ── SEARCH ── */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "white" }}>
+            <Search size={13} style={{ color: "#9B9B9B" }} />
+            <input
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              placeholder="Buscar conta..."
+              style={{ outline: "none", background: "transparent", fontSize: 12, width: 140, color: "#333" }}
+            />
+          </div>
 
           {/* ── FILTROS button + dropdown ── */}
           <div style={{ position: "relative" }}>
@@ -1957,6 +2429,7 @@ export function AccountsPage() {
             <span>Exportar</span>
           </button>
           <button
+            onClick={() => setIsCreateModalOpen(true)}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8, background: "#FF5F39", fontSize: 13, fontWeight: 700, color: "white", border: "none", cursor: "pointer", boxShadow: "none" }}
           >
             <Plus size={14} />
@@ -1973,6 +2446,7 @@ export function AccountsPage() {
               <button
                 disabled={!hasAny}
                 title={tip}
+                onClick={() => setDeleteTarget({ type: "bulk" })}
                 style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 8,
                   border: "none", fontSize: 13, fontWeight: 700, boxShadow: "none",
@@ -1992,10 +2466,10 @@ export function AccountsPage() {
 
       {/* Table */}
       <div style={{ background: "white", borderRadius: 12, border: "1px solid #E2E8F0", overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E2E8F0", background: "#FAFBFD" }}>
-              <th style={{ padding: "12px 8px 12px 20px", width: 32 }}>
+              <th style={{ padding: "12px 8px 12px 24px", width: 44, textAlign: "left" }}>
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -2004,31 +2478,45 @@ export function AccountsPage() {
                   style={{ borderRadius: 4, cursor: "pointer" }}
                 />
               </th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>EMPRESA</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>CONTATOS</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>DOSSIÊS</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>PLAYS ATIVAS</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>SETOR</th>
-              <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>WEBSITE</th>
+              <th style={{ padding: "12px", width: "15%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>EMPRESA</th>
+              <th style={{ padding: "12px", width: "8%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>CONTATOS</th>
+              <th style={{ padding: "12px", width: "8%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>DOSSIÊS</th>
+              <th style={{ padding: "12px", width: "10%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>PLAYS ATIVAS</th>
+              <th style={{ padding: "12px", width: "15%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>SETOR</th>
+              <th style={{ padding: "12px", width: "15%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>WEBSITE</th>
+              <th style={{ padding: "12px", width: "15%", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>CADASTRADO POR</th>
               <th style={{ padding: "12px", textAlign: "left", fontWeight: 700, color: "#212A46", fontSize: 12 }}>ORIGEM</th>
+              <th style={{ padding: "12px", width: 40 }} />
             </tr>
           </thead>
           <tbody>
-            {paged.map((account) => (
-              <AccountRow
-                key={account.id}
-                account={account}
-                isExpanded={expandedId === account.id}
-                isSelected={selectedAccounts.has(account.id)}
-                onToggleExpand={() => {
-                  const closing = expandedId === account.id;
-                  if (closing) setSelectedContacts(new Set());
-                  setExpandedId(closing ? null : account.id);
-                }}
-                onToggleSelect={() => toggleOneAccount(account.id)}
-                onContactSelectionChange={(ids) => setSelectedContacts(new Set(ids))}
-              />
-            ))}
+            {paged.length === 0 ? (
+              <tr>
+                <td colSpan={10} style={{ padding: "32px 0", textAlign: "center", color: "#9B9B9B", fontSize: 13 }}>
+                  Nenhuma conta encontrada.
+                </td>
+              </tr>
+            ) : (
+              paged.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  isExpanded={expandedId === account.id}
+                  isSelected={selectedAccounts.has(account.id)}
+                  onToggleExpand={() => {
+                    const closing = expandedId === account.id;
+                    if (closing) setSelectedContacts(new Set());
+                    setExpandedId(closing ? null : account.id);
+                  }}
+                  onToggleSelect={() => toggleOneAccount(account.id)}
+                  onContactSelectionChange={(ids) => setSelectedContacts(new Set(ids))}
+                  onOpenPlay={onOpenPlay}
+                  onSelectAccount={setSelectedAccountForDetail}
+                  onEditAccount={() => setEditingAccount(account)}
+                  onDeleteAccount={() => setDeleteTarget({ type: "account", id: account.id })}
+                />
+              ))
+            )}
           </tbody>
         </table>
 
@@ -2093,8 +2581,30 @@ export function AccountsPage() {
           </div>
         </div>
       </div>
+      </div>
+      ) : (
+        <SegmentsSection
+          segments={segments}
+          setSegments={setSegments}
+          onOpenPlay={onOpenPlay}
+          onDeleteTarget={setDeleteTarget}
+        />
+      )}
 
-      <SegmentsSection />
+      {isCreateModalOpen && (
+        <AccountCreateModal
+          onClose={() => setIsCreateModalOpen(false)}
+          onSave={handleSaveAccount}
+        />
+      )}
+
+      {editingAccount && (
+        <AccountEditDrawer
+          account={editingAccount}
+          onClose={() => setEditingAccount(null)}
+          onSave={handleUpdateAccount}
+        />
+      )}
     </div>
   );
 }

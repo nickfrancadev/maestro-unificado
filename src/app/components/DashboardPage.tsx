@@ -34,7 +34,7 @@ export function DashboardPage() {
   const [onlyActivePlays, setOnlyActivePlays] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
 
-  // Mock data de tarefas
+  // Mock data de taskpoints
   const tasksData: Task[] = [
     {
       id: "1",
@@ -133,7 +133,7 @@ export function DashboardPage() {
   };
 
   const filteredTasks = tasksData.filter(task => {
-    if (activeTab === "finalizadas") return false; // Mock: sem tarefas finalizadas
+    if (activeTab === "finalizadas") return false; // Mock: sem taskpoints finalizadas
     if (onlyActivePlays && !task.playActive) return false;
     if (filterResponsible !== "all" && task.responsible !== filterResponsible) return false;
     return true;
@@ -183,7 +183,7 @@ export function DashboardPage() {
             className="font-['Euclid_Circular_A',sans-serif]"
             style={{ fontSize: 14, color: "#828282" }}
           >
-            Visão geral de métricas e tarefas
+            Visão geral de métricas e taskpoints
           </p>
         </div>
 
@@ -302,18 +302,18 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Seção Minhas Tarefas */}
+        {/* Seção Minhas Taskpoints */}
         <div
           className="bg-white rounded-xl border border-[#d8d8d8] overflow-hidden"
           style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
         >
-          {/* Header de Tarefas */}
+          {/* Header de Taskpoints */}
           <div className="p-6 border-b border-[#E5E7EB]">
             <h2
               className="font-['Euclid_Circular_A',sans-serif] mb-4"
               style={{ fontSize: 20, fontWeight: 600, color: "#212A46" }}
             >
-              Minhas Tarefas
+              Minhas Taskpoints
             </h2>
 
             {/* Filtros */}
@@ -403,7 +403,7 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Lista de Tarefas */}
+          {/* Lista de Taskpoints */}
           {activeTab === "afazer" && (
             <div>
               {/* Hoje EM */}
@@ -629,13 +629,13 @@ export function DashboardPage() {
                 className="font-['Euclid_Circular_A',sans-serif] mb-1"
                 style={{ fontSize: 16, fontWeight: 600, color: "#6B7280" }}
               >
-                Nenhuma tarefa finalizada
+                Nenhuma taskpoint finalizada
               </p>
               <p
                 className="font-['Euclid_Circular_A',sans-serif]"
                 style={{ fontSize: 14, color: "#9CA3AF" }}
               >
-                As tarefas concluídas aparecerão aqui
+                As taskpoints concluídas aparecerão aqui
               </p>
             </div>
           )}

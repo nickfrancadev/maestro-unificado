@@ -4,14 +4,14 @@ import { useState } from 'react';
 export interface Touchpoint {
   id: number;
   itemType: 'touchpoint' | 'task';
-  type: 'AUTORIDADE' | 'ATENÇÃO' | 'INTERESSE' | 'DESEJO' | 'AÇÃO' | 'TAREFA';
+  type: 'AUTORIDADE' | 'ATENÇÃO' | 'INTERESSE' | 'DESEJO' | 'AÇÃO' | 'TASKPOINT';
   title: string;
   channel: string;
   responsibles: string[];
   date: string;
   status: 'Em andamento' | 'Executado' | 'Arquivado';
   description: string;
-  subtasks: Array<{ id: string; title: string; completed: boolean }>;
+  subtasks: Array<{ id: string; title: string; completed: boolean; assignee?: string; dueDate?: string }>;
   attachments: Array<{ id: string; name: string; addedAt: string; thumbnail?: string }>;
   executionDate?: string;
   completionDate?: string;
@@ -26,6 +26,16 @@ export interface Touchpoint {
   }>;
   isDraft?: boolean;
   category?: string;
+  contactIds?: string[];
+  notes?: Array<{
+    id: string;
+    author: string;
+    initials: string;
+    color: string;
+    date: string;
+    content: string;
+    mentions: string[];
+  }>;
 }
 
 interface TouchpointTimelineProps {
@@ -192,7 +202,7 @@ export function TouchpointTimeline({
                           {/* Tooltip */}
                           <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 opacity-0 group-hover/icon:opacity-100 transition-opacity z-50">
                             <div className="bg-[#212a46] text-white text-[10px] font-semibold px-2 py-1 rounded whitespace-nowrap shadow-lg">
-                              {isTask ? 'Tarefa' : 'Touchpoint'}
+                              {isTask ? 'Taskpoint' : 'Touchpoint'}
                             </div>
                             <div className="w-2 h-2 bg-[#212a46] rotate-45 mx-auto -mt-1" />
                           </div>
@@ -200,7 +210,7 @@ export function TouchpointTimeline({
 
                         {/* Type tag top-right */}
                         <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${isDraft ? 'bg-[#e3f0ff] text-[#4a90e2]' : `${typeStyle.bg} ${typeStyle.text}`}`}>
-                          {isDraft ? 'RASCUNHO' : isTask ? 'TAREFA' : touchpoint.type}
+                          {isDraft ? 'RASCUNHO' : (touchpoint.category || 'SEM CATEGORIA')}
                         </div>
                       </div>
 
@@ -251,7 +261,7 @@ export function TouchpointTimeline({
                           className="mt-2 w-full py-1.5 px-2 bg-[#5cb85c] hover:bg-[#4cae4c] text-white rounded text-[10px] font-bold transition-colors flex items-center justify-center gap-1"
                         >
                           <CheckCircle className="w-3 h-3" />
-                          {isTask ? 'Concluir Tarefa' : 'Concluir Touchpoint'}
+                          {isTask ? 'Concluir Taskpoint' : 'Concluir Touchpoint'}
                         </button>
                       )}
                     </div>

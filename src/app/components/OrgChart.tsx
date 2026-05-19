@@ -16,6 +16,7 @@ interface OrgNode {
 
 interface OrgChartProps {
   contacts: Contact[];
+  onEditContact?: (contact: Contact) => void;
 }
 
 function getInitials(name: string) {
@@ -106,6 +107,7 @@ interface OrgNodeCardProps {
   onRemove: (contactId: number) => void;
   occupiedIds: Set<number>;
   isRoot?: boolean;
+  onEditContact?: (contact: Contact) => void;
 }
 
 function OrgNodeCard({
@@ -116,6 +118,7 @@ function OrgNodeCard({
   onRemove,
   occupiedIds,
   isRoot = false,
+  onEditContact,
 }: OrgNodeCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -174,7 +177,10 @@ function OrgNodeCard({
           {getInitials(contact.name)}
         </div>
 
-        <div style={{ fontWeight: 700, fontSize: 12, color: "#212A46", lineHeight: 1.3, marginBottom: 2 }}>
+        <div
+          onClick={() => onEditContact?.(contact)}
+          style={{ fontWeight: 700, fontSize: 12, color: "#212A46", lineHeight: 1.3, marginBottom: 2, cursor: onEditContact ? "pointer" : "default" }}
+        >
           {contact.name}
         </div>
         <div style={{ fontSize: 11, color: "#6B7280", lineHeight: 1.3, marginBottom: 2 }}>
@@ -338,6 +344,7 @@ function OrgNodeCard({
                     onAddChild={onAddChild}
                     onRemove={onRemove}
                     occupiedIds={occupiedIds}
+                    onEditContact={onEditContact}
                   />
                 </div>
               </div>
@@ -378,7 +385,7 @@ function removeFromTree(nodes: OrgNode[], contactId: number): OrgNode[] {
 
 // ── OrgChart ─────────────────────────────────────────────────────────────────
 
-export function OrgChart({ contacts }: OrgChartProps) {
+export function OrgChart({ contacts, onEditContact }: OrgChartProps) {
   const [roots, setRoots] = useState<OrgNode[]>([]);
   const [showAddRootMenu, setShowAddRootMenu] = useState(false);
   const addRootBtnRef = useRef<HTMLButtonElement>(null);
@@ -538,6 +545,7 @@ export function OrgChart({ contacts }: OrgChartProps) {
                 onRemove={handleRemove}
                 occupiedIds={occupiedIds}
                 isRoot
+                onEditContact={onEditContact}
               />
             ))}
           </div>

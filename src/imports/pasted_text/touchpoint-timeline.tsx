@@ -163,7 +163,7 @@ export function TouchpointTimeline({
                             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                             <path d="M9 14l2 2 4-4"/>
                           </svg>
-                          TAREFA
+                          TASKPOINT
                         </>
                       ) : (
                         <>
@@ -224,7 +224,7 @@ export function TouchpointTimeline({
                         className="mt-2 w-full py-1.5 px-2 bg-[#5cb85c] hover:bg-[#4cae4c] text-white rounded text-[10px] font-bold transition-colors flex items-center justify-center gap-1"
                       >
                         <CheckCircle className="w-3 h-3" />
-                        {isTask ? 'Concluir Tarefa' : 'Concluir Touchpoint'}
+                        {isTask ? 'Concluir Taskpoint' : 'Concluir Touchpoint'}
                       </button>
                     )}
                   </div>
@@ -361,7 +361,7 @@ export function TouchpointTimeline({
                           <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
                           <path d="M9 14l2 2 4-4"/>
                         </svg>
-                        TAREFA
+                        TASKPOINT
                       </>
                     ) : (
                       <>
@@ -447,7 +447,7 @@ export function TouchpointTimeline({
                     className="mt-2 w-full py-1.5 px-2 bg-[#5cb85c] hover:bg-[#4cae4c] text-white rounded text-[10px] font-bold transition-colors flex items-center justify-center gap-1"
                   >
                     <CheckCircle className="w-3 h-3" />
-                    {isTask ? 'Concluir Tarefa' : 'Concluir Touchpoint'}
+                    {isTask ? 'Concluir Taskpoint' : 'Concluir Touchpoint'}
                   </button>
                 )}
               </div>
