@@ -11,6 +11,8 @@ import { GtmPage } from "./components/GtmPage";
 import { PlaysOverviewPage } from "./components/PlaysOverviewPage";
 import { TouchpointManagerPage } from "./components/TouchpointManagerPage";
 import { NewPlayData } from "./components/PlayDetailPage";
+import { Integrations } from "./integrations/Integrations";
+import { LinkedInOAuthCallback } from "./integrations/LinkedInOAuthCallback";
 
 function PlaysRoute() {
   const location = useLocation();
@@ -66,6 +68,7 @@ export default function App() {
     <BrowserRouter>
       <Toaster position="top-right" richColors />
       <Routes>
+        <Route path="/auth/linkedin/callback" element={<LinkedInOAuthCallback />} />
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="contas" element={<ContasRoute />} />
@@ -77,6 +80,7 @@ export default function App() {
           <Route path="contatos" element={<Placeholder title="Contatos" />} />
           <Route path="lista-contas" element={<Placeholder title="Lista de Contas" />} />
           <Route path="segmentos" element={<Placeholder title="Segmentos" />} />
+          <Route path="integrations" element={<Integrations />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
