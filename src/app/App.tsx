@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AppLayout } from "./AppLayout";
 import { HomePage } from "./components/HomePage";
@@ -13,7 +13,13 @@ import { TouchpointManagerPage } from "./components/TouchpointManagerPage";
 import { NewPlayData } from "./components/PlayDetailPage";
 
 function PlaysRoute() {
-  const [selectedPlay, setSelectedPlay] = useState<{ accountId: string; playId: string } | null>(null);
+  const location = useLocation();
+  const incoming = (location.state as { accountId?: string; playId?: string } | null) ?? null;
+  const [selectedPlay, setSelectedPlay] = useState<{ accountId: string; playId: string } | null>(
+    incoming?.accountId && incoming?.playId
+      ? { accountId: incoming.accountId, playId: incoming.playId }
+      : null
+  );
   const [newPlay, setNewPlay] = useState<NewPlayData | null>(null);
 
   const handleSelectPlay = (accountId: string, playId: string) =>
@@ -34,7 +40,14 @@ function PlaysRoute() {
 }
 
 function ContasRoute() {
-  return <AccountsPage onOpenPlay={() => { window.location.assign("/plays"); }} />;
+  const navigate = useNavigate();
+  return (
+    <AccountsPage
+      onOpenPlay={(accountId: string, playId: string) =>
+        navigate("/plays", { state: { accountId, playId } })
+      }
+    />
+  );
 }
 
 function Placeholder({ title }: { title: string }) {
