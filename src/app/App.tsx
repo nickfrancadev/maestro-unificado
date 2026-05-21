@@ -7,7 +7,7 @@ import { AccountsPage } from "./components/AccountsPage";
 import { Home } from "./pages/Home";
 import { Marketplace } from "./pages/Marketplace";
 import { PlaysCanvas } from "./pages/PlaysCanvas";
-import { GtmPage } from "./components/GtmPage";
+import { GtmPage } from "./components/gtm/GtmPage";
 import { PlaysOverviewPage } from "./components/PlaysOverviewPage";
 import { TouchpointManagerPage } from "./components/TouchpointManagerPage";
 import { NewPlayData } from "./components/PlayDetailPage";
