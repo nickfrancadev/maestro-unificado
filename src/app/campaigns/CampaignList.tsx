@@ -289,7 +289,7 @@ export function CampaignList() {
           </button>
           <button 
             onClick={onCreateCampaign}
-            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#FF5F39] text-white rounded-lg text-sm font-medium hover:bg-[#E54A26] transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
             Nova Campanha
@@ -319,7 +319,7 @@ export function CampaignList() {
             placeholder="Buscar campanhas..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5F39]"
           />
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
@@ -335,7 +335,7 @@ export function CampaignList() {
               onClick={() => setFilter(s.key)}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                 filter === s.key 
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                  ? 'bg-[#FFF1ED] text-[#E54A26] border border-[#FFD0C2]' 
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
@@ -398,7 +398,7 @@ export function CampaignList() {
                           {campaign.status}
                         </span>
                         {campaign.actionLoading && (
-                          <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
+                          <Loader2 className="w-3.5 h-3.5 text-[#FF5F39] animate-spin" />
                         )}
                       </div>
                     </td>
@@ -415,7 +415,7 @@ export function CampaignList() {
                           <>
                             <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                               <div 
-                                className="h-full bg-indigo-500 rounded-full" 
+                                className="h-full bg-[#FF5F39] rounded-full" 
                                 style={{ width: `${budgetPct}%` }}
                               ></div>
                             </div>
@@ -496,7 +496,7 @@ export function CampaignList() {
                         ) : null}
                         <button 
                           onClick={() => onViewPerformance(campaign.id)}
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded" 
+                          className="p-1.5 text-slate-500 hover:text-[#FF5F39] hover:bg-[#FFF1ED] rounded" 
                           title="Analytics"
                         >
                           <BarChart3 className="w-4 h-4" />

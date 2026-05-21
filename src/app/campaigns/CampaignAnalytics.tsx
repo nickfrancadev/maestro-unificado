@@ -82,7 +82,7 @@ function relativeTime(iso: string): string {
 
 function avatarColor(name: string | null): string {
   if (!name) return 'bg-slate-400';
-  const colors = ['bg-indigo-500','bg-blue-500','bg-emerald-500','bg-amber-500','bg-rose-500','bg-purple-500','bg-cyan-500','bg-orange-500'];
+  const colors = ['bg-[#FF5F39]','bg-blue-500','bg-emerald-500','bg-amber-500','bg-rose-500','bg-purple-500','bg-cyan-500','bg-orange-500'];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return colors[Math.abs(h) % colors.length];
@@ -255,7 +255,7 @@ export function CampaignAnalytics() {
                   <button
                     key={r.key}
                     onClick={() => { setDateRange(r.key); setDateDropdownOpen(false); }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 ${dateRange === r.key ? 'text-indigo-700 font-semibold bg-indigo-50' : 'text-slate-700'}`}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 ${dateRange === r.key ? 'text-[#E54A26] font-semibold bg-[#FFF1ED]' : 'text-slate-700'}`}
                   >
                     {r.label}
                   </button>
@@ -288,7 +288,7 @@ export function CampaignAnalytics() {
             </div>
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard icon={<DollarSign className="w-4 h-4 text-indigo-600" />} label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
+              <MetricCard icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
               <MetricCard icon={<Eye className="w-4 h-4 text-blue-600" />} label="Impressões" value={fmtNum(d?.impressions || 0)} delta={d?.delta?.impressions} />
               <MetricCard icon={<MousePointerClick className="w-4 h-4 text-purple-600" />} label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
               <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={`${d?.ctr || '0'}%`} delta={null} />
@@ -300,7 +300,7 @@ export function CampaignAnalytics() {
             <div className="flex items-center justify-between mb-5">
               <h3 className="font-bold text-slate-800">Engajamento ao longo do tempo</h3>
               <div className="flex gap-4">
-                <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Impressões</div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-[#FF5F39]" /> Impressões</div>
                 <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-blue-400" /> Clicks</div>
               </div>
             </div>
@@ -385,7 +385,7 @@ export function CampaignAnalytics() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
                 <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                  <Users className="w-4 h-4 text-indigo-500" /> Alcance e Virais
+                  <Users className="w-4 h-4 text-[#FF5F39]" /> Alcance e Virais
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>

@@ -108,7 +108,7 @@ function PipelineProgressModal({
           <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
+              className="px-5 py-2.5 text-sm font-medium text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm"
             >
               {hasError ? 'Fechar' : 'Concluído'}
             </button>
@@ -179,7 +179,7 @@ function ConfirmLaunchModal({
               <div className="mt-1.5 space-y-1">
                 {validCampaigns.map((c, idx) => (
                   <div key={c.id} className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
+                    <span className="w-5 h-5 rounded-full bg-[#FFE3DA] text-[#E54A26] text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
                     <span className="text-sm text-slate-700 truncate">{c.name}</span>
                   </div>
                 ))}
@@ -255,7 +255,7 @@ function ConfirmLaunchModal({
           </button>
           <button
             onClick={onConfirm}
-            className="px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm flex items-center gap-2"
+            className="px-5 py-2.5 text-sm font-medium text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm flex items-center gap-2"
           >
             <Rocket className="w-4 h-4" />
             Lançar Campanha
@@ -547,7 +547,7 @@ export function OrchestrationStep({
           disabled={!isLinkedInReady || isPipelineRunning}
           className={`px-6 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition-all ${
             isLinkedInReady && !isPipelineRunning
-              ? 'bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-md'
+              ? 'bg-[#FF5F39] hover:bg-[#E54A26] text-white hover:shadow-md'
               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
           }`}
         >
@@ -588,8 +588,8 @@ export function OrchestrationStep({
         {/* Card: Configuração da Campanha */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center gap-2 mb-5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-              <Megaphone className="w-4 h-4 text-indigo-600" />
+            <div className="w-8 h-8 rounded-lg bg-[#FFF1ED] flex items-center justify-center">
+              <Megaphone className="w-4 h-4 text-[#FF5F39]" />
             </div>
             <h3 className="font-semibold text-slate-800">Configuração</h3>
           </div>
@@ -606,7 +606,7 @@ export function OrchestrationStep({
               <div className="mt-1.5 space-y-1">
                 {campaignConfig.campaigns.filter(c => c.name.trim()).map((c, idx) => (
                   <div key={c.id} className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
+                    <span className="w-5 h-5 rounded-full bg-[#FFE3DA] text-[#E54A26] text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
                     <span className="text-sm text-slate-700 truncate">{c.name}</span>
                   </div>
                 ))}
@@ -714,7 +714,7 @@ export function OrchestrationStep({
                         </p>
                       ))}
                       {facet.hasMore && (
-                        <p className="text-xs text-indigo-600 font-medium">
+                        <p className="text-xs text-[#FF5F39] font-medium">
                           +{facet.count - 5} mais
                         </p>
                       )}

@@ -109,8 +109,8 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
         {/* Card: Identificação — Group + Campaigns */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 lg:col-span-2">
           <div className="flex items-center gap-2 mb-5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-              <Megaphone className="w-4 h-4 text-indigo-600" />
+            <div className="w-8 h-8 rounded-lg bg-[#FFF1ED] flex items-center justify-center">
+              <Megaphone className="w-4 h-4 text-[#FF5F39]" />
             </div>
             <h3 className="font-semibold text-slate-800">Identificação</h3>
           </div>
@@ -126,7 +126,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                 value={config.campaignGroupName}
                 onChange={(e) => update({ campaignGroupName: e.target.value })}
                 placeholder="Ex: Q1 2026 — ABM Enterprise"
-                className="w-full p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400"
+                className="w-full p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-[#FF5F39] outline-none placeholder:text-slate-400"
               />
               <p className="text-xs text-slate-400 mt-1">
                 Agrupa campanhas relacionadas no LinkedIn Campaign Manager.
@@ -141,7 +141,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                 </label>
                 <button
                   onClick={addCampaign}
-                  className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg transition-colors"
+                  className="flex items-center gap-1 text-xs font-medium text-[#FF5F39] hover:text-[#E54A26] hover:bg-[#FFF1ED] px-2.5 py-1.5 rounded-lg transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Adicionar Campanha
@@ -162,12 +162,12 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                       value={campaign.name}
                       onChange={(e) => updateCampaignName(campaign.id, e.target.value)}
                       placeholder={idx === 0 ? 'Ex: Nubank — Q1 2026 Brand Awareness' : `Campanha ${idx + 1}`}
-                      className="flex-1 p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400"
+                      className="flex-1 p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-[#FF5F39] outline-none placeholder:text-slate-400"
                     />
                     <button
                       onClick={() => duplicateCampaign(campaign)}
                       title="Duplicar"
-                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                      className="p-1.5 text-slate-400 hover:text-[#FF5F39] hover:bg-[#FFF1ED] rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
@@ -218,7 +218,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                 key={key}
                 className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
                   config.objective === key
-                    ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
+                    ? 'border-[#FF5F39] bg-[#FFF1ED] ring-1 ring-[#FF5F39]'
                     : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
@@ -228,7 +228,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                   value={key}
                   checked={config.objective === key}
                   onChange={() => handleObjectiveChange(key)}
-                  className="mt-0.5 accent-indigo-600"
+                  className="mt-0.5 accent-[#FF5F39]"
                 />
                 <div>
                   <span className="text-sm font-medium text-slate-800">{obj.label}</span>
@@ -261,7 +261,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                     onClick={() => update({ budgetType: type })}
                     className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
                       config.budgetType === type
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                        ? 'border-[#FF5F39] bg-[#FFF1ED] text-[#E54A26]'
                         : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
@@ -283,11 +283,11 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                   onChange={(e) => update({ budgetAmount: e.target.value })}
                   min="10"
                   step="10"
-                  className="w-full p-2.5 pl-10 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-2.5 pl-10 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 outline-none focus:ring-2 focus:ring-[#FF5F39]"
                 />
               </div>
               {config.campaigns.length > 1 && parseFloat(config.budgetAmount) > 0 && (
-                <p className="text-xs text-indigo-600 mt-1 font-medium">
+                <p className="text-xs text-[#FF5F39] mt-1 font-medium">
                   Total: {currencySymbol}{(parseFloat(config.budgetAmount) * config.campaigns.length).toFixed(2)}{config.budgetType === 'daily' ? '/dia' : ''} ({config.campaigns.length} campanhas)
                 </p>
               )}
@@ -307,7 +307,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                     type="date"
                     value={config.startDate}
                     onChange={(e) => update({ startDate: e.target.value })}
-                    className="w-full pl-9 p-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full pl-9 p-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-[#FF5F39]"
                   />
                 </div>
               </div>
@@ -322,7 +322,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                     value={config.endDate}
                     min={config.startDate}
                     onChange={(e) => update({ endDate: e.target.value })}
-                    className="w-full pl-9 p-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full pl-9 p-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-[#FF5F39]"
                   />
                 </div>
                 <p className="text-xs text-slate-400 mt-1">Opcional (campanha contínua).</p>
@@ -435,28 +435,28 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
               </div>
 
               {/* Summary box */}
-              <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-4">
-                <h4 className="text-xs font-semibold text-indigo-700 uppercase mb-2">Resumo</h4>
-                <div className="space-y-1.5 text-sm text-indigo-900">
+              <div className="bg-[#FFF1ED] rounded-xl border border-[#FFD0C2] p-4">
+                <h4 className="text-xs font-semibold text-[#E54A26] uppercase mb-2">Resumo</h4>
+                <div className="space-y-1.5 text-sm text-[#212A46]">
                   <div className="flex justify-between">
-                    <span className="text-indigo-600">Grupo:</span>
+                    <span className="text-[#FF5F39]">Grupo:</span>
                     <span className="font-medium truncate ml-2 max-w-[60%] text-right">{config.campaignGroupName || '—'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-indigo-600">Campanhas:</span>
+                    <span className="text-[#FF5F39]">Campanhas:</span>
                     <span className="font-medium">{config.campaigns.filter(c => c.name.trim()).length} de {config.campaigns.length}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-indigo-600">Objetivo:</span>
+                    <span className="text-[#FF5F39]">Objetivo:</span>
                     <span className="font-medium">{OBJECTIVE_MAP[config.objective]?.label || config.objective}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-indigo-600">Budget/campanha:</span>
+                    <span className="text-[#FF5F39]">Budget/campanha:</span>
                     <span className="font-medium">{currencySymbol}{config.budgetAmount} {config.budgetType === 'daily' ? '/dia' : 'total'}</span>
                   </div>
                   {config.campaigns.length > 1 && (
-                    <div className="flex justify-between pt-1.5 border-t border-indigo-200">
-                      <span className="text-indigo-600 font-semibold">Budget total:</span>
+                    <div className="flex justify-between pt-1.5 border-t border-[#FFD0C2]">
+                      <span className="text-[#FF5F39] font-semibold">Budget total:</span>
                       <span className="font-bold">{currencySymbol}{(parseFloat(config.budgetAmount || '0') * config.campaigns.length).toFixed(2)} {config.budgetType === 'daily' ? '/dia' : ''}</span>
                     </div>
                   )}

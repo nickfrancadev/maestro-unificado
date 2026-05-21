@@ -123,7 +123,7 @@ function CompanyLogo({
 
   return (
     <div
-      className={`${sizeClasses[size]} rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold border border-blue-300`}
+      className={`${sizeClasses[size]} rounded-xl bg-gradient-to-br from-blue-500 to-[#FF5F39] flex items-center justify-center text-white font-bold border border-blue-300`}
     >
       {item.label.charAt(0).toUpperCase()}
     </div>
@@ -446,12 +446,12 @@ function CompanyHeroCard({
   const { inc, exc } = countSelections(selection);
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 via-white to-indigo-50 rounded-2xl border-2 border-blue-200 shadow-md overflow-visible">
+    <div className="bg-gradient-to-br from-blue-50 via-white to-[#FFF1ED] rounded-2xl border-2 border-blue-200 shadow-md overflow-visible">
       {/* Hero Header */}
       <div className="px-6 py-5 border-b border-blue-100">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-[#FF5F39] flex items-center justify-center shadow-lg">
               <Building2 className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -459,7 +459,7 @@ function CompanyHeroCard({
                 <h3 className="text-lg font-bold text-slate-800">
                   Empresas-alvo
                 </h3>
-                <span className="text-[10px] font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-2.5 py-0.5 rounded-full shadow-sm">
+                <span className="text-[10px] font-bold bg-gradient-to-r from-blue-600 to-[#FF5F39] text-white px-2.5 py-0.5 rounded-full shadow-sm">
                   ABM
                 </span>
                 <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
@@ -774,7 +774,7 @@ function CompanyHeroCard({
         {/* Similar Entities Section */}
         {selection.included.length > 0 &&
           (similarCompanies.length > 0 || loadingSimilar) && (
-            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-50 to-[#FFF1ED] rounded-xl border border-purple-200 overflow-hidden">
               <button
                 onClick={() =>
                   setSimilarExpanded(!similarExpanded)

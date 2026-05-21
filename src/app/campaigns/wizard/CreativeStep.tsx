@@ -540,7 +540,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     <button
       onClick={() => insertVariable(value)}
       disabled={!isTemplate}
-      className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed font-mono"
+      className="text-[10px] px-2 py-0.5 rounded-full bg-[#FFF1ED] text-[#E54A26] border border-[#FFE3DA] hover:bg-[#FFE3DA] disabled:opacity-40 disabled:cursor-not-allowed font-mono"
       title={isTemplate ? `Inserir ${value}` : 'Variáveis só funcionam no template'}
     >
       {label}
@@ -556,7 +556,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       <aside className="w-[280px] bg-white border-r border-slate-200 flex flex-col overflow-hidden">
         <div className="p-4 border-b border-slate-100">
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-indigo-600" />
+            <Megaphone className="w-4 h-4 text-[#FF5F39]" />
             Empresas-alvo
           </h3>
           <p className="text-[11px] text-slate-500 mt-1 leading-snug">
@@ -570,8 +570,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             onClick={() => setVoiceModalOpen(true)}
             className="w-full text-left px-4 py-3 flex items-center gap-3 border-b border-slate-100 hover:bg-slate-50 border-l-4 border-l-transparent transition-colors"
           >
-            <div className="w-8 h-8 rounded-md bg-indigo-100 flex items-center justify-center shrink-0">
-              <PaintBucket className="w-4 h-4 text-indigo-600" />
+            <div className="w-8 h-8 rounded-md bg-[#FFE3DA] flex items-center justify-center shrink-0">
+              <PaintBucket className="w-4 h-4 text-[#FF5F39]" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-slate-700">Brief</div>
@@ -586,14 +586,14 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           <button
             onClick={() => { setEditingTarget(TEMPLATE_TARGET); setBriefDrawerOpen(false); }}
             className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-slate-100 transition-colors ${
-              isTemplate ? 'bg-indigo-50 border-l-4 border-l-indigo-600' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+              isTemplate ? 'bg-[#FFF1ED] border-l-4 border-l-[#FF5F39]' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
             }`}
           >
-            <div className="w-8 h-8 rounded-md bg-indigo-100 flex items-center justify-center shrink-0">
-              <FileText className="w-4 h-4 text-indigo-600" />
+            <div className="w-8 h-8 rounded-md bg-[#FFE3DA] flex items-center justify-center shrink-0">
+              <FileText className="w-4 h-4 text-[#FF5F39]" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className={`text-sm truncate ${isTemplate ? 'font-bold text-indigo-900' : 'font-semibold text-slate-700'}`}>
+              <div className={`text-sm truncate ${isTemplate ? 'font-bold text-[#212A46]' : 'font-semibold text-slate-700'}`}>
                 Template global
               </div>
               <div className="text-[10px] text-slate-500">Aplicado a todas sem override</div>
@@ -620,7 +620,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 key={company.id}
                 onClick={() => { setEditingTarget(company.id); setBriefDrawerOpen(false); }}
                 className={`w-full text-left px-4 py-3 flex items-start gap-3 border-b border-slate-100 transition-colors ${
-                  isActive ? 'bg-indigo-50 border-l-4 border-l-indigo-600' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+                  isActive ? 'bg-[#FFF1ED] border-l-4 border-l-[#FF5F39]' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
                 }`}
               >
                 {company.logoUrl ? (
@@ -639,7 +639,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className={`text-sm truncate ${isActive ? 'font-bold text-indigo-900' : 'font-semibold text-slate-800'}`}>
+                  <div className={`text-sm truncate ${isActive ? 'font-bold text-[#212A46]' : 'font-semibold text-slate-800'}`}>
                     {company.label}
                   </div>
                   <div className="flex items-center gap-1.5 mt-1">
@@ -649,7 +649,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     </span>
                   </div>
                 </div>
-                {isLoading && <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin shrink-0 mt-1" />}
+                {isLoading && <Loader2 className="w-3.5 h-3.5 text-[#FF5F39] animate-spin shrink-0 mt-1" />}
               </button>
             );
           })}
@@ -664,7 +664,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           <div className="min-w-0">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               {isTemplate ? (
-                <><FileText className="w-4 h-4 text-indigo-600" /> Editando: Template global</>
+                <><FileText className="w-4 h-4 text-[#FF5F39]" /> Editando: Template global</>
               ) : (
                 <><Sparkles className="w-4 h-4 text-emerald-600" /> Editando: {editingCompany?.label}</>
               )}
@@ -677,7 +677,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {bulkProgress && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 rounded-lg text-xs text-indigo-700">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FFF1ED] rounded-lg text-xs text-[#E54A26]">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 Gerando {bulkProgress.done}/{bulkProgress.total}…
               </div>
@@ -711,7 +711,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               <button
                 disabled={bulkProgress !== null || !clientVoice.trim() || needsBaseImage}
                 onClick={generateForAllCompanies}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-[#FF5F39] to-violet-600 hover:from-[#E54A26] hover:to-violet-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
                   !clientVoice.trim() ? 'Configure a voz da marca primeiro'
                   : needsBaseImage ? 'Suba uma imagem-base no Template primeiro'
@@ -779,7 +779,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onChange={(e) => setEditorBody(e.target.value)}
                   maxLength={600}
                   placeholder={isTemplate ? 'Ex: Hi {{company.name}} team, ABM teams in {{company.industry}} are…' : 'Texto específico para esta empresa (opcional — usa o template se vazio)'}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg h-28 resize-none focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
+                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg h-28 resize-none focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
                 />
                 <span className="absolute bottom-2 right-2 text-[10px] text-slate-400 bg-white px-1">
                   {editorBody.length}/600
@@ -806,7 +806,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onChange={(e) => setEditorHeadline(e.target.value)}
                   maxLength={200}
                   placeholder={isTemplate ? 'Ex: Acelere seu ABM com {{company.name}}' : 'Headline específico (opcional)'}
-                  className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                  className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
                 />
                 <span className="absolute top-2.5 right-2.5 text-[10px] text-slate-400">
                   {editorHeadline.length}/200
@@ -871,8 +871,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               {/* Campaign visual identity — shared across all companies. The
                   texts + logo toggle apply to every ad regardless of mode;
                   the IA composer decides where to place each element. */}
-              <div className="mb-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-lg space-y-2.5">
-                <p className="text-[10px] text-indigo-700 leading-relaxed">
+              <div className="mb-3 p-3 bg-[#FFF1ED]/50 border border-[#FFE3DA] rounded-lg space-y-2.5">
+                <p className="text-[10px] text-[#E54A26] leading-relaxed">
                   Os textos abaixo e o logo da empresa-alvo são aplicados pela IA
                   em cima da imagem-base. {isTemplate
                     ? 'Compartilhados entre todas as empresas da campanha.'
@@ -932,7 +932,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   </div>
                   <button
                     onClick={() => setEditingTarget(TEMPLATE_TARGET)}
-                    className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded hover:bg-indigo-50 shrink-0"
+                    className="text-[10px] font-semibold text-[#FF5F39] hover:text-[#212A46] px-2 py-1 rounded hover:bg-[#FFF1ED] shrink-0"
                   >
                     {templateLogo.baseImageUrl ? 'Trocar' : 'Configurar'}
                   </button>
@@ -986,7 +986,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   </div>
                   <button
                     onClick={() => adImageInputRef.current?.click()}
-                    className="w-full px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 border-t border-slate-100 transition-colors"
+                    className="w-full px-3 py-2 text-xs font-medium text-[#FF5F39] hover:bg-[#FFF1ED] border-t border-slate-100 transition-colors"
                   >
                     Trocar imagem
                   </button>
@@ -998,15 +998,15 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onDragLeave={handleDragLeave}
                   onClick={() => !isUploadingImage && adImageInputRef.current?.click()}
                   className={`w-full border-2 border-dashed rounded-lg p-6 flex flex-col items-center gap-2 transition-colors cursor-pointer ${
-                    isDragging ? 'border-indigo-500 bg-indigo-50'
+                    isDragging ? 'border-[#FF5F39] bg-[#FFF1ED]'
                       : isUploadingImage ? 'border-slate-300 bg-slate-50 cursor-not-allowed'
-                      : 'border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/30'
+                      : 'border-slate-300 hover:border-[#FF7A59] hover:bg-[#FFF1ED]/30'
                   }`}
                 >
                   {isUploadingImage ? (
                     <>
-                      <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
-                      <span className="text-xs text-indigo-600 font-medium">Fazendo upload…</span>
+                      <Loader2 className="w-6 h-6 text-[#FF5F39] animate-spin" />
+                      <span className="text-xs text-[#FF5F39] font-medium">Fazendo upload…</span>
                     </>
                   ) : (
                     <>
@@ -1035,7 +1035,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     type="text"
                     value={landingPageUrl}
                     onChange={(e) => updateCreative({ landingPageUrl: e.target.value })}
-                    className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
                   />
                 </div>
                 <div>
@@ -1043,7 +1043,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   <select
                     value={cta}
                     onChange={(e) => updateCreative({ cta: e.target.value })}
-                    className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
                   >
                     {CTA_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
@@ -1172,7 +1172,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <PaintBucket className="w-4 h-4 text-indigo-600" />
+                  <PaintBucket className="w-4 h-4 text-[#FF5F39]" />
                   Brief
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">Usado em todas as gerações de IA. Salvo no seu workspace.</p>
@@ -1194,13 +1194,13 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     value={voiceDraft.websiteUrl}
                     onChange={(e) => setVoiceDraft({ ...voiceDraft, websiteUrl: e.target.value })}
                     placeholder="https://suaempresa.com"
-                    className="flex-1 p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="flex-1 p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
                   />
                   <button
                     type="button"
                     onClick={handleExtract}
                     disabled={extracting || !voiceDraft.websiteUrl.trim()}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg flex items-center gap-2 shrink-0"
+                    className="px-4 py-2 text-sm font-semibold text-white bg-[#FF5F39] hover:bg-[#E54A26] disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg flex items-center gap-2 shrink-0"
                   >
                     {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                     Extrair com IA
@@ -1228,7 +1228,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onChange={(e) => setVoiceDraft({ ...voiceDraft, voice: e.target.value })}
                   rows={4}
                   placeholder="Ex: Direto e confiante, sem jargão. Falamos como engenheiros para engenheiros — exemplos concretos, números reais, zero hype."
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
+                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
                 />
               </div>
 
@@ -1242,7 +1242,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onChange={(e) => setVoiceDraft({ ...voiceDraft, context: e.target.value })}
                   rows={3}
                   placeholder="Ex: A Maestro é uma plataforma de ABM para B2B SaaS. Ajudamos times de marketing e vendas a executar campanhas 1:1 nas contas-alvo."
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
+                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
                 />
               </div>
 
@@ -1254,7 +1254,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 <select
                   value={voiceDraft.productService}
                   onChange={(e) => setVoiceDraft({ ...voiceDraft, productService: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
                 >
                   <option value="">Selecione um produto ou serviço</option>
                   {MOCK_PRODUCTS.map((opt) => (
@@ -1271,7 +1271,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 <select
                   value={voiceDraft.audienceMarket}
                   onChange={(e) => setVoiceDraft({ ...voiceDraft, audienceMarket: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
                 >
                   <option value="">Selecione um público ou mercado</option>
                   {MOCK_AUDIENCES.map((opt) => (
@@ -1288,7 +1288,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 <select
                   value={voiceDraft.persona}
                   onChange={(e) => setVoiceDraft({ ...voiceDraft, persona: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
                 >
                   <option value="">Selecione uma persona</option>
                   {MOCK_PERSONAS.map((opt) => (
@@ -1341,7 +1341,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               <button onClick={() => setVoiceModalOpen(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
                 Cancelar
               </button>
-              <button onClick={persistVoice} className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm">
+              <button onClick={persistVoice} className="px-4 py-2 text-sm font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm">
                 Salvar
               </button>
             </div>
@@ -1381,7 +1381,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
         <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Info className="w-4 h-4 text-indigo-600" /> Brand Brief
+              <Info className="w-4 h-4 text-[#FF5F39]" /> Brand Brief
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">Sinais da marca <span className="font-semibold text-slate-700">{company.label}</span> usados pela IA na personalização.</p>
           </div>
@@ -1391,13 +1391,13 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {!draft && !loading && (
             <div className="text-center py-12">
-              <Sparkles className="w-10 h-10 text-indigo-300 mx-auto mb-3" />
+              <Sparkles className="w-10 h-10 text-[#FF9C82] mx-auto mb-3" />
               <p className="text-sm text-slate-600 mb-4">
                 Vamos analisar o site da {company.label} para extrair identidade visual e mensagens-chave.
               </p>
               <button
                 onClick={onGenerate}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FF5F39] hover:bg-[#E54A26] text-white text-sm font-bold rounded-lg shadow-sm"
               >
                 <Wand2 className="w-4 h-4" /> Gerar Brand Brief
               </button>
@@ -1406,7 +1406,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
 
           {loading && (
             <div className="text-center py-12">
-              <Loader2 className="w-8 h-8 text-indigo-500 mx-auto animate-spin mb-3" />
+              <Loader2 className="w-8 h-8 text-[#FF5F39] mx-auto animate-spin mb-3" />
               <p className="text-sm text-slate-600">Analisando o site da {company.label}…</p>
               <p className="text-xs text-slate-400 mt-1">Coletando sinais e sintetizando com Gemini</p>
             </div>
@@ -1422,11 +1422,11 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
               )}
 
               <Field label="Indústria">
-                <input value={draft.industry} onChange={(e) => setField('industry', e.target.value)} className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input value={draft.industry} onChange={(e) => setField('industry', e.target.value)} className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none" />
               </Field>
 
               <Field label="Proposta de valor">
-                <textarea value={draft.value_proposition} onChange={(e) => setField('value_proposition', e.target.value)} rows={2} className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <textarea value={draft.value_proposition} onChange={(e) => setField('value_proposition', e.target.value)} rows={2} className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none" />
               </Field>
 
               <Field label="Cores primárias">
@@ -1462,12 +1462,12 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
               </Field>
 
               <Field label="Persona-alvo da empresa">
-                <textarea value={draft.target_persona_hint} onChange={(e) => setField('target_persona_hint', e.target.value)} rows={2} className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <textarea value={draft.target_persona_hint} onChange={(e) => setField('target_persona_hint', e.target.value)} rows={2} className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none" />
               </Field>
 
               {draft.source_url && (
                 <p className="text-[10px] text-slate-400 pt-2">
-                  Fonte: <a href={draft.source_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">{draft.source_url}</a>
+                  Fonte: <a href={draft.source_url} target="_blank" rel="noreferrer" className="text-[#FF5F39] hover:underline">{draft.source_url}</a>
                 </p>
               )}
             </>
@@ -1476,12 +1476,12 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
 
         {draft && (
           <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
-            <button onClick={onGenerate} className="text-xs text-slate-600 hover:text-indigo-700 flex items-center gap-1 font-semibold">
+            <button onClick={onGenerate} className="text-xs text-slate-600 hover:text-[#E54A26] flex items-center gap-1 font-semibold">
               <RotateCw className="w-3 h-3" /> Regenerar
             </button>
             <div className="flex gap-2">
               <button onClick={onClose} className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900">Cancelar</button>
-              <button onClick={() => { onSave(draft); onClose(); }} className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm">
+              <button onClick={() => { onSave(draft); onClose(); }} className="px-3 py-1.5 text-xs font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm">
                 Salvar brief
               </button>
             </div>
@@ -1497,10 +1497,10 @@ function ModeButton({ icon, label, sub, active, onClick }: { icon: React.ReactNo
     <button
       onClick={onClick}
       className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-md text-center transition-colors ${
-        active ? 'bg-white shadow-sm border border-indigo-200 text-indigo-700' : 'text-slate-600 hover:bg-white/60'
+        active ? 'bg-white shadow-sm border border-[#FFD0C2] text-[#E54A26]' : 'text-slate-600 hover:bg-white/60'
       }`}
     >
-      <span className={active ? 'text-indigo-600' : 'text-slate-400'}>{icon}</span>
+      <span className={active ? 'text-[#FF5F39]' : 'text-slate-400'}>{icon}</span>
       <span className="text-[11px] font-bold leading-tight">{label}</span>
       <span className="text-[9px] text-slate-500 leading-tight">{sub}</span>
     </button>
@@ -1516,7 +1516,7 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded focus:ring-1 focus:ring-indigo-500 outline-none"
+        className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded focus:ring-1 focus:ring-[#FF5F39] outline-none"
       />
     </div>
   );
@@ -1562,7 +1562,7 @@ function FontPicker({ value, onChange }: { value: string; onChange: (v: string) 
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-2 text-sm bg-white border border-slate-200 rounded hover:border-slate-300 focus:ring-1 focus:ring-indigo-500 outline-none"
+        className="w-full flex items-center justify-between px-3 py-2 text-sm bg-white border border-slate-200 rounded hover:border-slate-300 focus:ring-1 focus:ring-[#FF5F39] outline-none"
       >
         <span style={{ fontFamily: `"${value}", sans-serif` }} className="truncate">{value}</span>
         <ChevronDown className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
@@ -1582,7 +1582,7 @@ function FontPicker({ value, onChange }: { value: string; onChange: (v: string) 
                     type="button"
                     onClick={() => { onChange(f.family); setOpen(false); }}
                     className={`w-full text-left px-3 py-2 text-base transition-colors ${
-                      isActive ? 'bg-indigo-50 text-indigo-900' : 'hover:bg-slate-50 text-slate-800'
+                      isActive ? 'bg-[#FFF1ED] text-[#212A46]' : 'hover:bg-slate-50 text-slate-800'
                     }`}
                     style={{ fontFamily: `"${f.family}", sans-serif` }}
                   >
@@ -1618,9 +1618,9 @@ function ChipsEditor({ values, onChange, placeholder }: { values: string[]; onCh
   return (
     <div className="flex flex-wrap gap-1.5">
       {values.map((v, i) => (
-        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 rounded-full text-xs text-indigo-700">
+        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#FFF1ED] border border-[#FFE3DA] rounded-full text-xs text-[#E54A26]">
           {v}
-          <button onClick={() => onChange(values.filter((_, j) => j !== i))} className="text-indigo-400 hover:text-indigo-700">
+          <button onClick={() => onChange(values.filter((_, j) => j !== i))} className="text-[#FF7A59] hover:text-[#E54A26]">
             <X className="w-3 h-3" />
           </button>
         </span>
@@ -1630,7 +1630,7 @@ function ChipsEditor({ values, onChange, placeholder }: { values: string[]; onCh
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
         placeholder={placeholder}
-        className="text-xs px-2 py-0.5 bg-white border border-dashed border-slate-300 rounded-full outline-none focus:border-indigo-400 min-w-[120px]"
+        className="text-xs px-2 py-0.5 bg-white border border-dashed border-slate-300 rounded-full outline-none focus:border-[#FF7A59] min-w-[120px]"
       />
     </div>
   );

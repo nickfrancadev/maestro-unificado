@@ -94,7 +94,7 @@ export function AdvancedCampaignCreator() {
                    <label className="block text-sm font-medium text-slate-700 mb-1">Nome da Campanha</label>
                    <input 
                       type="text" 
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#FF5F39] focus:border-[#FF5F39]"
                       placeholder="Ex: Q3 Awareness Campaign"
                       value={campaignData.name}
                       onChange={e => setCampaignData({...campaignData, name: e.target.value})}
@@ -213,12 +213,12 @@ export function AdvancedCampaignCreator() {
                    <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Conteúdo</label>
                       <div className="flex gap-4">
-                         <label className={`flex-1 p-4 border rounded-lg cursor-pointer flex flex-col items-center gap-2 transition-all ${repoData.type === 'image' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:bg-slate-50'}`}>
+                         <label className={`flex-1 p-4 border rounded-lg cursor-pointer flex flex-col items-center gap-2 transition-all ${repoData.type === 'image' ? 'border-[#FF5F39] bg-[#FFF1ED] text-[#E54A26]' : 'border-slate-200 hover:bg-slate-50'}`}>
                             <input type="radio" name="repoType" className="hidden" checked={repoData.type === 'image'} onChange={() => setRepoData({...repoData, type: 'image'})} />
                             <ImageIcon className="w-6 h-6" />
                             <span className="text-sm font-medium">Imagens</span>
                          </label>
-                         <label className={`flex-1 p-4 border rounded-lg cursor-pointer flex flex-col items-center gap-2 transition-all ${repoData.type === 'video' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 hover:bg-slate-50'}`}>
+                         <label className={`flex-1 p-4 border rounded-lg cursor-pointer flex flex-col items-center gap-2 transition-all ${repoData.type === 'video' ? 'border-[#FF5F39] bg-[#FFF1ED] text-[#E54A26]' : 'border-slate-200 hover:bg-slate-50'}`}>
                             <input type="radio" name="repoType" className="hidden" checked={repoData.type === 'video'} onChange={() => setRepoData({...repoData, type: 'video'})} />
                             <Database className="w-6 h-6" />
                             <span className="text-sm font-medium">Vídeos</span>
@@ -245,7 +245,7 @@ export function AdvancedCampaignCreator() {
                   <h3 className="text-lg font-semibold text-slate-800 mb-4">Upload de Objeto</h3>
                   
                   <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-slate-50 transition-colors cursor-pointer bg-white">
-                     <div className="p-4 bg-indigo-50 rounded-full text-indigo-600 mb-4">
+                     <div className="p-4 bg-[#FFF1ED] rounded-full text-[#FF5F39] mb-4">
                         <Upload className="w-8 h-8" />
                      </div>
                      <p className="text-sm font-medium text-slate-900 mb-1">Clique para fazer upload ou arraste e solte</p>
@@ -278,7 +278,7 @@ export function AdvancedCampaignCreator() {
                   <div className="flex justify-center">
                      <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg max-w-sm w-full text-left">
                         <div className="flex items-center gap-3 mb-4 border-b border-slate-700 pb-4">
-                           <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center font-bold">Ad</div>
+                           <div className="w-10 h-10 bg-[#FF5F39] rounded-lg flex items-center justify-center font-bold">Ad</div>
                            <div>
                               <p className="font-bold">Novo Anúncio</p>
                               <p className="text-xs text-slate-400">Preview</p>
@@ -319,14 +319,14 @@ export function AdvancedCampaignCreator() {
                    return (
                       <div key={step.id} className={`flex items-center gap-3 p-2 rounded-lg transition-all ${isActive ? 'bg-white shadow-sm' : 'opacity-60'}`}>
                          <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center z-10 ${
-                            isActive ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 
+                            isActive ? 'border-[#FF5F39] bg-[#FFF1ED] text-[#FF5F39]' : 
                             isCompleted ? 'border-green-500 bg-green-50 text-green-600' : 
                             'border-slate-200 bg-white text-slate-400'
                          }`}>
                             {isCompleted ? <Check className="w-5 h-5" /> : <step.icon className="w-5 h-5" />}
                          </div>
                          <div className="flex-1">
-                            <span className={`block text-sm font-medium ${isActive ? 'text-indigo-900' : 'text-slate-600'}`}>{step.label}</span>
+                            <span className={`block text-sm font-medium ${isActive ? 'text-[#212A46]' : 'text-slate-600'}`}>{step.label}</span>
                          </div>
                       </div>
                    );
@@ -353,7 +353,7 @@ export function AdvancedCampaignCreator() {
                 </button>
                 <button 
                   onClick={handleNext}
-                  className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 shadow-sm flex items-center gap-2"
+                  className="px-6 py-2 bg-[#FF5F39] text-white font-medium rounded-lg hover:bg-[#E54A26] shadow-sm flex items-center gap-2"
                 >
                    {currentStep === 'create-ad' ? 'Finalizar e Publicar' : 'Próximo Passo'}
                 </button>
