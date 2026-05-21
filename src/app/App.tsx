@@ -13,6 +13,10 @@ import { TouchpointManagerPage } from "./components/TouchpointManagerPage";
 import { NewPlayData } from "./components/PlayDetailPage";
 import { Integrations } from "./integrations/Integrations";
 import { LinkedInOAuthCallback } from "./integrations/LinkedInOAuthCallback";
+import { CampaignList } from "./campaigns/CampaignList";
+import { CampaignWizard } from "./campaigns/CampaignWizard";
+import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
+import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
 
 function PlaysRoute() {
   const location = useLocation();
@@ -81,6 +85,11 @@ export default function App() {
           <Route path="lista-contas" element={<Placeholder title="Lista de Contas" />} />
           <Route path="segmentos" element={<Placeholder title="Segmentos" />} />
           <Route path="integrations" element={<Integrations />} />
+          <Route path="campaigns" element={<CampaignList />} />
+          <Route path="campaigns/new" element={<CampaignWizard />} />
+          <Route path="campaigns/new/advanced" element={<AdvancedCampaignCreator />} />
+          <Route path="campaigns/:id/edit" element={<CampaignWizard />} />
+          <Route path="campaigns/:id" element={<CampaignAnalytics />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
