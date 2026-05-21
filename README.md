@@ -1,5 +1,5 @@
 
-  # Mastro2026
+  # Maestro2026
 
   This is a code bundle for Mastro2026. The original project is available at https://www.figma.com/design/qT2VY5by8vlAC9bPrmlGlW/Mastro2026.
 
