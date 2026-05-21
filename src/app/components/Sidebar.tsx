@@ -14,6 +14,7 @@ import {
   FileText,
   MessageSquare,
   Megaphone,
+  Target,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -31,6 +32,8 @@ const navItems = [
   { icon: Play, key: "plays" },
   { icon: BarChart2, key: "analytics" },
   { icon: Rocket, key: "marketplace" },
+  { icon: Target, key: "campaigns" },
+  { icon: Settings, key: "integrations" },
 ];
 
 const audienceItems = [
