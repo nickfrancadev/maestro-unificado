@@ -14,8 +14,10 @@ import {
   FileText,
   MessageSquare,
   Megaphone,
+  Target,
 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { AIAssistant } from "./AIAssistant";
 
 interface SidebarProps {
@@ -30,6 +32,8 @@ const navItems = [
   { icon: Play, key: "plays" },
   { icon: BarChart2, key: "analytics" },
   { icon: Rocket, key: "marketplace" },
+  { icon: Target, key: "campaigns" },
+  { icon: Settings, key: "integrations" },
 ];
 
 const audienceItems = [
@@ -39,8 +43,11 @@ const audienceItems = [
   { label: "Segmentos", icon: PieChart, key: "segmentos" },
 ];
 
-export function Sidebar({ activePage = "contas", onNavigate }: SidebarProps) {
+export function Sidebar(_props: SidebarProps = {}) {
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPage = location.pathname === "/" ? "home" : location.pathname.slice(1);
 
   return (
     <div className="flex h-full" style={{ minHeight: "100vh" }}>
@@ -68,12 +75,12 @@ export function Sidebar({ activePage = "contas", onNavigate }: SidebarProps) {
         <div className="flex flex-col gap-1 w-full items-center flex-1 justify-center">
           {navItems.map(({ icon: Icon, key }) => {
             const pageKey = key === "analytics" ? "dashboard" : key === "person" ? "contas" : key;
-            const isActive = activePage === pageKey;
-            
+            const isActive = currentPage === pageKey;
+
             return (
               <button
                 key={key}
-                onClick={() => onNavigate?.(pageKey)}
+                onClick={() => navigate(pageKey === "home" ? "/" : "/" + pageKey)}
                 className="flex items-center justify-center rounded-lg transition-colors"
                 style={{
                   width: 44,
