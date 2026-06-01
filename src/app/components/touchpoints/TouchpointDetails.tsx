@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Archive, Copy, Edit3, Plus, FileText, ClipboardCheck, MessageCircle, CheckSquare, Users, Target, Heart, Sparkles, TrendingUp, Mail, Search, Activity, BarChart2, BookOpen, ChevronDown, X, UserCircle2, Calendar } from 'lucide-react';
-import type { Touchpoint } from './TouchpointTimeline';
+import { Archive, Copy, Edit3, Plus, FileText, ClipboardCheck, MessageCircle, CheckSquare, Users, Target, Heart, Sparkles, TrendingUp, Mail, Search, Activity, BarChart2, BookOpen, ChevronDown, X, UserCircle2, Calendar, Linkedin, AlertCircle, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { getLinkedInStatus } from '@/lib/linkedin';
+import type { Touchpoint, LinkedInAdData } from './TouchpointTimeline';
+import { LinkedInAdDrawer } from './LinkedInAdDrawer';
 
 const TOUCHPOINT_CATEGORIES = [
   { name: 'Relacionamento', icon: Users, color: '#FF9B83' },
@@ -43,9 +46,35 @@ interface TouchpointDetailsProps {
   layoutOrientation: 'vertical' | 'horizontal';
   onConfirmDraft?: (touchpoint: Touchpoint) => void;
   onCancelDraft?: () => void;
+  playName?: string;
+  audienceAccounts?: { id: string; name: string }[];
+  audienceContacts?: { id: string; name: string; role?: string }[];
 }
 
-export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onConfirmDraft, onCancelDraft }: TouchpointDetailsProps) {
+export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onConfirmDraft, onCancelDraft, playName, audienceAccounts, audienceContacts }: TouchpointDetailsProps) {
+  const navigate = useNavigate();
+  const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
+  const [adDrawerOpen, setAdDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    if (touchpoint.itemType !== 'linkedin-ad') return;
+    let cancelled = false;
+    getLinkedInStatus()
+      .then((s) => { if (!cancelled) setLinkedinConnected(s.status === 'connected'); })
+      .catch(() => { if (!cancelled) setLinkedinConnected(false); });
+    return () => { cancelled = true; };
+  }, [touchpoint.itemType, touchpoint.id]);
+
+  const handlePublishAd = (ad: LinkedInAdData) => {
+    onUpdate({ ...touchpoint, linkedinAd: ad, status: 'Executado' });
+  };
+
+  const handleConnectLinkedIn = () => {
+    navigate('/integrations', { state: { returnTo: window.location.pathname } });
+  };
+
+  const isLinkedInAd = touchpoint.itemType === 'linkedin-ad';
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [noteText, setNoteText] = useState('');
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
@@ -321,6 +350,133 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
       </div>
 
       <div className="p-4 w-full h-full overflow-y-auto max-h-[calc(100vh-180px)]">
+        {/* LinkedIn Ads panel (only for linkedin-ad touchpoints, non-draft, non-editing) */}
+        {isLinkedInAd && !isDraft && !isEditing && (
+          <div className="bg-white rounded-lg p-4 mb-3 border border-[#0a66c2]/30">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-[#0a66c2] flex items-center justify-center">
+                  <Linkedin className="w-4.5 h-4.5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#212a46]">LinkedIn Ads</h3>
+                  <p className="text-[11px] text-gray-500">Crie um anúncio sem sair da play</p>
+                </div>
+              </div>
+              <div
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                  touchpoint.linkedinAd?.status === 'published'
+                    ? 'bg-[#e8f5e9] text-[#2e7d32]'
+                    : linkedinConnected === false
+                    ? 'bg-[#fff3e0] text-[#e65100]'
+                    : 'bg-[#e3f0ff] text-[#0a66c2]'
+                }`}
+              >
+                {touchpoint.linkedinAd?.status === 'published'
+                  ? 'PUBLICADO'
+                  : linkedinConnected === false
+                  ? 'INTEGRAÇÃO PENDENTE'
+                  : 'RASCUNHO'}
+              </div>
+            </div>
+
+            {linkedinConnected === null && (
+              <div className="text-xs text-gray-400 py-3">Verificando conexão com LinkedIn Ads…</div>
+            )}
+
+            {linkedinConnected === false && (
+              <div className="rounded-lg border border-[#ffe0b2] bg-[#fff8e1] p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-[#e65100] flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-[#212a46] mb-1">LinkedIn Ads não está conectado</p>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Conecte sua conta para criar e publicar anúncios diretamente desta play.
+                  </p>
+                  <button
+                    onClick={handleConnectLinkedIn}
+                    className="px-4 py-2 bg-[#0a66c2] text-white text-xs font-bold rounded-lg hover:bg-[#084d92] flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Conectar LinkedIn Ads
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {linkedinConnected === true && touchpoint.linkedinAd?.status === 'published' && (
+              <div className="rounded-lg border border-gray-200 bg-[#f8fafc] p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Objetivo</span>
+                  <span className="font-semibold text-[#212a46]">
+                    {touchpoint.linkedinAd.objective === 'awareness'
+                      ? 'Brand Awareness'
+                      : touchpoint.linkedinAd.objective === 'lead-gen'
+                      ? 'Lead Generation'
+                      : 'Conversões'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Audiência</span>
+                  <span className="font-semibold text-[#212a46]">
+                    {touchpoint.linkedinAd.audience?.accountIds.length ?? 0} contas ·{' '}
+                    {touchpoint.linkedinAd.audience?.contactIds.length ?? 0} contatos
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Headline</span>
+                  <span className="font-semibold text-[#212a46] truncate max-w-[60%]">
+                    {touchpoint.linkedinAd.creative?.headline}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Orçamento diário</span>
+                  <span className="font-semibold text-[#212a46]">
+                    R$ {touchpoint.linkedinAd.budget?.daily}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Ad ID</span>
+                  <span className="font-mono text-xs text-[#0a66c2]">{touchpoint.linkedinAd.adId}</span>
+                </div>
+                <button
+                  onClick={() => setAdDrawerOpen(true)}
+                  className="mt-2 px-4 py-2 border border-[#0a66c2] text-[#0a66c2] text-xs font-bold rounded-lg hover:bg-[#e3f0ff] flex items-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  Editar anúncio
+                </button>
+              </div>
+            )}
+
+            {linkedinConnected === true && touchpoint.linkedinAd?.status !== 'published' && (
+              <div className="rounded-lg border border-dashed border-[#0a66c2]/40 bg-[#e3f0ff]/30 p-5 flex flex-col items-center text-center">
+                <Sparkles className="w-7 h-7 text-[#0a66c2] mb-2" />
+                <p className="text-sm font-semibold text-[#212a46] mb-1">Pronto para criar seu anúncio</p>
+                <p className="text-xs text-gray-600 mb-4 max-w-sm">
+                  Crie um anúncio direcionado às contas e contatos vinculados a esta play, em 3 passos.
+                </p>
+                <button
+                  onClick={() => setAdDrawerOpen(true)}
+                  className="px-5 py-2.5 bg-[#0a66c2] text-white text-xs font-bold rounded-lg hover:bg-[#084d92] flex items-center gap-1.5"
+                >
+                  <Linkedin className="w-3.5 h-3.5" />
+                  Criar anúncio
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        <LinkedInAdDrawer
+          isOpen={adDrawerOpen}
+          onClose={() => setAdDrawerOpen(false)}
+          onPublish={handlePublishAd}
+          initialAd={touchpoint.linkedinAd}
+          playName={playName ?? touchpoint.title}
+          availableAccounts={audienceAccounts ?? []}
+          availableContacts={audienceContacts ?? []}
+        />
+
         {/* Main card */}
         <div className="bg-white rounded-lg p-4 mb-3">
           {/* Header */}

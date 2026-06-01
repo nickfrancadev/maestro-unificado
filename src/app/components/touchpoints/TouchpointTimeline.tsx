@@ -1,10 +1,20 @@
 import { Plus, CheckCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
+export interface LinkedInAdData {
+  status: 'draft' | 'pending-connection' | 'published';
+  objective?: 'awareness' | 'lead-gen' | 'conversions';
+  audience?: { accountIds: string[]; contactIds: string[] };
+  creative?: { headline: string; description: string; cta: string; imageUrl?: string };
+  budget?: { daily: number; startDate: string; endDate: string };
+  adId?: string;
+  publishedAt?: string;
+}
+
 export interface Touchpoint {
   id: number;
-  itemType: 'touchpoint' | 'task';
-  type: 'AUTORIDADE' | 'ATENÇÃO' | 'INTERESSE' | 'DESEJO' | 'AÇÃO' | 'TASKPOINT';
+  itemType: 'touchpoint' | 'task' | 'linkedin-ad';
+  type: 'AUTORIDADE' | 'ATENÇÃO' | 'INTERESSE' | 'DESEJO' | 'AÇÃO' | 'TASKPOINT' | 'LINKEDIN_AD';
   title: string;
   channel: string;
   responsibles: string[];
@@ -36,6 +46,7 @@ export interface Touchpoint {
     content: string;
     mentions: string[];
   }>;
+  linkedinAd?: LinkedInAdData;
 }
 
 interface TouchpointTimelineProps {
@@ -71,6 +82,13 @@ export function TouchpointTimeline({
         bg: 'bg-[#e8f5e9]',
         text: 'text-[#2e7d32]',
         border: 'border-[#81c784]'
+      };
+    }
+    if (itemType === 'linkedin-ad') {
+      return {
+        bg: 'bg-[#e3f0ff]',
+        text: 'text-[#0a66c2]',
+        border: 'border-[#0a66c2]'
       };
     }
     
@@ -124,8 +142,9 @@ export function TouchpointTimeline({
                 const isSelected = selectedTouchpointId === touchpoint.id;
                 const isExecuted = touchpoint.status === 'Executado';
                 const isTask = touchpoint.itemType === 'task';
+                const isLinkedInAd = touchpoint.itemType === 'linkedin-ad';
                 const isDraft = touchpoint.isDraft;
-                
+
                 return (
                   <div key={touchpoint.id}>
                     <div
@@ -137,6 +156,8 @@ export function TouchpointTimeline({
                           ? 'border-[#4a90e2] bg-[#f0f7ff] shadow-sm'
                           : isExecuted
                           ? 'border-[#c8e6c9] bg-[#f1f8f4] hover:border-[#a5d6a7]'
+                          : isLinkedInAd
+                          ? 'border-[#0a66c2] bg-[#e3f0ff]/40 hover:border-[#0a4f8c]'
                           : isTask
                           ? 'border-[#81c784] bg-[#f1f8f4] hover:border-[#66bb6a]'
                           : 'border-gray-200 bg-white hover:border-gray-300'
@@ -160,7 +181,7 @@ export function TouchpointTimeline({
                           </button>
                         )}
                         
-                        <div className={`w-6 h-6 ${isTask ? 'bg-[#6BCF7F]' : 'bg-[#354566]'} rounded-full flex items-center justify-center text-white font-bold text-xs`}>
+                        <div className={`w-6 h-6 ${isLinkedInAd ? 'bg-[#0a66c2]' : isTask ? 'bg-[#6BCF7F]' : 'bg-[#354566]'} rounded-full flex items-center justify-center text-white font-bold text-xs`}>
                           {touchpoint.id}
                         </div>
                         
@@ -186,9 +207,13 @@ export function TouchpointTimeline({
                       <div className="flex items-center justify-between mb-2">
                         {/* Icon top-left */}
                         <div
-                          className={`relative group/icon w-6 h-6 rounded flex items-center justify-center ${isTask ? 'bg-[#6BCF7F]/20' : 'bg-[#354566]/10'}`}
+                          className={`relative group/icon w-6 h-6 rounded flex items-center justify-center ${isLinkedInAd ? 'bg-[#0a66c2]/15' : isTask ? 'bg-[#6BCF7F]/20' : 'bg-[#354566]/10'}`}
                         >
-                          {isTask ? (
+                          {isLinkedInAd ? (
+                            <svg className="w-3.5 h-3.5 text-[#0a66c2]" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                            </svg>
+                          ) : isTask ? (
                             <svg className="w-3.5 h-3.5 text-[#6BCF7F]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                               <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
                               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
@@ -202,7 +227,7 @@ export function TouchpointTimeline({
                           {/* Tooltip */}
                           <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 opacity-0 group-hover/icon:opacity-100 transition-opacity z-50">
                             <div className="bg-[#212a46] text-white text-[10px] font-semibold px-2 py-1 rounded whitespace-nowrap shadow-lg">
-                              {isTask ? 'Taskpoint' : 'Touchpoint'}
+                              {isLinkedInAd ? 'LinkedIn Ads' : isTask ? 'Taskpoint' : 'Touchpoint'}
                             </div>
                             <div className="w-2 h-2 bg-[#212a46] rotate-45 mx-auto -mt-1" />
                           </div>
@@ -261,7 +286,7 @@ export function TouchpointTimeline({
                           className="mt-2 w-full py-1.5 px-2 bg-[#5cb85c] hover:bg-[#4cae4c] text-white rounded text-[10px] font-bold transition-colors flex items-center justify-center gap-1"
                         >
                           <CheckCircle className="w-3 h-3" />
-                          {isTask ? 'Concluir Taskpoint' : 'Concluir Touchpoint'}
+                          {isLinkedInAd ? 'Marcar como publicado' : isTask ? 'Concluir Taskpoint' : 'Concluir Touchpoint'}
                         </button>
                       )}
                     </div>
