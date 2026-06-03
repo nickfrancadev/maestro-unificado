@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
-import { PaintBucket, X, Sparkles, Loader2 } from 'lucide-react';
+import { PaintBucket, X, Sparkles, Loader2, Upload } from 'lucide-react';
 import { FontPicker } from './CreativeStep';
 import { LOGO_VARIANTS, MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
 import type { BrandKit, LogoVariant } from './brandKit';
+
+const MAX_ASSET_MB = 5;
+function makeImageObjectUrl(file: File, onError: (msg: string) => void): string | null {
+  if (!file.type.startsWith('image/')) { onError('Use uma imagem (PNG, JPG ou SVG).'); return null; }
+  if (file.size > MAX_ASSET_MB * 1024 * 1024) { onError(`Arquivo excede ${MAX_ASSET_MB}MB.`); return null; }
+  return URL.createObjectURL(file);
+}
 
 export interface BriefDraft {
   voice: string;
@@ -267,7 +274,113 @@ function BrandEditor({ draft, setDraft, extracting, extractError, extractWarning
   );
 }
 
-// Stubs temporários — implementados na Task 4.
-function BrandBookDropzone({ disabled: _disabled, onFile: _onFile }: { disabled: boolean; onFile: (f: File) => void }) { return null; }
-function LogoGallery({ draft: _draft, setDraft: _setDraft }: { draft: BriefDraft; setDraft: React.Dispatch<React.SetStateAction<BriefDraft>> }) { return null; }
-function AssetGallery({ label: _label, items: _items, onAdd: _onAdd, onRemove: _onRemove }: { label: string; items: string[]; onAdd: (url: string) => void; onRemove: (index: number) => void }) { return null; }
+function LogoGallery({ draft, setDraft }: {
+  draft: BriefDraft; setDraft: React.Dispatch<React.SetStateAction<BriefDraft>>;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const pick = (variant: LogoVariant) => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*';
+    input.onchange = () => {
+      const file = input.files?.[0]; if (!file) return;
+      const url = makeImageObjectUrl(file, setErr);
+      if (url) setDraft((d) => ({ ...d, logos: { ...d.logos, [variant]: url } }));
+    };
+    input.click();
+  };
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Logos (claro/escuro · completo/símbolo)</label>
+      <div className="grid grid-cols-2 gap-2">
+        {LOGO_VARIANTS.map((v) => {
+          const url = draft.logos[v.key];
+          return (
+            <div key={v.key} className={`relative border border-slate-200 rounded-lg p-2 text-center ${v.dark ? 'bg-slate-900' : 'bg-white'}`}>
+              <div className={`text-[9px] uppercase tracking-wide mb-1 ${v.dark ? 'text-slate-400' : 'text-slate-400'}`}>{v.label}</div>
+              {url ? (
+                <div className="relative">
+                  <img src={url} alt={v.label} className="w-full h-12 object-contain" />
+                  <button type="button" onClick={() => setDraft((d) => ({ ...d, logos: { ...d.logos, [v.key]: null } }))}
+                    className="absolute -top-1 -right-1 bg-white text-slate-500 rounded-full w-4 h-4 text-[10px] leading-none border border-slate-200">×</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => pick(v.key)}
+                  className="w-full h-12 flex items-center justify-center text-slate-400 hover:text-[#FF5F39] border border-dashed border-slate-300 rounded">
+                  <Upload className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
+
+function AssetGallery({ label, items, onAdd, onRemove }: {
+  label: string; items: string[]; onAdd: (url: string) => void; onRemove: (index: number) => void;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const pick = () => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*';
+    input.onchange = () => {
+      const file = input.files?.[0]; if (!file) return;
+      const url = makeImageObjectUrl(file, setErr);
+      if (url) onAdd(url);
+    };
+    input.click();
+  };
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">{label}</label>
+      <div className="flex gap-2 flex-wrap">
+        {items.map((u, i) => (
+          <div key={i} className="relative">
+            <img src={u} alt="" className="w-14 h-14 object-contain rounded-lg border border-slate-200 p-1 bg-white" />
+            <button type="button" onClick={() => onRemove(i)}
+              className="absolute -top-1 -right-1 bg-white text-slate-500 rounded-full w-4 h-4 text-[10px] leading-none border border-slate-200">×</button>
+          </div>
+        ))}
+        <button type="button" onClick={pick}
+          className="w-14 h-14 flex items-center justify-center text-slate-400 hover:text-[#FF5F39] border border-dashed border-slate-300 rounded-lg bg-slate-50 text-xl">+</button>
+      </div>
+      {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
+
+function BrandBookDropzone({ disabled, onFile }: { disabled: boolean; onFile: (f: File) => void }) {
+  const [drag, setDrag] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const handle = (file?: File) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf') { setErr('Envie um arquivo PDF.'); return; }
+    if (file.size > 20 * 1024 * 1024) { setErr('PDF excede 20MB.'); return; }
+    setErr(null); onFile(file);
+  };
+  const pick = () => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'application/pdf';
+    input.onchange = () => handle(input.files?.[0]);
+    input.click();
+  };
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Upload do Brand Book (PDF)</label>
+      <div
+        onClick={() => !disabled && pick()}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setDrag(false); }}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files?.[0]); }}
+        className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer ${drag ? 'border-[#FF5F39] bg-[#FFF1ED]' : 'border-slate-300 bg-slate-50'} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
+      >
+        <Upload className="w-5 h-5 mx-auto text-slate-400 mb-1" />
+        <p className="text-xs text-slate-600">Arraste o PDF ou clique para enviar</p>
+        <p className="text-[10px] text-slate-400">A IA lê o material e preenche tudo</p>
+      </div>
+      {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
