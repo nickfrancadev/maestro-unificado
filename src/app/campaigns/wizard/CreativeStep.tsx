@@ -31,7 +31,7 @@ import {
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } from './types';
 import { resolveCreativeForCompany } from './types';
-import { createDefaultBrandKit } from './brandKit';
+import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
 import { BriefModal } from './BriefModal';
 import type { BriefDraft } from './BriefModal';
@@ -44,7 +44,6 @@ import {
   composeLogoOverlay,
   fetchClientVoice,
   saveClientVoice,
-  extractBrandVoice,
 } from '@/lib/ai';
 
 const CTA_OPTIONS = [
@@ -507,7 +506,15 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     setVoiceModalOpen(false);
   };
 
-  const handleBrandBookUpload = (_file: File) => { /* Task 5 */ };
+  const applyFixtureToDraft = (_source: 'brandbook' | 'website') => {
+    setBriefDraft((d) => ({
+      ...d,
+      voice: MOCK_BRAND_FIXTURE.voice,
+      context: MOCK_BRAND_FIXTURE.context,
+      brandColors: MOCK_BRAND_FIXTURE.colors,
+      fontFamily: MOCK_BRAND_FIXTURE.fontFamily,
+    }));
+  };
 
   const handleExtract = async () => {
     const url = briefDraft.websiteUrl.trim();
@@ -515,29 +522,21 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     setExtracting(true);
     setExtractError(null);
     setExtractWarning(null);
-    try {
-      const result = await extractBrandVoice({ website_url: url });
-      const examplesBlock = result.voice_examples.length
-        ? `\n\nExemplos do site:\n${result.voice_examples.map((e) => `• ${e}`).join('\n')}`
-        : '';
-      setBriefDraft((d) => ({
-        ...d,
-        voice: result.voice + examplesBlock,
-        context: result.brand_context,
-        brandColors: {
-          primary: result.brand_colors.primary || d.brandColors.primary,
-          secondary: result.brand_colors.secondary || d.brandColors.secondary,
-          accent: result.brand_colors.accent || d.brandColors.accent,
-        },
-      }));
-      if (result.scrape_status === 'limited') {
-        setExtractWarning('Não consegui ler o site — gerei uma estimativa a partir do domínio. Revise antes de salvar.');
-      }
-    } catch (err: any) {
-      setExtractError(err?.message || 'Falha ao extrair. Tente novamente.');
-    } finally {
-      setExtracting(false);
-    }
+    // Mock: simula latência de rede e preenche a partir da fixture.
+    await new Promise((r) => setTimeout(r, 900));
+    applyFixtureToDraft('website');
+    setExtractWarning('Extração simulada (mock) — revise os campos antes de salvar.');
+    setExtracting(false);
+  };
+
+  const handleBrandBookUpload = async (_file: File) => {
+    setExtracting(true);
+    setExtractError(null);
+    setExtractWarning(null);
+    await new Promise((r) => setTimeout(r, 900));
+    applyFixtureToDraft('brandbook');
+    setExtractWarning('Brand Book lido (mock) — revise os campos antes de salvar.');
+    setExtracting(false);
   };
 
   const ctaLabel = CTA_OPTIONS.find((o) => o.value === cta)?.label || 'Learn More';
