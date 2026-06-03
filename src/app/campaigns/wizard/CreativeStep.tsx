@@ -455,7 +455,20 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       icons: brandKit.icons,
       graphics: brandKit.graphics,
     });
-  }, [brandKit, clientProductService, clientAudienceMarket, clientPersona]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    brandKit.status,
+    brandKit.voice,
+    brandKit.context,
+    brandKit.websiteUrl,
+    brandKit.fontFamily,
+    brandKit.colors.primary,
+    brandKit.colors.secondary,
+    brandKit.colors.accent,
+    clientProductService,
+    clientAudienceMarket,
+    clientPersona,
+  ]);
 
   // Extraction UI state
   const [extracting, setExtracting] = useState(false);

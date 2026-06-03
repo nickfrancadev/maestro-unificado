@@ -56,13 +56,14 @@ export function BriefModal({
             {/* Toggle de dev — validação com o time, não persiste */}
             <div className="flex items-center gap-1 text-[10px] text-slate-400" title="Toggle de validação (dev)">
               <button
+                type="button"
                 onClick={() => setDevScenario(effectiveStatus === 'defined' ? 'empty' : 'defined')}
                 className="px-2 py-0.5 rounded-full border border-slate-200 hover:bg-slate-50 font-semibold"
               >
                 {readOnly ? 'Cenário 1' : 'Cenário 2'} ⇄
               </button>
             </div>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -98,17 +99,17 @@ export function BriefModal({
             <CampaignSelect label="Públicos/Mercados" value={draft.audienceMarket} options={MOCK_AUDIENCES}
               placeholder="Selecione um público ou mercado"
               onChange={(v) => setDraft((d) => ({ ...d, audienceMarket: v }))} />
-            <CampaignSelect label="Persona" value={draft.persona} options={MOCK_PERSONAS}
+            <CampaignSelect label="Persona/Público" value={draft.persona} options={MOCK_PERSONAS}
               placeholder="Selecione uma persona"
               onChange={(v) => setDraft((d) => ({ ...d, persona: v }))} />
           </div>
         </div>
 
         <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
             Cancelar
           </button>
-          <button onClick={onSave} className="px-4 py-2 text-sm font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm">
+          <button type="button" onClick={onSave} className="px-4 py-2 text-sm font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm">
             {readOnly ? 'Salvar' : 'Salvar modelo'}
           </button>
         </div>
@@ -212,13 +213,17 @@ function BrandEditor({ draft, setDraft, extracting, extractError, extractWarning
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Tom de voz</label>
+        <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
+          Tom de voz <span className="text-slate-400 font-normal lowercase">(2-3 frases descrevendo como a sua marca fala)</span>
+        </label>
         <textarea value={draft.voice} onChange={(e) => setDraft((d) => ({ ...d, voice: e.target.value }))} rows={4}
           placeholder="Ex: Direto e confiante, sem jargão."
           className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed" />
       </div>
       <div>
-        <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Contexto da empresa</label>
+        <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
+          Contexto da empresa <span className="text-slate-400 font-normal lowercase">(o que você vende, em 1-2 frases)</span>
+        </label>
         <textarea value={draft.context} onChange={(e) => setDraft((d) => ({ ...d, context: e.target.value }))} rows={3}
           placeholder="Ex: Plataforma de ABM para B2B SaaS."
           className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed" />
