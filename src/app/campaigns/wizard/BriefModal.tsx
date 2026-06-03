@@ -23,6 +23,8 @@ export interface BriefDraft {
   logos: Record<LogoVariant, string | null>;
   icons: string[];
   graphics: string[];
+  source: 'website' | 'brandbook' | null;   // qual método de extração foi usado (null = nenhum ainda)
+  extractedRef: string;                       // referência exibida no chip: URL do site ou nome do arquivo PDF
 }
 
 interface BriefModalProps {
@@ -36,11 +38,12 @@ interface BriefModalProps {
   extractWarning: string | null;
   onExtractWebsite: () => void;
   onUploadBrandBook: (file: File) => void;
+  onResetExtraction: () => void;
 }
 
 export function BriefModal({
   draft, setDraft, status, onClose, onSave,
-  extracting, extractError, extractWarning, onExtractWebsite, onUploadBrandBook,
+  extracting, extractError, extractWarning, onExtractWebsite, onUploadBrandBook, onResetExtraction,
 }: BriefModalProps) {
   // Toggle de dev: sobrescreve o status só localmente para validar os 2 cenários.
   const [devScenario, setDevScenario] = useState<BrandKit['status'] | null>(null);
@@ -91,6 +94,7 @@ export function BriefModal({
               extractWarning={extractWarning}
               onExtractWebsite={onExtractWebsite}
               onUploadBrandBook={onUploadBrandBook}
+              onResetExtraction={onResetExtraction}
             />
           )}
 
@@ -185,7 +189,7 @@ function BrandSummary({ draft }: { draft: BriefDraft }) {
   );
 }
 
-function BrandEditor({ draft, setDraft, extracting, extractError, extractWarning, onExtractWebsite, onUploadBrandBook }: {
+function BrandEditor({ draft, setDraft, extracting, extractError, extractWarning, onExtractWebsite, onUploadBrandBook, onResetExtraction }: {
   draft: BriefDraft;
   setDraft: React.Dispatch<React.SetStateAction<BriefDraft>>;
   extracting: boolean;
@@ -193,30 +197,56 @@ function BrandEditor({ draft, setDraft, extracting, extractError, extractWarning
   extractWarning: string | null;
   onExtractWebsite: () => void;
   onUploadBrandBook: (file: File) => void;
+  onResetExtraction: () => void;
 }) {
+  // State A — no extraction done yet
+  if (draft.source === null) {
+    return (
+      <div className="space-y-4">
+        <p className="text-[11px] text-slate-400">Extraia automaticamente de um Brand Book (PDF) ou do seu site.</p>
+
+        <BrandBookDropzone disabled={extracting} onFile={onUploadBrandBook} />
+        <div className="flex items-center gap-2 text-[10px] uppercase text-slate-400">
+          <span className="flex-1 h-px bg-slate-200" /> ou <span className="flex-1 h-px bg-slate-200" />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Website da sua empresa</label>
+          <div className="flex gap-2">
+            <input type="url" value={draft.websiteUrl}
+              onChange={(e) => setDraft((d) => ({ ...d, websiteUrl: e.target.value }))}
+              placeholder="https://suaempresa.com"
+              className="flex-1 p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none" />
+            <button type="button" onClick={onExtractWebsite} disabled={extracting || !draft.websiteUrl.trim()}
+              className="px-4 py-2 text-sm font-semibold text-white bg-[#FF5F39] hover:bg-[#E54A26] disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg flex items-center gap-2 shrink-0">
+              {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              Extrair com IA
+            </button>
+          </div>
+          {extractWarning && <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">{extractWarning}</p>}
+          {extractError && <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">{extractError}</p>}
+        </div>
+
+        <p className="text-[10px] text-slate-400 text-center">Os campos da marca aparecem após a extração.</p>
+      </div>
+    );
+  }
+
+  // State B — extraction was done, show chip + brand fields
   return (
     <div className="space-y-4">
-      <p className="text-[11px] text-slate-400">Extraia automaticamente de um Brand Book (PDF) ou do seu site.</p>
-
-      <BrandBookDropzone disabled={extracting} onFile={onUploadBrandBook} />
-      <div className="flex items-center gap-2 text-[10px] uppercase text-slate-400">
-        <span className="flex-1 h-px bg-slate-200" /> ou <span className="flex-1 h-px bg-slate-200" />
-      </div>
-      <div>
-        <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Website da sua empresa</label>
-        <div className="flex gap-2">
-          <input type="url" value={draft.websiteUrl}
-            onChange={(e) => setDraft((d) => ({ ...d, websiteUrl: e.target.value }))}
-            placeholder="https://suaempresa.com"
-            className="flex-1 p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none" />
-          <button type="button" onClick={onExtractWebsite} disabled={extracting || !draft.websiteUrl.trim()}
-            className="px-4 py-2 text-sm font-semibold text-white bg-[#FF5F39] hover:bg-[#E54A26] disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg flex items-center gap-2 shrink-0">
-            {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Extrair com IA
-          </button>
+      {/* Used-method chip */}
+      <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
+        <div className="w-6 h-6 rounded-md bg-emerald-500 text-white flex items-center justify-center shrink-0">
+          <Sparkles className="w-3.5 h-3.5" />
         </div>
-        {extractWarning && <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">{extractWarning}</p>}
-        {extractError && <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">{extractError}</p>}
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] font-bold text-emerald-800">
+            {draft.source === 'website' ? 'Extraído do site' : 'Brand Book lido'}
+          </div>
+          <div className="text-[10px] text-emerald-700 truncate">{draft.extractedRef}</div>
+        </div>
+        <button type="button" onClick={onResetExtraction}
+          className="text-[10px] font-bold text-[#FF5F39] hover:text-[#E54A26] shrink-0">Trocar ↻</button>
       </div>
 
       <div>
@@ -262,7 +292,6 @@ function BrandEditor({ draft, setDraft, extracting, extractError, extractWarning
         <FontPicker value={draft.fontFamily} onChange={(v) => setDraft((d) => ({ ...d, fontFamily: v }))} />
       </div>
 
-      {/* Galerias de assets visuais — implementadas na Task 4 */}
       <LogoGallery draft={draft} setDraft={setDraft} />
       <AssetGallery label="Ícones da marca" items={draft.icons}
         onAdd={(u) => setDraft((d) => ({ ...d, icons: [...d.icons, u] }))}

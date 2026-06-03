@@ -439,6 +439,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     fontFamily: 'Inter',
     logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
     icons: [], graphics: [],
+    source: null,
+    extractedRef: '',
   });
   useEffect(() => {
     setBriefDraft({
@@ -453,6 +455,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       logos: brandKit.logos,
       icons: brandKit.icons,
       graphics: brandKit.graphics,
+      source: null,
+      extractedRef: '',
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -506,13 +510,18 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     setVoiceModalOpen(false);
   };
 
-  const applyFixtureToDraft = (_source: 'brandbook' | 'website') => {
+  const applyFixtureToDraft = (source: 'brandbook' | 'website', ref: string) => {
     setBriefDraft((d) => ({
       ...d,
       voice: MOCK_BRAND_FIXTURE.voice,
       context: MOCK_BRAND_FIXTURE.context,
       brandColors: MOCK_BRAND_FIXTURE.colors,
       fontFamily: MOCK_BRAND_FIXTURE.fontFamily,
+      logos: MOCK_BRAND_FIXTURE.logos,
+      icons: MOCK_BRAND_FIXTURE.icons,
+      graphics: MOCK_BRAND_FIXTURE.graphics,
+      source,
+      extractedRef: ref,
     }));
   };
 
@@ -524,19 +533,36 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     setExtractWarning(null);
     // Mock: simula latência de rede e preenche a partir da fixture.
     await new Promise((r) => setTimeout(r, 900));
-    applyFixtureToDraft('website');
+    applyFixtureToDraft('website', url);
     setExtractWarning('Extração simulada (mock) — revise os campos antes de salvar.');
     setExtracting(false);
   };
 
-  const handleBrandBookUpload = async (_file: File) => {
+  const handleBrandBookUpload = async (file: File) => {
     setExtracting(true);
     setExtractError(null);
     setExtractWarning(null);
     await new Promise((r) => setTimeout(r, 900));
-    applyFixtureToDraft('brandbook');
+    applyFixtureToDraft('brandbook', file.name);
     setExtractWarning('Brand Book lido (mock) — revise os campos antes de salvar.');
     setExtracting(false);
+  };
+
+  const handleResetExtraction = () => {
+    setExtractWarning(null);
+    setExtractError(null);
+    setBriefDraft((d) => ({
+      ...d,
+      source: null,
+      extractedRef: '',
+      voice: '',
+      context: '',
+      brandColors: { primary: '', secondary: '', accent: '' },
+      logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
+      icons: [],
+      graphics: [],
+      // fontFamily mantém o default
+    }));
   };
 
   const ctaLabel = CTA_OPTIONS.find((o) => o.value === cta)?.label || 'Learn More';
@@ -1204,6 +1230,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           extractWarning={extractWarning}
           onExtractWebsite={handleExtract}
           onUploadBrandBook={handleBrandBookUpload}
+          onResetExtraction={handleResetExtraction}
         />
       )}
     </div>
