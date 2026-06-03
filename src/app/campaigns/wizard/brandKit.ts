@@ -63,15 +63,7 @@ const MOCK_GRAPHIC_2 = svgDataUri('<svg xmlns="http://www.w3.org/2000/svg" width
 // Fixture usada para SIMULAR a extração (PDF ou site) enquanto o backend real não
 // existe. Preenche texto/paleta/fonte E exemplos visuais (logos/ícones/grafismos)
 // para que o resultado da extração mock seja visível.
-export const MOCK_BRAND_FIXTURE: {
-  voice: string;
-  context: string;
-  colors: { primary: string; secondary: string; accent: string };
-  fontFamily: string;
-  logos: Record<LogoVariant, string | null>;
-  icons: string[];
-  graphics: string[];
-} = {
+export const MOCK_BRAND_FIXTURE: Omit<BrandKit, 'status' | 'websiteUrl' | 'source'> = {
   voice: 'Técnico e didático, focado em definir o produto e sua aplicação. Usa jargões do setor (SaaS, ABM, ABX, GTM, B2B) para se comunicar de forma precisa com um público familiarizado com marketing e vendas complexas.',
   context: 'Software SaaS especializado em Account-Based Marketing (ABM e ABX) para empresas B2B com vendas complexas, otimizando estratégias de Go To Market.',
   colors: { primary: '#FF5F39', secondary: '#0F172A', accent: '#6366F1' },

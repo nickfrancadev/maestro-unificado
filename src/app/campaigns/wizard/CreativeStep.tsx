@@ -553,6 +553,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     setExtractError(null);
     setBriefDraft((d) => ({
       ...d,
+      // websiteUrl e fontFamily são mantidos de propósito (pré-preenche um retry).
       source: null,
       extractedRef: '',
       voice: '',
@@ -561,7 +562,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
       icons: [],
       graphics: [],
-      // fontFamily mantém o default
     }));
   };
 
