@@ -1,4 +1,6 @@
 // Shared types for the Campaign Wizard flow
+import type { BrandKit } from './brandKit';
+import { createDefaultBrandKit } from './brandKit';
 
 export interface BuyingCommitteeContact {
   id: number;
@@ -135,7 +137,6 @@ export interface TemplateLogoConfig {
   textoDestaque: string;         // primary headline rendered into the image (e.g. "WORKSHOP ABM")
   textoComplementar: string;     // secondary line (e.g. "Convite exclusivo VIP")
   showTargetLogo: boolean;       // ask AI to place the target company's logo
-  fontFamily?: string;           // Google Font name (e.g. "Inter") — sent to the IA composer
 }
 
 // Creative data — passed from CreativeStep to OrchestrationStep
@@ -150,13 +151,10 @@ export interface CreativeData {
   templateLogo: TemplateLogoConfig;
   // AI-personalization layer — empty record means every company uses the template above
   overrides: Record<string, CompanyCreativeOverride>;  // keyed by company.id
-  clientVoice: string;           // tone-of-voice description from the advertiser
-  clientBrandContext: string;    // 1-2 sentences describing what the advertiser does
-  clientWebsiteUrl: string;      // advertiser's own website, used to auto-extract voice + context
+  brandKit: BrandKit;            // marca do anunciante (voz/contexto/paleta/fonte/logos/ícones/grafismos)
   clientProductService: string;  // mock dropdown selection — wired to real source later
   clientAudienceMarket: string;
   clientPersona: string;
-  clientBrandColors: { primary: string; secondary: string; accent: string };  // hex codes; used as palette hints in generate-copy
 }
 
 export function createDefaultCreativeData(): CreativeData {
@@ -174,16 +172,12 @@ export function createDefaultCreativeData(): CreativeData {
       textoDestaque: 'WORKSHOP ABM',
       textoComplementar: 'Convite exclusivo VIP',
       showTargetLogo: true,
-      fontFamily: 'Inter',
     },
     overrides: {},
-    clientVoice: '',
-    clientBrandContext: '',
-    clientWebsiteUrl: '',
+    brandKit: createDefaultBrandKit(),
     clientProductService: '',
     clientAudienceMarket: '',
     clientPersona: '',
-    clientBrandColors: { primary: '', secondary: '', accent: '' },
   };
 }
 

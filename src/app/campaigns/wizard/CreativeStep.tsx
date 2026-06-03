@@ -31,6 +31,8 @@ import {
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } from './types';
 import { resolveCreativeForCompany } from './types';
+import { createDefaultBrandKit, MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
+import type { BrandKit } from './brandKit';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
 import {
@@ -66,10 +68,6 @@ interface CreativeStepProps {
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
 
 const TEMPLATE_TARGET = '__template__';
-
-const MOCK_PRODUCTS = ['Produto A', 'Produto B', 'Produto C'];
-const MOCK_AUDIENCES = ['Pequenas empresas', 'Médias empresas', 'Enterprise'];
-const MOCK_PERSONAS = ['CMO', 'Head de Marketing', 'Demand Gen Manager'];
 
 function statusOf(override: CompanyCreativeOverride | undefined): CompanyStatus {
   return override?.status ?? 'template';
@@ -107,13 +105,14 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const adImageUrl = creativeData?.imageUrl || null;
   const adImageFileName = creativeData?.imageFileName || null;
   const overrides = creativeData?.overrides || {};
-  const clientVoice = creativeData?.clientVoice || '';
-  const clientBrandContext = creativeData?.clientBrandContext || '';
-  const clientWebsiteUrl = creativeData?.clientWebsiteUrl || '';
+  const brandKit = creativeData?.brandKit || createDefaultBrandKit();
+  const clientVoice = brandKit.voice;
+  const clientBrandContext = brandKit.context;
+  const clientWebsiteUrl = brandKit.websiteUrl;
   const clientProductService = creativeData?.clientProductService || '';
   const clientAudienceMarket = creativeData?.clientAudienceMarket || '';
   const clientPersona = creativeData?.clientPersona || '';
-  const clientBrandColors = creativeData?.clientBrandColors || { primary: '', secondary: '', accent: '' };
+  const clientBrandColors = brandKit.colors;
   const imageMode: ImageMode = creativeData?.imageMode || 'template_logo';
   const templateLogo = creativeData?.templateLogo || {
     baseImageUrl: null,
@@ -181,13 +180,17 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           stored.persona
         ) {
           updateCreative({
-            clientVoice: stored.voice,
-            clientBrandContext: stored.brand_context,
-            clientWebsiteUrl: stored.website_url,
-            clientProductService: stored.product_service,
-            clientAudienceMarket: stored.audience_market,
-            clientPersona: stored.persona,
-            clientBrandColors: stored.brand_colors || { primary: '', secondary: '', accent: '' },
+            brandKit: {
+              ...createDefaultBrandKit(),
+              status: 'defined',
+              voice: stored.voice,
+              context: stored.brand_context,
+              websiteUrl: stored.website_url,
+              colors: stored.brand_colors || { primary: '', secondary: '', accent: '' },
+            },
+            clientProductService: stored.product_service || '',
+            clientAudienceMarket: stored.audience_market || '',
+            clientPersona: stored.persona || '',
           });
         }
       })
@@ -308,8 +311,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       }
       const result = await generateCopy({
         brand_brief: useBrief,
-        client_voice: data.clientVoice,
-        client_brand_colors: data.clientBrandColors,
+        client_voice: data.brandKit.voice,
+        client_brand_colors: data.brandKit.colors,
         target_company_name: company.label,
         objective: 'brand_awareness',
         cta: data.cta,
@@ -337,7 +340,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       const data = creativeDataRef.current!;
       const result = await generateBaseImage({
         mode,
-        client_brand_context: data.clientBrandContext,
+        client_brand_context: data.brandKit.context,
         prompt_brief: promptBrief,
       });
       updateCreative({
@@ -371,7 +374,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         show_target_logo: tpl.showTargetLogo,
         texto_destaque: tpl.textoDestaque,
         texto_complementar: tpl.textoComplementar,
-        font_family: tpl.fontFamily,
+        font_family: creativeDataRef.current?.brandKit.fontFamily,
       });
       updateOverride(company.id, {
         imageUrl: result.url,
@@ -456,13 +459,17 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
   const persistVoice = async () => {
     updateCreative({
-      clientVoice: voiceDraft.voice,
-      clientBrandContext: voiceDraft.context,
-      clientWebsiteUrl: voiceDraft.websiteUrl,
+      brandKit: {
+        ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()),
+        status: 'defined',
+        voice: voiceDraft.voice,
+        context: voiceDraft.context,
+        websiteUrl: voiceDraft.websiteUrl,
+        colors: voiceDraft.brandColors,
+      },
       clientProductService: voiceDraft.productService,
       clientAudienceMarket: voiceDraft.audienceMarket,
       clientPersona: voiceDraft.persona,
-      clientBrandColors: voiceDraft.brandColors,
     });
     try {
       await saveClientVoice({
@@ -891,10 +898,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     value={templateLogo.textoComplementar}
                     onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, textoComplementar: v } })}
                     placeholder="Convite exclusivo VIP"
-                  />
-                  <FontPicker
-                    value={templateLogo.fontFamily || 'Inter'}
-                    onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, fontFamily: v } })}
                   />
                   <label className="flex items-center gap-1.5 text-[11px] text-slate-700 font-medium pt-1">
                     <input
