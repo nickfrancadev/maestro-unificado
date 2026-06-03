@@ -31,8 +31,10 @@ import {
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } from './types';
 import { resolveCreativeForCompany } from './types';
-import { createDefaultBrandKit, MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
+import { createDefaultBrandKit } from './brandKit';
 import type { BrandKit } from './brandKit';
+import { BriefModal } from './BriefModal';
+import type { BriefDraft } from './BriefModal';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
 import {
@@ -431,26 +433,29 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   };
 
   // ----------------- Brief modal handlers -----------------
-  const [voiceDraft, setVoiceDraft] = useState({
-    voice: '',
-    context: '',
-    websiteUrl: '',
-    productService: '',
-    audienceMarket: '',
-    persona: '',
+  const [briefDraft, setBriefDraft] = useState<BriefDraft>({
+    voice: '', context: '', websiteUrl: '',
+    productService: '', audienceMarket: '', persona: '',
     brandColors: { primary: '', secondary: '', accent: '' },
+    fontFamily: 'Inter',
+    logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
+    icons: [], graphics: [],
   });
   useEffect(() => {
-    setVoiceDraft({
-      voice: clientVoice,
-      context: clientBrandContext,
-      websiteUrl: clientWebsiteUrl,
+    setBriefDraft({
+      voice: brandKit.voice,
+      context: brandKit.context,
+      websiteUrl: brandKit.websiteUrl,
       productService: clientProductService,
       audienceMarket: clientAudienceMarket,
       persona: clientPersona,
-      brandColors: clientBrandColors,
+      brandColors: brandKit.colors,
+      fontFamily: brandKit.fontFamily,
+      logos: brandKit.logos,
+      icons: brandKit.icons,
+      graphics: brandKit.graphics,
     });
-  }, [clientVoice, clientBrandContext, clientWebsiteUrl, clientProductService, clientAudienceMarket, clientPersona, clientBrandColors]);
+  }, [brandKit, clientProductService, clientAudienceMarket, clientPersona]);
 
   // Extraction UI state
   const [extracting, setExtracting] = useState(false);
@@ -462,31 +467,37 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       brandKit: {
         ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()),
         status: 'defined',
-        voice: voiceDraft.voice,
-        context: voiceDraft.context,
-        websiteUrl: voiceDraft.websiteUrl,
-        colors: voiceDraft.brandColors,
+        voice: briefDraft.voice,
+        context: briefDraft.context,
+        websiteUrl: briefDraft.websiteUrl,
+        colors: briefDraft.brandColors,
+        fontFamily: briefDraft.fontFamily,
+        logos: briefDraft.logos,
+        icons: briefDraft.icons,
+        graphics: briefDraft.graphics,
       },
-      clientProductService: voiceDraft.productService,
-      clientAudienceMarket: voiceDraft.audienceMarket,
-      clientPersona: voiceDraft.persona,
+      clientProductService: briefDraft.productService,
+      clientAudienceMarket: briefDraft.audienceMarket,
+      clientPersona: briefDraft.persona,
     });
     try {
       await saveClientVoice({
-        voice: voiceDraft.voice,
-        brand_context: voiceDraft.context,
-        website_url: voiceDraft.websiteUrl,
-        product_service: voiceDraft.productService,
-        audience_market: voiceDraft.audienceMarket,
-        persona: voiceDraft.persona,
-        brand_colors: voiceDraft.brandColors,
+        voice: briefDraft.voice,
+        brand_context: briefDraft.context,
+        website_url: briefDraft.websiteUrl,
+        product_service: briefDraft.productService,
+        audience_market: briefDraft.audienceMarket,
+        persona: briefDraft.persona,
+        brand_colors: briefDraft.brandColors,
       });
     } catch (_e) { /* non-fatal */ }
     setVoiceModalOpen(false);
   };
 
+  const handleBrandBookUpload = (_file: File) => { /* Task 5 */ };
+
   const handleExtract = async () => {
-    const url = voiceDraft.websiteUrl.trim();
+    const url = briefDraft.websiteUrl.trim();
     if (!url) return;
     setExtracting(true);
     setExtractError(null);
@@ -496,7 +507,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       const examplesBlock = result.voice_examples.length
         ? `\n\nExemplos do site:\n${result.voice_examples.map((e) => `• ${e}`).join('\n')}`
         : '';
-      setVoiceDraft((d) => ({
+      setBriefDraft((d) => ({
         ...d,
         voice: result.voice + examplesBlock,
         context: result.brand_context,
@@ -1170,186 +1181,18 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
       {/* ============= Brief modal ============= */}
       {voiceModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <PaintBucket className="w-4 h-4 text-[#FF5F39]" />
-                  Brief
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Usado em todas as gerações de IA. Salvo no seu workspace.</p>
-              </div>
-              <button onClick={() => setVoiceModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4 overflow-y-auto">
-              {/* Website + Extract */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Website da sua empresa
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={voiceDraft.websiteUrl}
-                    onChange={(e) => setVoiceDraft({ ...voiceDraft, websiteUrl: e.target.value })}
-                    placeholder="https://suaempresa.com"
-                    className="flex-1 p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleExtract}
-                    disabled={extracting || !voiceDraft.websiteUrl.trim()}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-[#FF5F39] hover:bg-[#E54A26] disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg flex items-center gap-2 shrink-0"
-                  >
-                    {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Extrair com IA
-                  </button>
-                </div>
-                {extractWarning && (
-                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                    {extractWarning}
-                  </p>
-                )}
-                {extractError && (
-                  <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
-                    {extractError}
-                  </p>
-                )}
-              </div>
-
-              {/* Tom de voz */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Tom de voz <span className="text-slate-400 font-normal lowercase">(2-3 frases descrevendo como a sua marca fala)</span>
-                </label>
-                <textarea
-                  value={voiceDraft.voice}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, voice: e.target.value })}
-                  rows={4}
-                  placeholder="Ex: Direto e confiante, sem jargão. Falamos como engenheiros para engenheiros — exemplos concretos, números reais, zero hype."
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
-                />
-              </div>
-
-              {/* Contexto da empresa */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Contexto da empresa <span className="text-slate-400 font-normal lowercase">(o que você vende, em 1-2 frases)</span>
-                </label>
-                <textarea
-                  value={voiceDraft.context}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, context: e.target.value })}
-                  rows={3}
-                  placeholder="Ex: A Maestro é uma plataforma de ABM para B2B SaaS. Ajudamos times de marketing e vendas a executar campanhas 1:1 nas contas-alvo."
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
-                />
-              </div>
-
-              {/* Produto/Serviço */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Produto/Serviço
-                </label>
-                <select
-                  value={voiceDraft.productService}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, productService: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                >
-                  <option value="">Selecione um produto ou serviço</option>
-                  {MOCK_PRODUCTS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Públicos/Mercados */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Públicos/Mercados
-                </label>
-                <select
-                  value={voiceDraft.audienceMarket}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, audienceMarket: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                >
-                  <option value="">Selecione um público ou mercado</option>
-                  {MOCK_AUDIENCES.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Persona/Público */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Persona/Público
-                </label>
-                <select
-                  value={voiceDraft.persona}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, persona: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                >
-                  <option value="">Selecione uma persona</option>
-                  {MOCK_PERSONAS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Paleta da marca — auto-preenchida pelo Extract, usada como hint no generate-copy */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Paleta da marca
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['primary', 'secondary', 'accent'] as const).map((role) => {
-                    const value = voiceDraft.brandColors[role] || '';
-                    const labels = { primary: 'Primária', secondary: 'Secundária', accent: 'Destaque' };
-                    return (
-                      <div key={role} className="flex flex-col gap-1">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">{labels[role]}</span>
-                        <div className="flex items-center gap-2 border border-slate-200 rounded-lg p-2 bg-white">
-                          <input
-                            type="color"
-                            value={value || '#ffffff'}
-                            onChange={(e) => setVoiceDraft({
-                              ...voiceDraft,
-                              brandColors: { ...voiceDraft.brandColors, [role]: e.target.value },
-                            })}
-                            className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
-                          />
-                          <input
-                            type="text"
-                            value={value}
-                            placeholder="#______"
-                            onChange={(e) => setVoiceDraft({
-                              ...voiceDraft,
-                              brandColors: { ...voiceDraft.brandColors, [role]: e.target.value },
-                            })}
-                            className="flex-1 text-xs font-mono text-slate-700 bg-transparent outline-none min-w-0"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
-              <button onClick={() => setVoiceModalOpen(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
-                Cancelar
-              </button>
-              <button onClick={persistVoice} className="px-4 py-2 text-sm font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm">
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
+        <BriefModal
+          draft={briefDraft}
+          setDraft={setBriefDraft}
+          status={brandKit.status}
+          onClose={() => setVoiceModalOpen(false)}
+          onSave={persistVoice}
+          extracting={extracting}
+          extractError={extractError}
+          extractWarning={extractWarning}
+          onExtractWebsite={handleExtract}
+          onUploadBrandBook={handleBrandBookUpload}
+        />
       )}
     </div>
   );
@@ -1545,7 +1388,7 @@ const FONT_OPTIONS: { label: string; family: string; group: string }[] = [
   { group: 'Display / impacto', family: 'Archivo Black', label: 'Archivo Black' },
 ];
 
-function FontPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function FontPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const groups = Array.from(new Set(FONT_OPTIONS.map((f) => f.group)));
