@@ -284,7 +284,7 @@ function LogoGallery({ draft, setDraft }: {
     input.onchange = () => {
       const file = input.files?.[0]; if (!file) return;
       const url = makeImageObjectUrl(file, setErr);
-      if (url) setDraft((d) => ({ ...d, logos: { ...d.logos, [variant]: url } }));
+      if (url) { setErr(null); setDraft((d) => ({ ...d, logos: { ...d.logos, [variant]: url } })); }
     };
     input.click();
   };
@@ -296,7 +296,7 @@ function LogoGallery({ draft, setDraft }: {
           const url = draft.logos[v.key];
           return (
             <div key={v.key} className={`relative border border-slate-200 rounded-lg p-2 text-center ${v.dark ? 'bg-slate-900' : 'bg-white'}`}>
-              <div className={`text-[9px] uppercase tracking-wide mb-1 ${v.dark ? 'text-slate-400' : 'text-slate-400'}`}>{v.label}</div>
+              <div className="text-[9px] uppercase tracking-wide mb-1 text-slate-400">{v.label}</div>
               {url ? (
                 <div className="relative">
                   <img src={url} alt={v.label} className="w-full h-12 object-contain" />
@@ -328,7 +328,7 @@ function AssetGallery({ label, items, onAdd, onRemove }: {
     input.onchange = () => {
       const file = input.files?.[0]; if (!file) return;
       const url = makeImageObjectUrl(file, setErr);
-      if (url) onAdd(url);
+      if (url) { setErr(null); onAdd(url); }
     };
     input.click();
   };
@@ -337,7 +337,7 @@ function AssetGallery({ label, items, onAdd, onRemove }: {
       <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">{label}</label>
       <div className="flex gap-2 flex-wrap">
         {items.map((u, i) => (
-          <div key={i} className="relative">
+          <div key={u} className="relative">
             <img src={u} alt="" className="w-14 h-14 object-contain rounded-lg border border-slate-200 p-1 bg-white" />
             <button type="button" onClick={() => onRemove(i)}
               className="absolute -top-1 -right-1 bg-white text-slate-500 rounded-full w-4 h-4 text-[10px] leading-none border border-slate-200">×</button>
