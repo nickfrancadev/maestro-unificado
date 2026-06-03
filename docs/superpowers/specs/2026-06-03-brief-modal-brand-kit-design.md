@@ -103,40 +103,48 @@ reorganizado:
 
 ## UI / Comportamento
 
-### Layout único, dirigido por `status`
+### Três estados (REVISADO após validação visual)
 
-**Cabeçalho:** título "Brief" + subtítulo "Usado em todas as gerações de IA. Salvo
-no seu workspace." + **toggle de dev** "Cenário 1 / 2" (switch discreto) que
-sobrescreve o `status` localmente.
+A seção "Marca" tem **três estados**, não dois. O `status` do BrandKit (+ toggle de
+dev) decide entre "marca pré-salva" e "marca vazia"; dentro do estado vazio, um
+flag local de extração (`source` preenchido) decide entre "ainda não extraiu" e
+"já extraiu".
 
-**Seção "Marca":**
+**Cabeçalho:** título "Brief" + subtítulo + **toggle de dev** que alterna o rótulo
+"Cenário 1 / Cenário 2", sobrescrevendo o `status` localmente. Cenário 1 = `defined`
+(estado C). Cenário 2 = `empty` (estados A→B).
 
-- **Cenário 1 (`defined`)** — modo resumo/read-only:
-  - Tom de voz e contexto como texto.
-  - Paleta como swatches.
-  - Fonte como preview.
-  - Logos (grade 2×2 rotulada), ícones e grafismos como miniaturas (sem "+"/"×").
-  - Link discreto "Editar na Config →" (placeholder; Config vem depois).
-- **Cenário 2 (`empty`)** — bloco "Definir marca":
-  - **Upload de Brand Book (PDF)**: dropzone (arraste/clique), aceita `.pdf`,
-    valida tipo e tamanho (reusa o padrão de drag-drop já existente em
-    `CreativeStep`). Ao "enviar": loading curto → preenche os campos a partir de
-    `MOCK_BRAND_FIXTURE` (tom de voz, contexto, paleta, fonte, e miniaturas
-    placeholder em logos/ícones/grafismos). `source = 'brandbook'`.
-  - Divisor "ou".
-  - **Website + "Extrair com IA"**: input + botão (desabilitado sem URL). Em vez
-    de chamar o backend, dispara a **mesma simulação mock** (loading → fixture).
-    `source = 'website'`. Mantém a assinatura próxima da `handleExtract` atual.
-  - Após extração, os campos de marca aparecem **editáveis** (textareas de voz e
-    contexto, color pickers de paleta, `FontSelect`) e as galerias com tile "+".
+**Estado A — vazio, nenhum método usado** (`status: 'empty'`, sem `source`):
+- Mostra APENAS as duas opções de extração: dropzone de PDF + divisor "ou" +
+  website/"Extrair com IA".
+- **Nenhum campo de marca** é exibido (sem tom de voz, contexto, paleta, fonte, ou
+  galerias). Uma legenda discreta indica que os campos surgem após a extração.
+
+**Estado B — extraiu agora** (`status: 'empty'`, `source` = `'brandbook' | 'website'`):
+- As duas opções somem; no lugar, um **chip de "método usado"** (estilo confirmação,
+  verde) mostrando o método + referência (URL digitada ou nome do arquivo PDF), com
+  um botão discreto **"Trocar"** que volta ao estado A (limpa `source`).
+- Abaixo, os campos de marca **preenchidos e editáveis**: tom de voz, contexto,
+  paleta, fonte, e as **galerias COM exemplos** vindos da extração mock (logos 2×2,
+  ícones, grafismos pré-populados). O usuário ainda pode adicionar ("+") e remover
+  ("×") assets.
+
+**Estado C — marca pré-salva da Config** (`status: 'defined'`):
+- Modo resumo **read-only**: tom de voz e contexto como texto, paleta como swatches,
+  fonte como preview, logos/ícones/grafismos como miniaturas (sem "+"/"×").
+- Link discreto "Editar na Config →" (placeholder; Config vem depois).
 
 **Galerias (logos / ícones / grafismos):**
 
 - Logos = grade 2×2 rotulada (claro/escuro × completo/símbolo).
 - Ícones e grafismos = galeria livre de N miniaturas.
-- Cada bloco tem um tile "+" avulso → abre seletor de arquivo (aceita imagem),
-  gera `object URL` local e adiciona à galeria. Hover mostra "×" para remover.
-- No Cenário 1 (read-only) não há "+"/"×".
+- No estado B vêm **pré-populadas** com exemplos da fixture mock; cada bloco tem um
+  tile "+" para adicionar e "×" para remover.
+- No estado C (read-only) não há "+"/"×". No estado A não aparecem.
+
+**Fixture mock:** além de voz/contexto/paleta/fonte, fornece exemplos visuais
+inline (data URLs SVG, sem rede) para logos/ícones/grafismos, de modo que o estado B
+mostre como o resultado ficaria.
 
 **Divisor** entre "Marca" e "Aplicação nesta campanha".
 
