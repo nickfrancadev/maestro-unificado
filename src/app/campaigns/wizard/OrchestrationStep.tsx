@@ -18,7 +18,6 @@ import {
   MapPin,
   Briefcase,
   Users,
-  Factory,
   ImageIcon,
   CreditCard,
 } from 'lucide-react';
@@ -272,8 +271,6 @@ const FACET_LABELS: Record<string, { label: string; icon: React.ElementType }> =
   seniorities: { label: 'Senioridade', icon: Users },
   jobFunctions: { label: 'Função / Área', icon: Briefcase },
   jobTitles: { label: 'Cargo', icon: Briefcase },
-  industries: { label: 'Setor / Indústria', icon: Factory },
-  companySizes: { label: 'Porte da Empresa', icon: Building2 },
   yearsOfExperience: { label: 'Anos de Experiência', icon: Target },
 };
 
@@ -323,18 +320,25 @@ export function OrchestrationStep({
   const currency = linkedinStatus?.selected_ad_account_currency || 'BRL';
   const currencySymbol = currency === 'BRL' ? 'R$' : '$';
 
-  // Targeting summary
-  const targetingSummary = targetingData
-    ? Object.entries(targetingData)
-        .filter(([, sel]) => sel.included.length > 0)
-        .map(([key, sel]) => ({
-          key,
-          ...(FACET_LABELS[key] || { label: key, icon: Target }),
-          count: sel.included.length,
-          items: sel.included.slice(0, 5).map((i: FacetItem) => i.label),
-          hasMore: sel.included.length > 5,
-        }))
+  // Targeting summary: accounts + the default person facets. Per-account
+  // overrides are reflected in the ad-set list above, not duplicated here.
+  const summarySelections: Array<[string, { included: FacetItem[] }]> = targetingData
+    ? [
+        ['companies', targetingData.companies],
+        ...(Object.entries(targetingData.defaultTargeting) as Array<
+          [string, { included: FacetItem[] }]
+        >),
+      ]
     : [];
+  const targetingSummary = summarySelections
+    .filter(([, sel]) => sel.included.length > 0)
+    .map(([key, sel]) => ({
+      key,
+      ...(FACET_LABELS[key] || { label: key, icon: Target }),
+      count: sel.included.length,
+      items: sel.included.slice(0, 5).map((i: FacetItem) => i.label),
+      hasMore: sel.included.length > 5,
+    }));
 
   const totalCriteria = targetingSummary.reduce((s, f) => s + f.count, 0);
 
