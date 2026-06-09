@@ -25,7 +25,8 @@ import {
 import { TargetAccount, CampaignConfig, OBJECTIVE_MAP } from './types';
 import type { CreativeData } from './types';
 import type { TargetingData, FacetItem } from './SegmentationStep';
-import { buildTargetingCriteria } from './SegmentationStep';
+import { buildTargetingCriteria, resolveTargetingForAccount } from './SegmentationStep';
+import { totalIncludes } from './segmentation/targeting';
 import {
   runCampaignPipeline,
   saveCampaignToServer,
@@ -136,10 +137,8 @@ function ConfirmLaunchModal({
   onCancel: () => void;
 }) {
   const objLabel = OBJECTIVE_MAP[config.objective]?.label || config.objective;
-  const totalCriteria = targetingData
-    ? Object.values(targetingData).reduce((s, sel) => s + sel.included.length, 0)
-    : 0;
-  const validCampaigns = config.campaigns.filter(c => c.name.trim());
+  const adSetAccounts = targetingData?.companies.included ?? [];
+  const totalCriteria = targetingData ? totalIncludes(targetingData) : 0;
   const hasImage = !!creativeData?.imageUrl;
   const hasBillingIssue = billingStatus && !billingStatus.has_billing;
 
@@ -171,16 +170,16 @@ function ConfirmLaunchModal({
         <div className="p-6 space-y-4">
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Grupo:</span>
-              <span className="font-medium text-slate-800">{config.campaignGroupName}</span>
+              <span className="text-slate-500">Campanha:</span>
+              <span className="font-medium text-slate-800">{config.campaignName}</span>
             </div>
             <div>
-              <span className="text-xs font-semibold text-slate-500 uppercase">Campanhas ({validCampaigns.length})</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase">Conjuntos de anúncio ({adSetAccounts.length})</span>
               <div className="mt-1.5 space-y-1">
-                {validCampaigns.map((c, idx) => (
-                  <div key={c.id} className="flex items-center gap-2">
+                {adSetAccounts.map((acc, idx) => (
+                  <div key={acc.id} className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-[#FFE3DA] text-[#E54A26] text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
-                    <span className="text-sm text-slate-700 truncate">{c.name}</span>
+                    <span className="text-sm text-slate-700 truncate">{acc.label}</span>
                   </div>
                 ))}
               </div>
@@ -190,7 +189,7 @@ function ConfirmLaunchModal({
               <span className="font-medium text-slate-800">{objLabel}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Budget/campanha:</span>
+              <span className="text-slate-500">Budget/conjunto:</span>
               <span className="font-medium text-slate-800">
                 ${config.budgetAmount} ({config.budgetType === 'daily' ? 'diário' : 'total'})
               </span>
@@ -354,22 +353,31 @@ export function OrchestrationStep({
       return;
     }
 
-    // Filter only campaigns with names
-    const validCampaigns = campaignConfig.campaigns.filter(c => c.name.trim());
-    if (validCampaigns.length === 0) return;
+    // One ad set per target account (LinkedIn ABM model). Each ad set carries
+    // the account's effective person targeting (override or default).
+    const accounts = targetingData?.companies.included ?? [];
+    if (accounts.length === 0) return;
 
-    // Build targeting criteria from segmentação data
-    const targetingCriteria = targetingData ? buildTargetingCriteria(targetingData) : { include: { and: [] } };
+    const validAdSets = accounts.map((acc) => ({
+      id: acc.id,
+      // The campaign name supports {{company.name}}; substitute per account.
+      name: campaignConfig.campaignName.includes('{{company.name}}')
+        ? campaignConfig.campaignName.replace(/\{\{company\.name\}\}/g, acc.label)
+        : `${campaignConfig.campaignName} — ${acc.label}`,
+      criteria: targetingData
+        ? buildTargetingCriteria(acc, resolveTargetingForAccount(targetingData, acc.id))
+        : { include: { and: [] } },
+    }));
 
     setIsPipelineRunning(true);
     setShowPipelineModal(true);
 
-    // Build pipeline steps for all campaigns:
-    // 1x Create Campaign Group + Nx (Create Campaign + Upload Image + Create Creative + Activate)
+    // 1x Create Campaign Group (implicit, named after the campaign) +
+    // Nx (Create Campaign/ad set + Upload Image + Create Creative + Activate)
     const allSteps: PipelineStep[] = [
-      { action: 'create-campaign-group', label: `Criar Grupo "${campaignConfig.campaignGroupName}"`, status: 'pending' },
-      ...validCampaigns.flatMap((c, idx) => [
-        { action: 'create-campaign' as const, label: `Campanha ${idx + 1}: "${c.name}"`, status: 'pending' as const },
+      { action: 'create-campaign-group', label: `Criar Grupo "${campaignConfig.campaignName}"`, status: 'pending' },
+      ...validAdSets.flatMap((a, idx) => [
+        { action: 'create-campaign' as const, label: `Conjunto ${idx + 1}: "${a.name}"`, status: 'pending' as const },
       ]),
     ];
     setPipelineSteps(allSteps);
@@ -377,15 +385,15 @@ export function OrchestrationStep({
     let campaignGroupId: string | null = null;
     let allSuccess = true;
 
-    // Run the FIRST campaign through the full pipeline (creates the group)
-    const firstCampaign = validCampaigns[0];
+    // Run the FIRST ad set through the full pipeline (creates the group)
+    const firstAdSet = validAdSets[0];
     const firstParams: CampaignPipelineParams = {
-      campaign_id: firstCampaign.id,
+      campaign_id: firstAdSet.id,
       ad_account_id: adAccountId,
-      group_name: campaignConfig.campaignGroupName,
-      campaign_name: firstCampaign.name,
+      group_name: campaignConfig.campaignName,
+      campaign_name: firstAdSet.name,
       objective: campaignConfig.objective,
-      targeting_criteria: targetingCriteria,
+      targeting_criteria: firstAdSet.criteria,
       budget_type: campaignConfig.budgetType,
       budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
       currency,
@@ -420,15 +428,15 @@ export function OrchestrationStep({
     campaignGroupId = cgResult?.result?.campaign_group_id || null;
 
     if (firstResult.success) {
-      // Save first campaign to KV
+      // Save first ad set to KV
       const campStep = firstResult.steps.find(s => s.action === 'create-campaign');
       await saveCampaignToServer({
-        id: firstCampaign.id,
-        name: firstCampaign.name,
+        id: firstAdSet.id,
+        name: firstAdSet.name,
         status: campaignConfig.autoActivate ? 'active' : 'paused',
-        type: validCampaigns.length > 1 ? '1:Many' : '1:1',
+        type: validAdSets.length > 1 ? '1:Many' : '1:1',
         objective: campaignConfig.objective,
-        campaign_group: campaignConfig.campaignGroupName,
+        campaign_group: campaignConfig.campaignName,
         budget_type: campaignConfig.budgetType,
         budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
         currency: currency,
@@ -443,21 +451,21 @@ export function OrchestrationStep({
         auto_activate: campaignConfig.autoActivate,
       });
 
-      // Run remaining campaigns (reuse the group ID)
-      for (let i = 1; i < validCampaigns.length; i++) {
-        const campaign = validCampaigns[i];
+      // Run remaining ad sets (reuse the group ID)
+      for (let i = 1; i < validAdSets.length; i++) {
+        const adSet = validAdSets[i];
         const stepIdx = i + 1; // +1 because allSteps[0] is the group
 
         allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'running' };
         setPipelineSteps([...allSteps]);
 
         const params: CampaignPipelineParams = {
-          campaign_id: campaign.id,
+          campaign_id: adSet.id,
           ad_account_id: adAccountId,
-          group_name: campaignConfig.campaignGroupName,
-          campaign_name: campaign.name,
+          group_name: campaignConfig.campaignName,
+          campaign_name: adSet.name,
           objective: campaignConfig.objective,
-          targeting_criteria: targetingCriteria,
+          targeting_criteria: adSet.criteria,
           budget_type: campaignConfig.budgetType,
           budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
           currency,
@@ -486,12 +494,12 @@ export function OrchestrationStep({
           allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'success' };
           const campStep = result.steps.find(s => s.action === 'create-campaign');
           await saveCampaignToServer({
-            id: campaign.id,
-            name: campaign.name,
+            id: adSet.id,
+            name: adSet.name,
             status: campaignConfig.autoActivate ? 'active' : 'paused',
             type: '1:Many',
             objective: campaignConfig.objective,
-            campaign_group: campaignConfig.campaignGroupName,
+            campaign_group: campaignConfig.campaignName,
             budget_type: campaignConfig.budgetType,
             budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
             currency: currency,
@@ -513,15 +521,15 @@ export function OrchestrationStep({
       }
     } else {
       allSuccess = false;
-      console.error('[Launch] First pipeline failed — skipping remaining campaigns');
+      console.error('[Launch] First pipeline failed — skipping remaining ad sets');
     }
 
     setIsPipelineRunning(false);
 
     if (allSuccess) {
-      console.log(`[Launch] All ${validCampaigns.length} campaigns created successfully`);
+      console.log(`[Launch] All ${validAdSets.length} ad sets created successfully`);
     } else {
-      console.error('[Launch] Some campaigns failed');
+      console.error('[Launch] Some ad sets failed');
     }
   }, [linkedinStatus, targetingData, campaignConfig, currency, selectedAccounts]);
 
@@ -596,18 +604,18 @@ export function OrchestrationStep({
 
           <div className="space-y-3">
             <div className="flex justify-between items-start">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Grupo</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase">Campanha</span>
               <span className="text-sm font-medium text-slate-800 text-right max-w-[60%] truncate">
-                {campaignConfig.campaignGroupName || '—'}
+                {campaignConfig.campaignName || '—'}
               </span>
             </div>
             <div>
-              <span className="text-xs font-semibold text-slate-500 uppercase">Campanhas ({campaignConfig.campaigns.filter(c => c.name.trim()).length})</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase">Conjuntos de anúncio ({targetingData?.companies.included.length ?? 0})</span>
               <div className="mt-1.5 space-y-1">
-                {campaignConfig.campaigns.filter(c => c.name.trim()).map((c, idx) => (
-                  <div key={c.id} className="flex items-center gap-2">
+                {(targetingData?.companies.included ?? []).map((acc, idx) => (
+                  <div key={acc.id} className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-[#FFE3DA] text-[#E54A26] text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
-                    <span className="text-sm text-slate-700 truncate">{c.name}</span>
+                    <span className="text-sm text-slate-700 truncate">{acc.label}</span>
                   </div>
                 ))}
               </div>

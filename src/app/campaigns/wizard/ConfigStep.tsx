@@ -9,13 +9,9 @@ import {
   Zap,
   CheckCircle2,
   AlertTriangle,
-  Plus,
-  Trash2,
-  Copy,
-  GripVertical,
 } from 'lucide-react';
-import type { CampaignConfig, CampaignEntry } from './types';
-import { OBJECTIVE_MAP, createCampaignEntry } from './types';
+import type { CampaignConfig } from './types';
+import { OBJECTIVE_MAP } from './types';
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 
 interface ConfigStepProps {
@@ -40,30 +36,6 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
     } else {
       update({ objective: val });
     }
-  };
-
-  // Campaign list management
-  const addCampaign = () => {
-    update({ campaigns: [...config.campaigns, createCampaignEntry()] });
-  };
-
-  const removeCampaign = (id: string) => {
-    if (config.campaigns.length <= 1) return; // Keep at least one
-    update({ campaigns: config.campaigns.filter(c => c.id !== id) });
-  };
-
-  const updateCampaignName = (id: string, name: string) => {
-    update({
-      campaigns: config.campaigns.map(c => c.id === id ? { ...c, name } : c),
-    });
-  };
-
-  const duplicateCampaign = (entry: CampaignEntry) => {
-    const idx = config.campaigns.findIndex(c => c.id === entry.id);
-    const newEntry = createCampaignEntry(entry.name ? `${entry.name} (cópia)` : '');
-    const newList = [...config.campaigns];
-    newList.splice(idx + 1, 0, newEntry);
-    update({ campaigns: newList });
   };
 
   const currency = linkedinStatus?.selected_ad_account_currency || 'BRL';
@@ -116,89 +88,22 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
           </div>
 
           <div className="space-y-5">
-            {/* Campaign Group Name */}
+            {/* Campaign Name */}
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
-                Grupo de Campanha *
+                Nome da Campanha *
               </label>
               <input
                 type="text"
-                value={config.campaignGroupName}
-                onChange={(e) => update({ campaignGroupName: e.target.value })}
-                placeholder="Ex: Q1 2026 — ABM Enterprise"
+                value={config.campaignName}
+                onChange={(e) => update({ campaignName: e.target.value })}
+                placeholder="Ex: Nubank — Q1 2026 Brand Awareness"
                 className="w-full p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-[#FF5F39] outline-none placeholder:text-slate-400"
               />
-              <p className="text-xs text-slate-400 mt-1">
-                Agrupa campanhas relacionadas no LinkedIn Campaign Manager.
-              </p>
-            </div>
-
-            {/* Campaigns List */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-xs font-semibold text-slate-500 uppercase">
-                  Campanhas ({config.campaigns.length}) *
-                </label>
-                <button
-                  onClick={addCampaign}
-                  className="flex items-center gap-1 text-xs font-medium text-[#FF5F39] hover:text-[#E54A26] hover:bg-[#FFF1ED] px-2.5 py-1.5 rounded-lg transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Adicionar Campanha
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {config.campaigns.map((campaign, idx) => (
-                  <div
-                    key={campaign.id}
-                    className="flex items-center gap-2 group"
-                  >
-                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 shrink-0">
-                      {idx + 1}
-                    </div>
-                    <input
-                      type="text"
-                      value={campaign.name}
-                      onChange={(e) => updateCampaignName(campaign.id, e.target.value)}
-                      placeholder={idx === 0 ? 'Ex: Nubank — Q1 2026 Brand Awareness' : `Campanha ${idx + 1}`}
-                      className="flex-1 p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-[#FF5F39] outline-none placeholder:text-slate-400"
-                    />
-                    <button
-                      onClick={() => duplicateCampaign(campaign)}
-                      title="Duplicar"
-                      className="p-1.5 text-slate-400 hover:text-[#FF5F39] hover:bg-[#FFF1ED] rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => removeCampaign(campaign.id)}
-                      disabled={config.campaigns.length <= 1}
-                      title="Remover"
-                      className={`p-1.5 rounded-lg transition-all ${
-                        config.campaigns.length <= 1
-                          ? 'text-slate-200 cursor-not-allowed'
-                          : 'text-slate-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100'
-                      }`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
                 <Info className="w-3 h-3" />
-                Cada campanha herda o mesmo objetivo, segmentação e orçamento. Use variáveis como <code className="bg-slate-100 px-1 rounded text-xs">{'{{company.name}}'}</code> para personalizar.
+                Cada empresa-alvo vira um conjunto de anúncio dentro desta campanha. Use variáveis como <code className="bg-slate-100 px-1 rounded text-xs">{'{{company.name}}'}</code> para personalizar.
               </p>
-
-              {config.campaigns.length > 1 && (
-                <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
-                  <p className="text-xs text-blue-800">
-                    <strong>{config.campaigns.length} campanhas</strong> serão criadas dentro do grupo "{config.campaignGroupName || '...'}", compartilhando objetivo, targeting e budget de {currencySymbol}{config.budgetAmount}/{config.budgetType === 'daily' ? 'dia' : 'total'} cada.
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -286,9 +191,9 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                   className="w-full p-2.5 pl-10 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 outline-none focus:ring-2 focus:ring-[#FF5F39]"
                 />
               </div>
-              {config.campaigns.length > 1 && parseFloat(config.budgetAmount) > 0 && (
-                <p className="text-xs text-[#FF5F39] mt-1 font-medium">
-                  Total: {currencySymbol}{(parseFloat(config.budgetAmount) * config.campaigns.length).toFixed(2)}{config.budgetType === 'daily' ? '/dia' : ''} ({config.campaigns.length} campanhas)
+              {parseFloat(config.budgetAmount) > 0 && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Orçamento por conjunto de anúncio (cada empresa-alvo).
                 </p>
               )}
               {parseFloat(config.budgetAmount) > 0 && parseFloat(config.budgetAmount) < 10 && (
@@ -439,27 +344,17 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                 <h4 className="text-xs font-semibold text-[#E54A26] uppercase mb-2">Resumo</h4>
                 <div className="space-y-1.5 text-sm text-[#212A46]">
                   <div className="flex justify-between">
-                    <span className="text-[#FF5F39]">Grupo:</span>
-                    <span className="font-medium truncate ml-2 max-w-[60%] text-right">{config.campaignGroupName || '—'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#FF5F39]">Campanhas:</span>
-                    <span className="font-medium">{config.campaigns.filter(c => c.name.trim()).length} de {config.campaigns.length}</span>
+                    <span className="text-[#FF5F39]">Campanha:</span>
+                    <span className="font-medium truncate ml-2 max-w-[60%] text-right">{config.campaignName || '—'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#FF5F39]">Objetivo:</span>
                     <span className="font-medium">{OBJECTIVE_MAP[config.objective]?.label || config.objective}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#FF5F39]">Budget/campanha:</span>
+                    <span className="text-[#FF5F39]">Budget/conjunto:</span>
                     <span className="font-medium">{currencySymbol}{config.budgetAmount} {config.budgetType === 'daily' ? '/dia' : 'total'}</span>
                   </div>
-                  {config.campaigns.length > 1 && (
-                    <div className="flex justify-between pt-1.5 border-t border-[#FFD0C2]">
-                      <span className="text-[#FF5F39] font-semibold">Budget total:</span>
-                      <span className="font-bold">{currencySymbol}{(parseFloat(config.budgetAmount || '0') * config.campaigns.length).toFixed(2)} {config.budgetType === 'daily' ? '/dia' : ''}</span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

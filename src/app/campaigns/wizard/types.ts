@@ -47,21 +47,17 @@ export interface TargetAccount {
 }
 
 
-// A single campaign entry inside a Campaign Group
-export interface CampaignEntry {
-  id: string;       // local UUID (used as idempotency key)
-  name: string;     // e.g. "Nubank — Q1 2026 Brand Awareness"
-}
-
-// Campaign configuration — lifted to wizard parent level
+// Campaign configuration — lifted to wizard parent level.
+// One campaign per wizard run; the LinkedIn Campaign Group is created
+// implicitly at launch (named after the campaign), and each target account
+// becomes its own ad set under it.
 export interface CampaignConfig {
-  campaignGroupName: string;
-  campaigns: CampaignEntry[];           // 1+ campaigns inside the group
+  campaignName: string;
   objective: string;
   campaignType: string;
   costType: string;
   budgetType: 'daily' | 'total';
-  budgetAmount: string;                 // per-campaign budget
+  budgetAmount: string;                 // per ad set budget
   startDate: string;
   endDate: string;
   autoActivate: boolean;
@@ -69,14 +65,9 @@ export interface CampaignConfig {
   unitCostAmount: string;
 }
 
-export function createCampaignEntry(name = ''): CampaignEntry {
-  return { id: crypto.randomUUID(), name };
-}
-
 export function createDefaultCampaignConfig(): CampaignConfig {
   return {
-    campaignGroupName: '',
-    campaigns: [createCampaignEntry()],
+    campaignName: '',
     objective: 'brand_awareness',
     campaignType: 'SPONSORED_UPDATES',
     costType: 'CPM',

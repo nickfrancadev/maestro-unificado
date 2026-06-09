@@ -12,7 +12,7 @@ import {
 import { ConfigStep } from './wizard/ConfigStep';
 import { CreativeStep } from './wizard/CreativeStep';
 import { OrchestrationStep } from './wizard/OrchestrationStep';
-import { SegmentationStep, createEmptyTargeting } from './wizard/SegmentationStep';
+import { SegmentationStep, createEmptyTargeting, resolveTargetingForAccount } from './wizard/SegmentationStep';
 import type { TargetingData } from './wizard/SegmentationStep';
 import { TargetAccount, CampaignConfig, createDefaultCampaignConfig } from './wizard/types';
 import { CreativeData, createDefaultCreativeData } from './wizard/types';
@@ -70,12 +70,11 @@ export function CampaignWizard() {
   };
 
   const handleLaunch = () => {
-    const companyCount = targetingData.companies.included.length;
-    const campaignCount = campaignConfig.campaigns.filter(c => c.name.trim()).length;
+    const accountCount = targetingData.companies.included.length;
     toast.success(
-      `${campaignCount} campanha${campaignCount !== 1 ? 's' : ''} criada${campaignCount !== 1 ? 's' : ''} com sucesso no LinkedIn!${companyCount > 0 ? ` Segmentando ${companyCount} empresa${companyCount !== 1 ? 's' : ''}.` : ''}`,
+      `${accountCount} conjunto${accountCount !== 1 ? 's' : ''} de anúncio criado${accountCount !== 1 ? 's' : ''} no LinkedIn!`,
       {
-        description: `Grupo "${campaignConfig.campaignGroupName}" sincronizado com o LinkedIn Ads.`,
+        description: `Campanha "${campaignConfig.campaignName}" sincronizada com o LinkedIn Ads.`,
       }
     );
     setTimeout(() => onCancel(), 1500);
@@ -83,15 +82,17 @@ export function CampaignWizard() {
 
   const canProceed = () => {
     if (currentStep === 1) {
-      // Config step: require group name and at least one campaign with a name
-      return !!(
-        campaignConfig.campaignGroupName.trim() &&
-        campaignConfig.campaigns.some(c => c.name.trim())
-      );
+      // Config step: require a campaign name
+      return !!campaignConfig.campaignName.trim();
     }
     if (currentStep === 2) {
-      // Segmentação: at least one targeting criterion
-      return Object.values(targetingData).some((sel) => sel.included.length > 0);
+      // Segmentação: >=1 empresa-alvo E cada conjunto efetivo com >=1 localização.
+      const accounts = targetingData.companies.included;
+      if (accounts.length === 0) return false;
+      return accounts.every((acc) => {
+        const person = resolveTargetingForAccount(targetingData, acc.id);
+        return person.locations.included.length > 0;
+      });
     }
     if (currentStep === 3) {
       // Criativo: URL/CTA always required at template level. Each target
@@ -118,13 +119,13 @@ export function CampaignWizard() {
 
   const getStepSummary = () => {
     if (currentStep === 1) {
-      const namedCampaigns = campaignConfig.campaigns.filter(c => c.name.trim()).length;
-      const total = campaignConfig.campaigns.length;
-      return `${namedCampaigns}/${total} campanha${total !== 1 ? 's' : ''} nomeada${namedCampaigns !== 1 ? 's' : ''}`;
+      return campaignConfig.campaignName.trim() ? 'Campanha nomeada' : 'Nomeie a campanha';
     }
     if (currentStep === 2) {
-      const total = Object.values(targetingData).reduce((s, sel) => s + sel.included.length, 0);
-      return `${total} critérios incluídos`;
+      const n = targetingData.companies.included.length;
+      const custom = Object.keys(targetingData.overrides).length;
+      if (n === 0) return 'Selecione ao menos 1 conta';
+      return `${n} conjunto${n !== 1 ? 's' : ''} de anúncio${custom > 0 ? ` · ${custom} personalizado${custom !== 1 ? 's' : ''}` : ''}`;
     }
     return '';
   };
