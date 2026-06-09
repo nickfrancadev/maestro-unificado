@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Calendar,
-  Info,
   Linkedin,
   Target,
   Megaphone,
@@ -100,10 +99,6 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                 placeholder="Ex: Nubank — Q1 2026 Brand Awareness"
                 className="w-full p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-[#FF5F39] outline-none placeholder:text-slate-400"
               />
-              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                <Info className="w-3 h-3" />
-                Cada empresa-alvo vira um conjunto de anúncio dentro desta campanha. Use variáveis como <code className="bg-slate-100 px-1 rounded text-xs">{'{{company.name}}'}</code> para personalizar.
-              </p>
             </div>
           </div>
         </div>
