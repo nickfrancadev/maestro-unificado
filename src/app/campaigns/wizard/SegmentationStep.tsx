@@ -501,39 +501,6 @@ function CompanyHeroCard({
 
       {/* Search + Controls */}
       <div className="px-6 py-4 space-y-4">
-        {/* Include / Exclude toggle */}
-        <div className="flex items-center gap-3">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setMode("include")}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
-                mode === "include"
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                  : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Incluir
-            </button>
-            <button
-              onClick={() => setMode("exclude")}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
-                mode === "exclude"
-                  ? "bg-red-600 text-white shadow-md shadow-red-200"
-                  : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              <Minus className="w-3.5 h-3.5" />
-              Excluir
-            </button>
-          </div>
-          <div className="flex-1" />
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Typeahead com dados da LinkedIn API</span>
-          </div>
-        </div>
-
         {/* Typeahead Search */}
         <div className="relative" ref={dropdownRef}>
           <div className="relative">
