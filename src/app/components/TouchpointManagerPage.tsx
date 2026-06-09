@@ -4,6 +4,7 @@ import { TouchpointTimeline, type Touchpoint } from './touchpoints/TouchpointTim
 import { TouchpointDetails } from './touchpoints/TouchpointDetails';
 import { TouchpointAIAssistant } from './touchpoints/TouchpointAIAssistant';
 import { NewPlayData } from './PlayDetailPage';
+import { getPlayMock } from '../data/playsMockData';
 
 interface TouchpointManagerPageProps {
   accountId?: string;
@@ -16,7 +17,9 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
   const [selectedTouchpointId, setSelectedTouchpointId] = useState<number | null>(newPlayData ? null : 2);
   const [layoutOrientation, setLayoutOrientation] = useState<'vertical' | 'horizontal'>('vertical');
   const [isAIOpen, setIsAIOpen] = useState(!!(newPlayData?.withAI));
-  
+
+  const playMock = playId ? getPlayMock(playId) : undefined;
+
   // Mock: buscar nome da conta baseado no accountId
   const accountNames: Record<string, string> = {
     "1": "STAR BANK",
@@ -25,112 +28,46 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
     "4": "Nubank",
     "5": "iFood",
   };
-  
+
   const accountName = newPlayData
     ? newPlayData.contas.map((c) => c.name).join(", ")
-    : accountId ? accountNames[accountId] || "Empresa" : "";
+    : playMock
+    ? playMock.accountName
+    : accountId
+    ? accountNames[accountId] || "Empresa"
+    : "";
 
-  const playName = newPlayData ? newPlayData.name : undefined;
+  const playName = newPlayData ? newPlayData.name : playMock?.name;
 
-  // Badge data from wizard
+  // Badge data: from wizard or play mock
   const dossierContaName = newPlayData && newPlayData.dossiêsContas.length > 0
     ? newPlayData.dossiêsContas[0].name
-    : undefined;
+    : playMock?.dossierContaName;
   const dossierContatoName = newPlayData && newPlayData.dossiêsContatos.length > 0
     ? newPlayData.dossiêsContatos[0].name
-    : undefined;
-  const produtoName = newPlayData?.produto?.nome;
+    : playMock?.dossierContatoName;
+  const produtoName = newPlayData?.produto?.nome ?? playMock?.produtoName;
   const gtmName = newPlayData && newPlayData.momentos.length > 0
     ? newPlayData.momentos[0].titulo
-    : undefined;
+    : playMock?.gtmName;
 
-  const initialTouchpoints: Touchpoint[] = newPlayData ? [] : [
-    {
-      id: 1,
-      itemType: 'touchpoint',
-      type: 'AUTORIDADE',
-      title: 'Conectar LinkedIn',
-      category: 'Autoridade',
-      channel: 'LinkedIn',
-      responsibles: ['João Silva'],
-      date: '15-01-2026',
-      status: 'Executado',
-      description: 'Conectar com os principais stakeholders da empresa através do LinkedIn para estabelecer um primeiro contato.',
-      subtasks: [],
-      attachments: [],
-      budget: 0,
-      weight: 'Médio',
-      score: 8,
-      interactions: []
-    },
-    {
-      id: 2,
-      itemType: 'task',
-      type: 'TASKPOINT',
-      title: 'Pesquisar sobre a empresa e seus concorrentes',
-      category: 'Pesquisa',
-      channel: '-',
-      responsibles: ['Carlos Mendes'],
-      date: '18-01-2026',
-      status: 'Em andamento',
-      description: 'Realizar pesquisa profunda sobre a empresa alvo, identificando suas principais necessidades, desafios atuais e concorrentes diretos no mercado.',
-      subtasks: [
-        { id: 'st-t1', title: 'Analisar site institucional', completed: true, assignee: 'Carlos Mendes', dueDate: '2026-01-16' },
-        { id: 'st-t2', title: 'Pesquisar notícias recentes', completed: true, assignee: 'João Silva', dueDate: '2026-01-17' },
-        { id: 'st-t3', title: 'Mapear concorrentes', completed: false, assignee: 'Ana Lima', dueDate: '2026-01-18' }
-      ],
-      attachments: [],
-      budget: 0,
-      weight: 'Médio',
-      score: 0,
-      interactions: []
-    },
-    {
-      id: 3,
-      itemType: 'touchpoint',
-      type: 'ATENÇÃO',
-      title: 'Email do especialista do projeto',
-      category: 'Relacionamento',
-      channel: 'LinkedIn',
-      responsibles: ['Maria Santos'],
-      date: '20-01-2026',
-      status: 'Em andamento',
-      description: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque vitae semper velit. Fusce nec lacinia dolor. Cras non hendrerit massa, in imperdiet ligula.',
-      subtasks: [
-        { id: 'st1', title: 'Preparar conteúdo do email', completed: true, assignee: 'Maria Santos', dueDate: '2026-01-19' },
-        { id: 'st2', title: 'Revisar ortografia', completed: false, assignee: 'Rafael Oliveira', dueDate: '2026-01-20' }
-      ],
-      attachments: [
-        { id: 'att1', name: 'Titulo-do-anexo.png', addedAt: 'Adicionado há 2 horas atrás' }
-      ],
-      budget: 250,
-      weight: 'Alto',
-      score: 0,
-      interactions: [
-        { selected: true, name: 'Aline Macedo', role: 'Analista de Vendas', buyingFunction: 'Influenciador(a)' },
-        { selected: false, name: 'Bruno Costa', role: 'Gerente de TI', buyingFunction: 'Decisor' },
-        { selected: false, name: 'Carla Souza', role: 'Diretora Comercial', buyingFunction: 'Aprovador(a)' }
-      ]
-    },
-    {
-      id: 4,
-      itemType: 'touchpoint',
-      type: 'ATENÇÃO',
-      title: 'Envio de vídeo por inbox',
-      category: 'Engajamento',
-      channel: 'LinkedIn',
-      responsibles: ['Pedro Costa'],
-      date: '20-01-2026',
-      status: 'Em andamento',
-      description: 'Enviar vídeo personalizado através do inbox do LinkedIn apresentando nossa solução.',
-      subtasks: [],
-      attachments: [],
-      budget: 100,
-      weight: 'Baixo',
-      score: 5,
-      interactions: []
-    }
+  // Audience for LinkedIn Ads drawer (derived from play context)
+  const audienceAccounts = playMock
+    ? [{ id: playMock.accountId, name: playMock.accountName }]
+    : accountId
+    ? [{ id: accountId, name: accountNames[accountId] || 'Empresa' }]
+    : [];
+  const audienceContacts = [
+    { id: 'c1', name: 'Aline Macedo', role: 'Analista de Vendas' },
+    { id: 'c2', name: 'Bruno Costa', role: 'Gerente de TI' },
+    { id: 'c3', name: 'Carla Souza', role: 'Diretora Comercial' },
   ];
+
+  const initialTouchpoints: Touchpoint[] = newPlayData
+    ? []
+    : playMock
+    ? playMock.touchpoints
+    : (getPlayMock('p1')?.touchpoints ?? []);
 
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>(initialTouchpoints);
 
@@ -332,6 +269,9 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
                   layoutOrientation="vertical"
                   onConfirmDraft={handleConfirmDraft}
                   onCancelDraft={handleCancelDraft}
+                  playName={playName}
+                  audienceAccounts={audienceAccounts}
+                  audienceContacts={audienceContacts}
                 />
               </div>
             )}
@@ -357,6 +297,9 @@ export function TouchpointManagerPage({ accountId, playId, onBack, newPlayData }
                   layoutOrientation="horizontal"
                   onConfirmDraft={handleConfirmDraft}
                   onCancelDraft={handleCancelDraft}
+                  playName={playName}
+                  audienceAccounts={audienceAccounts}
+                  audienceContacts={audienceContacts}
                 />
               </div>
             )}

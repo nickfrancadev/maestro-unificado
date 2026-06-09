@@ -49,18 +49,6 @@ export const JOB_FUNCTION_OPTIONS: FacetItem[] = [
   { id: '26', label: 'Suporte', urn: 'urn:li:function:26' },
 ];
 
-export const COMPANY_SIZE_OPTIONS: FacetItem[] = [
-  { id: 'SIZE_1', label: '1', urn: 'urn:li:staffCountRange:SIZE_1' },
-  { id: 'SIZE_2_TO_10', label: '2-10', urn: 'urn:li:staffCountRange:SIZE_2_TO_10' },
-  { id: 'SIZE_11_TO_50', label: '11-50', urn: 'urn:li:staffCountRange:SIZE_11_TO_50' },
-  { id: 'SIZE_51_TO_200', label: '51-200', urn: 'urn:li:staffCountRange:SIZE_51_TO_200' },
-  { id: 'SIZE_201_TO_500', label: '201-500', urn: 'urn:li:staffCountRange:SIZE_201_TO_500' },
-  { id: 'SIZE_501_TO_1000', label: '501-1.000', urn: 'urn:li:staffCountRange:SIZE_501_TO_1000' },
-  { id: 'SIZE_1001_TO_5000', label: '1.001-5.000', urn: 'urn:li:staffCountRange:SIZE_1001_TO_5000' },
-  { id: 'SIZE_5001_TO_10000', label: '5.001-10.000', urn: 'urn:li:staffCountRange:SIZE_5001_TO_10000' },
-  { id: 'SIZE_10001_OR_MORE', label: '10.001+', urn: 'urn:li:staffCountRange:SIZE_10001_OR_MORE' },
-];
-
 export const EXPERIENCE_OPTIONS: FacetItem[] = [
   { id: '1', label: '1 ano', urn: 'urn:li:yearsOfExperience:1' },
   { id: '2', label: '2 anos', urn: 'urn:li:yearsOfExperience:2' },

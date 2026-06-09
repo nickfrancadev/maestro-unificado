@@ -1,4 +1,6 @@
 // Shared types for the Campaign Wizard flow
+import type { BrandKit } from './brandKit';
+import { createDefaultBrandKit } from './brandKit';
 
 export interface BuyingCommitteeContact {
   id: number;
@@ -45,21 +47,17 @@ export interface TargetAccount {
 }
 
 
-// A single campaign entry inside a Campaign Group
-export interface CampaignEntry {
-  id: string;       // local UUID (used as idempotency key)
-  name: string;     // e.g. "Nubank — Q1 2026 Brand Awareness"
-}
-
-// Campaign configuration — lifted to wizard parent level
+// Campaign configuration — lifted to wizard parent level.
+// One campaign per wizard run; the LinkedIn Campaign Group is created
+// implicitly at launch (named after the campaign), and each target account
+// becomes its own ad set under it.
 export interface CampaignConfig {
-  campaignGroupName: string;
-  campaigns: CampaignEntry[];           // 1+ campaigns inside the group
+  campaignName: string;
   objective: string;
   campaignType: string;
   costType: string;
   budgetType: 'daily' | 'total';
-  budgetAmount: string;                 // per-campaign budget
+  budgetAmount: string;                 // per ad set budget
   startDate: string;
   endDate: string;
   autoActivate: boolean;
@@ -67,14 +65,9 @@ export interface CampaignConfig {
   unitCostAmount: string;
 }
 
-export function createCampaignEntry(name = ''): CampaignEntry {
-  return { id: crypto.randomUUID(), name };
-}
-
 export function createDefaultCampaignConfig(): CampaignConfig {
   return {
-    campaignGroupName: '',
-    campaigns: [createCampaignEntry()],
+    campaignName: '',
     objective: 'brand_awareness',
     campaignType: 'SPONSORED_UPDATES',
     costType: 'CPM',
@@ -135,7 +128,6 @@ export interface TemplateLogoConfig {
   textoDestaque: string;         // primary headline rendered into the image (e.g. "WORKSHOP ABM")
   textoComplementar: string;     // secondary line (e.g. "Convite exclusivo VIP")
   showTargetLogo: boolean;       // ask AI to place the target company's logo
-  fontFamily?: string;           // Google Font name (e.g. "Inter") — sent to the IA composer
 }
 
 // Creative data — passed from CreativeStep to OrchestrationStep
@@ -150,13 +142,10 @@ export interface CreativeData {
   templateLogo: TemplateLogoConfig;
   // AI-personalization layer — empty record means every company uses the template above
   overrides: Record<string, CompanyCreativeOverride>;  // keyed by company.id
-  clientVoice: string;           // tone-of-voice description from the advertiser
-  clientBrandContext: string;    // 1-2 sentences describing what the advertiser does
-  clientWebsiteUrl: string;      // advertiser's own website, used to auto-extract voice + context
+  brandKit: BrandKit;            // marca do anunciante (voz/contexto/paleta/fonte/logos/ícones/grafismos)
   clientProductService: string;  // mock dropdown selection — wired to real source later
   clientAudienceMarket: string;
   clientPersona: string;
-  clientBrandColors: { primary: string; secondary: string; accent: string };  // hex codes; used as palette hints in generate-copy
 }
 
 export function createDefaultCreativeData(): CreativeData {
@@ -174,16 +163,12 @@ export function createDefaultCreativeData(): CreativeData {
       textoDestaque: 'WORKSHOP ABM',
       textoComplementar: 'Convite exclusivo VIP',
       showTargetLogo: true,
-      fontFamily: 'Inter',
     },
     overrides: {},
-    clientVoice: '',
-    clientBrandContext: '',
-    clientWebsiteUrl: '',
+    brandKit: createDefaultBrandKit(),
     clientProductService: '',
     clientAudienceMarket: '',
     clientPersona: '',
-    clientBrandColors: { primary: '', secondary: '', accent: '' },
   };
 }
 

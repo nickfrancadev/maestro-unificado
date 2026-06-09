@@ -31,6 +31,10 @@ import {
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } from './types';
 import { resolveCreativeForCompany } from './types';
+import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
+import type { BrandKit } from './brandKit';
+import { BriefModal } from './BriefModal';
+import type { BriefDraft } from './BriefModal';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
 import {
@@ -40,7 +44,6 @@ import {
   composeLogoOverlay,
   fetchClientVoice,
   saveClientVoice,
-  extractBrandVoice,
 } from '@/lib/ai';
 
 const CTA_OPTIONS = [
@@ -66,10 +69,6 @@ interface CreativeStepProps {
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
 
 const TEMPLATE_TARGET = '__template__';
-
-const MOCK_PRODUCTS = ['Produto A', 'Produto B', 'Produto C'];
-const MOCK_AUDIENCES = ['Pequenas empresas', 'Médias empresas', 'Enterprise'];
-const MOCK_PERSONAS = ['CMO', 'Head de Marketing', 'Demand Gen Manager'];
 
 function statusOf(override: CompanyCreativeOverride | undefined): CompanyStatus {
   return override?.status ?? 'template';
@@ -107,13 +106,14 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const adImageUrl = creativeData?.imageUrl || null;
   const adImageFileName = creativeData?.imageFileName || null;
   const overrides = creativeData?.overrides || {};
-  const clientVoice = creativeData?.clientVoice || '';
-  const clientBrandContext = creativeData?.clientBrandContext || '';
-  const clientWebsiteUrl = creativeData?.clientWebsiteUrl || '';
+  const brandKit = creativeData?.brandKit || createDefaultBrandKit();
+  const clientVoice = brandKit.voice;
+  const clientBrandContext = brandKit.context;
+  const clientWebsiteUrl = brandKit.websiteUrl;
   const clientProductService = creativeData?.clientProductService || '';
   const clientAudienceMarket = creativeData?.clientAudienceMarket || '';
   const clientPersona = creativeData?.clientPersona || '';
-  const clientBrandColors = creativeData?.clientBrandColors || { primary: '', secondary: '', accent: '' };
+  const clientBrandColors = brandKit.colors;
   const imageMode: ImageMode = creativeData?.imageMode || 'template_logo';
   const templateLogo = creativeData?.templateLogo || {
     baseImageUrl: null,
@@ -181,13 +181,17 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           stored.persona
         ) {
           updateCreative({
-            clientVoice: stored.voice,
-            clientBrandContext: stored.brand_context,
-            clientWebsiteUrl: stored.website_url,
-            clientProductService: stored.product_service,
-            clientAudienceMarket: stored.audience_market,
-            clientPersona: stored.persona,
-            clientBrandColors: stored.brand_colors || { primary: '', secondary: '', accent: '' },
+            brandKit: {
+              ...createDefaultBrandKit(),
+              status: 'defined',
+              voice: stored.voice,
+              context: stored.brand_context,
+              websiteUrl: stored.website_url,
+              colors: stored.brand_colors || { primary: '', secondary: '', accent: '' },
+            },
+            clientProductService: stored.product_service || '',
+            clientAudienceMarket: stored.audience_market || '',
+            clientPersona: stored.persona || '',
           });
         }
       })
@@ -308,8 +312,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       }
       const result = await generateCopy({
         brand_brief: useBrief,
-        client_voice: data.clientVoice,
-        client_brand_colors: data.clientBrandColors,
+        client_voice: data.brandKit.voice,
+        client_brand_colors: data.brandKit.colors,
         target_company_name: company.label,
         objective: 'brand_awareness',
         cta: data.cta,
@@ -337,7 +341,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       const data = creativeDataRef.current!;
       const result = await generateBaseImage({
         mode,
-        client_brand_context: data.clientBrandContext,
+        client_brand_context: data.brandKit.context,
         prompt_brief: promptBrief,
       });
       updateCreative({
@@ -371,7 +375,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         show_target_logo: tpl.showTargetLogo,
         texto_destaque: tpl.textoDestaque,
         texto_complementar: tpl.textoComplementar,
-        font_family: tpl.fontFamily,
+        font_family: creativeDataRef.current?.brandKit.fontFamily,
       });
       updateOverride(company.id, {
         imageUrl: result.url,
@@ -428,26 +432,46 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   };
 
   // ----------------- Brief modal handlers -----------------
-  const [voiceDraft, setVoiceDraft] = useState({
-    voice: '',
-    context: '',
-    websiteUrl: '',
-    productService: '',
-    audienceMarket: '',
-    persona: '',
+  const [briefDraft, setBriefDraft] = useState<BriefDraft>({
+    voice: '', context: '', websiteUrl: '',
+    productService: '', audienceMarket: '', persona: '',
     brandColors: { primary: '', secondary: '', accent: '' },
+    fontFamily: 'Inter',
+    logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
+    icons: [], graphics: [],
+    source: null,
+    extractedRef: '',
   });
   useEffect(() => {
-    setVoiceDraft({
-      voice: clientVoice,
-      context: clientBrandContext,
-      websiteUrl: clientWebsiteUrl,
+    setBriefDraft({
+      voice: brandKit.voice,
+      context: brandKit.context,
+      websiteUrl: brandKit.websiteUrl,
       productService: clientProductService,
       audienceMarket: clientAudienceMarket,
       persona: clientPersona,
-      brandColors: clientBrandColors,
+      brandColors: brandKit.colors,
+      fontFamily: brandKit.fontFamily,
+      logos: brandKit.logos,
+      icons: brandKit.icons,
+      graphics: brandKit.graphics,
+      source: null,
+      extractedRef: '',
     });
-  }, [clientVoice, clientBrandContext, clientWebsiteUrl, clientProductService, clientAudienceMarket, clientPersona, clientBrandColors]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    brandKit.status,
+    brandKit.voice,
+    brandKit.context,
+    brandKit.websiteUrl,
+    brandKit.fontFamily,
+    brandKit.colors.primary,
+    brandKit.colors.secondary,
+    brandKit.colors.accent,
+    clientProductService,
+    clientAudienceMarket,
+    clientPersona,
+  ]);
 
   // Extraction UI state
   const [extracting, setExtracting] = useState(false);
@@ -456,57 +480,89 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
   const persistVoice = async () => {
     updateCreative({
-      clientVoice: voiceDraft.voice,
-      clientBrandContext: voiceDraft.context,
-      clientWebsiteUrl: voiceDraft.websiteUrl,
-      clientProductService: voiceDraft.productService,
-      clientAudienceMarket: voiceDraft.audienceMarket,
-      clientPersona: voiceDraft.persona,
-      clientBrandColors: voiceDraft.brandColors,
+      brandKit: {
+        ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()),
+        status: 'defined',
+        voice: briefDraft.voice,
+        context: briefDraft.context,
+        websiteUrl: briefDraft.websiteUrl,
+        colors: briefDraft.brandColors,
+        fontFamily: briefDraft.fontFamily,
+        logos: briefDraft.logos,
+        icons: briefDraft.icons,
+        graphics: briefDraft.graphics,
+      },
+      clientProductService: briefDraft.productService,
+      clientAudienceMarket: briefDraft.audienceMarket,
+      clientPersona: briefDraft.persona,
     });
     try {
       await saveClientVoice({
-        voice: voiceDraft.voice,
-        brand_context: voiceDraft.context,
-        website_url: voiceDraft.websiteUrl,
-        product_service: voiceDraft.productService,
-        audience_market: voiceDraft.audienceMarket,
-        persona: voiceDraft.persona,
-        brand_colors: voiceDraft.brandColors,
+        voice: briefDraft.voice,
+        brand_context: briefDraft.context,
+        website_url: briefDraft.websiteUrl,
+        product_service: briefDraft.productService,
+        audience_market: briefDraft.audienceMarket,
+        persona: briefDraft.persona,
+        brand_colors: briefDraft.brandColors,
       });
     } catch (_e) { /* non-fatal */ }
     setVoiceModalOpen(false);
   };
 
+  const applyFixtureToDraft = (source: 'brandbook' | 'website', ref: string) => {
+    setBriefDraft((d) => ({
+      ...d,
+      voice: MOCK_BRAND_FIXTURE.voice,
+      context: MOCK_BRAND_FIXTURE.context,
+      brandColors: MOCK_BRAND_FIXTURE.colors,
+      fontFamily: MOCK_BRAND_FIXTURE.fontFamily,
+      logos: MOCK_BRAND_FIXTURE.logos,
+      icons: MOCK_BRAND_FIXTURE.icons,
+      graphics: MOCK_BRAND_FIXTURE.graphics,
+      source,
+      extractedRef: ref,
+    }));
+  };
+
   const handleExtract = async () => {
-    const url = voiceDraft.websiteUrl.trim();
+    const url = briefDraft.websiteUrl.trim();
     if (!url) return;
     setExtracting(true);
     setExtractError(null);
     setExtractWarning(null);
-    try {
-      const result = await extractBrandVoice({ website_url: url });
-      const examplesBlock = result.voice_examples.length
-        ? `\n\nExemplos do site:\n${result.voice_examples.map((e) => `• ${e}`).join('\n')}`
-        : '';
-      setVoiceDraft((d) => ({
-        ...d,
-        voice: result.voice + examplesBlock,
-        context: result.brand_context,
-        brandColors: {
-          primary: result.brand_colors.primary || d.brandColors.primary,
-          secondary: result.brand_colors.secondary || d.brandColors.secondary,
-          accent: result.brand_colors.accent || d.brandColors.accent,
-        },
-      }));
-      if (result.scrape_status === 'limited') {
-        setExtractWarning('Não consegui ler o site — gerei uma estimativa a partir do domínio. Revise antes de salvar.');
-      }
-    } catch (err: any) {
-      setExtractError(err?.message || 'Falha ao extrair. Tente novamente.');
-    } finally {
-      setExtracting(false);
-    }
+    // Mock: simula latência de rede e preenche a partir da fixture.
+    await new Promise((r) => setTimeout(r, 900));
+    applyFixtureToDraft('website', url);
+    setExtractWarning('Extração simulada (mock) — revise os campos antes de salvar.');
+    setExtracting(false);
+  };
+
+  const handleBrandBookUpload = async (file: File) => {
+    setExtracting(true);
+    setExtractError(null);
+    setExtractWarning(null);
+    await new Promise((r) => setTimeout(r, 900));
+    applyFixtureToDraft('brandbook', file.name);
+    setExtractWarning('Brand Book lido (mock) — revise os campos antes de salvar.');
+    setExtracting(false);
+  };
+
+  const handleResetExtraction = () => {
+    setExtractWarning(null);
+    setExtractError(null);
+    setBriefDraft((d) => ({
+      ...d,
+      // websiteUrl e fontFamily são mantidos de propósito (pré-preenche um retry).
+      source: null,
+      extractedRef: '',
+      voice: '',
+      context: '',
+      brandColors: { primary: '', secondary: '', accent: '' },
+      logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
+      icons: [],
+      graphics: [],
+    }));
   };
 
   const ctaLabel = CTA_OPTIONS.find((o) => o.value === cta)?.label || 'Learn More';
@@ -892,10 +948,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, textoComplementar: v } })}
                     placeholder="Convite exclusivo VIP"
                   />
-                  <FontPicker
-                    value={templateLogo.fontFamily || 'Inter'}
-                    onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, fontFamily: v } })}
-                  />
                   <label className="flex items-center gap-1.5 text-[11px] text-slate-700 font-medium pt-1">
                     <input
                       type="checkbox"
@@ -1167,186 +1219,19 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
       {/* ============= Brief modal ============= */}
       {voiceModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <PaintBucket className="w-4 h-4 text-[#FF5F39]" />
-                  Brief
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Usado em todas as gerações de IA. Salvo no seu workspace.</p>
-              </div>
-              <button onClick={() => setVoiceModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4 overflow-y-auto">
-              {/* Website + Extract */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Website da sua empresa
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={voiceDraft.websiteUrl}
-                    onChange={(e) => setVoiceDraft({ ...voiceDraft, websiteUrl: e.target.value })}
-                    placeholder="https://suaempresa.com"
-                    className="flex-1 p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleExtract}
-                    disabled={extracting || !voiceDraft.websiteUrl.trim()}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-[#FF5F39] hover:bg-[#E54A26] disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg flex items-center gap-2 shrink-0"
-                  >
-                    {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Extrair com IA
-                  </button>
-                </div>
-                {extractWarning && (
-                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                    {extractWarning}
-                  </p>
-                )}
-                {extractError && (
-                  <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
-                    {extractError}
-                  </p>
-                )}
-              </div>
-
-              {/* Tom de voz */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Tom de voz <span className="text-slate-400 font-normal lowercase">(2-3 frases descrevendo como a sua marca fala)</span>
-                </label>
-                <textarea
-                  value={voiceDraft.voice}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, voice: e.target.value })}
-                  rows={4}
-                  placeholder="Ex: Direto e confiante, sem jargão. Falamos como engenheiros para engenheiros — exemplos concretos, números reais, zero hype."
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
-                />
-              </div>
-
-              {/* Contexto da empresa */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Contexto da empresa <span className="text-slate-400 font-normal lowercase">(o que você vende, em 1-2 frases)</span>
-                </label>
-                <textarea
-                  value={voiceDraft.context}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, context: e.target.value })}
-                  rows={3}
-                  placeholder="Ex: A Maestro é uma plataforma de ABM para B2B SaaS. Ajudamos times de marketing e vendas a executar campanhas 1:1 nas contas-alvo."
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
-                />
-              </div>
-
-              {/* Produto/Serviço */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Produto/Serviço
-                </label>
-                <select
-                  value={voiceDraft.productService}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, productService: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                >
-                  <option value="">Selecione um produto ou serviço</option>
-                  {MOCK_PRODUCTS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Públicos/Mercados */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Públicos/Mercados
-                </label>
-                <select
-                  value={voiceDraft.audienceMarket}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, audienceMarket: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                >
-                  <option value="">Selecione um público ou mercado</option>
-                  {MOCK_AUDIENCES.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Persona/Público */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Persona/Público
-                </label>
-                <select
-                  value={voiceDraft.persona}
-                  onChange={(e) => setVoiceDraft({ ...voiceDraft, persona: e.target.value })}
-                  className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                >
-                  <option value="">Selecione uma persona</option>
-                  {MOCK_PERSONAS.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Paleta da marca — auto-preenchida pelo Extract, usada como hint no generate-copy */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-                  Paleta da marca
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['primary', 'secondary', 'accent'] as const).map((role) => {
-                    const value = voiceDraft.brandColors[role] || '';
-                    const labels = { primary: 'Primária', secondary: 'Secundária', accent: 'Destaque' };
-                    return (
-                      <div key={role} className="flex flex-col gap-1">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">{labels[role]}</span>
-                        <div className="flex items-center gap-2 border border-slate-200 rounded-lg p-2 bg-white">
-                          <input
-                            type="color"
-                            value={value || '#ffffff'}
-                            onChange={(e) => setVoiceDraft({
-                              ...voiceDraft,
-                              brandColors: { ...voiceDraft.brandColors, [role]: e.target.value },
-                            })}
-                            className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
-                          />
-                          <input
-                            type="text"
-                            value={value}
-                            placeholder="#______"
-                            onChange={(e) => setVoiceDraft({
-                              ...voiceDraft,
-                              brandColors: { ...voiceDraft.brandColors, [role]: e.target.value },
-                            })}
-                            className="flex-1 text-xs font-mono text-slate-700 bg-transparent outline-none min-w-0"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
-              <button onClick={() => setVoiceModalOpen(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">
-                Cancelar
-              </button>
-              <button onClick={persistVoice} className="px-4 py-2 text-sm font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm">
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
+        <BriefModal
+          draft={briefDraft}
+          setDraft={setBriefDraft}
+          status={brandKit.status}
+          onClose={() => setVoiceModalOpen(false)}
+          onSave={persistVoice}
+          extracting={extracting}
+          extractError={extractError}
+          extractWarning={extractWarning}
+          onExtractWebsite={handleExtract}
+          onUploadBrandBook={handleBrandBookUpload}
+          onResetExtraction={handleResetExtraction}
+        />
       )}
     </div>
   );
@@ -1542,7 +1427,7 @@ const FONT_OPTIONS: { label: string; family: string; group: string }[] = [
   { group: 'Display / impacto', family: 'Archivo Black', label: 'Archivo Black' },
 ];
 
-function FontPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function FontPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const groups = Array.from(new Set(FONT_OPTIONS.map((f) => f.group)));

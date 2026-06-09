@@ -11,11 +11,10 @@ import {
   Target,
   Briefcase,
   User,
-  Factory,
-  BarChart3,
   Clock,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Search,
   X,
   Plus,
@@ -29,6 +28,8 @@ import {
   Users,
   Sparkles,
   Loader2,
+  Settings2,
+  RotateCcw,
 } from "lucide-react";
 import {
   fetchSimilarEntities,
@@ -39,7 +40,6 @@ import type { EnrichedOrganization } from "@/lib/linkedin";
 import {
   SENIORITY_OPTIONS,
   JOB_FUNCTION_OPTIONS,
-  COMPANY_SIZE_OPTIONS,
   EXPERIENCE_OPTIONS,
 } from "./segmentation/linkedinFacets";
 import {
@@ -47,20 +47,32 @@ import {
   countSelections,
   buildTargetingCriteria,
   createEmptyTargeting,
+  resolveTargetingForAccount,
+  PERSON_FACET_KEYS,
   FACET_URN_MAP,
 } from "./segmentation/targeting";
 import { useAudienceCount } from "./segmentation/useAudienceCount";
 import { useLinkedInTypeahead } from "./segmentation/useLinkedInTypeahead";
 import type { LinkedInFacetType } from "./segmentation/useLinkedInTypeahead";
-import type { FacetItem, FacetSelection, TargetingData } from "./segmentation/types";
+import type {
+  FacetItem,
+  FacetSelection,
+  PersonTargeting,
+  TargetingData,
+} from "./segmentation/types";
 import { projectId } from "@/utils/supabase/info";
 
 const LOGO_PROXY_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-a4d5bbe0/logo-proxy`;
 
 // Re-export so existing importers (CampaignWizard, CreativeStep, OrchestrationStep)
 // don't break — the public surface of this module stays the same.
-export type { FacetItem, FacetSelection, TargetingData };
-export { buildTargetingCriteria, createEmptyTargeting, FACET_URN_MAP };
+export type { FacetItem, FacetSelection, PersonTargeting, TargetingData };
+export {
+  buildTargetingCriteria,
+  createEmptyTargeting,
+  resolveTargetingForAccount,
+  FACET_URN_MAP,
+};
 
 interface SegmentationStepProps {
   data: TargetingData;
@@ -489,39 +501,6 @@ function CompanyHeroCard({
 
       {/* Search + Controls */}
       <div className="px-6 py-4 space-y-4">
-        {/* Include / Exclude toggle */}
-        <div className="flex items-center gap-3">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setMode("include")}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
-                mode === "include"
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                  : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Incluir
-            </button>
-            <button
-              onClick={() => setMode("exclude")}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
-                mode === "exclude"
-                  ? "bg-red-600 text-white shadow-md shadow-red-200"
-                  : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              <Minus className="w-3.5 h-3.5" />
-              Excluir
-            </button>
-          </div>
-          <div className="flex-1" />
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Typeahead com dados da LinkedIn API</span>
-          </div>
-        </div>
-
         {/* Typeahead Search */}
         <div className="relative" ref={dropdownRef}>
           <div className="relative">
@@ -892,7 +871,7 @@ function CompanyHeroCard({
 // ===============================
 
 interface FacetCardProps {
-  id: keyof TargetingData;
+  id: string;
   icon: React.ReactNode;
   label: string;
   description: string;
@@ -1306,23 +1285,24 @@ function AudienceSummary({ data }: { data: TargetingData }) {
 
   const status = getStatus();
 
-  const facetLabels: Record<keyof TargetingData, string> = {
-    companies: "Empresas-alvo",
+  const facetLabels: Record<keyof PersonTargeting, string> = {
     locations: "Localizacao",
     seniorities: "Senioridade",
     jobFunctions: "Funcao / Area",
     jobTitles: "Cargo",
-    industries: "Setor / Industria",
-    companySizes: "Porte da Empresa",
     yearsOfExperience: "Anos de Experiencia",
   };
 
-  const includedFacets = (
-    Object.keys(data) as Array<keyof TargetingData>
-  ).filter((k) => data[k].included.length > 0);
-  const excludedFacets = (
-    Object.keys(data) as Array<keyof TargetingData>
-  ).filter((k) => data[k].excluded.length > 0);
+  // The sidebar summarizes the DEFAULT person facets ("Padrão — todas as
+  // contas"). Per-account overrides are surfaced as a count below.
+  const def = data.defaultTargeting;
+  const customCount = Object.keys(data.overrides).length;
+  const includedFacets = PERSON_FACET_KEYS.filter(
+    (k) => def[k].included.length > 0,
+  );
+  const excludedFacets = PERSON_FACET_KEYS.filter(
+    (k) => def[k].excluded.length > 0,
+  );
 
   return (
     <div className="space-y-4">
@@ -1376,12 +1356,19 @@ function AudienceSummary({ data }: { data: TargetingData }) {
         )}
       </div>
 
-      {/* Company logos summary */}
+      {/* Company logos summary (one ad set per account) */}
       {data.companies.included.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
             <Building2 className="w-3 h-3" />
-            Empresas-alvo
+            Conjuntos de anúncio
+          </p>
+          <p className="text-[11px] text-slate-400 mb-3">
+            {data.companies.included.length} conta
+            {data.companies.included.length !== 1 ? "s" : ""}
+            {customCount > 0
+              ? ` · ${customCount} personalizada${customCount !== 1 ? "s" : ""}`
+              : " · todas usando o padrão"}
           </p>
           <div className="flex flex-wrap gap-2">
             {data.companies.included.map((item) => (
@@ -1399,44 +1386,41 @@ function AudienceSummary({ data }: { data: TargetingData }) {
         </div>
       )}
 
-      {/* Other Included Facets */}
-      {includedFacets.filter((k) => k !== "companies")
-        .length > 0 && (
+      {/* Default Included Facets */}
+      {includedFacets.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
           <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Plus className="w-3 h-3" />
-            Incluindo
+            Incluindo (padrão)
           </p>
           <div className="space-y-3">
-            {includedFacets
-              .filter((k) => k !== "companies")
-              .map((facetKey) => (
-                <div key={facetKey}>
-                  <p className="text-[11px] font-medium text-slate-400 mb-1">
-                    {facetLabels[facetKey]}
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {data[facetKey].included.map((item) => (
-                      <span
-                        key={item.id}
-                        className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200"
-                      >
-                        {item.label}
-                      </span>
-                    ))}
-                  </div>
+            {includedFacets.map((facetKey) => (
+              <div key={facetKey}>
+                <p className="text-[11px] font-medium text-slate-400 mb-1">
+                  {facetLabels[facetKey]}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {def[facetKey].included.map((item) => (
+                    <span
+                      key={item.id}
+                      className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                    >
+                      {item.label}
+                    </span>
+                  ))}
                 </div>
-              ))}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Excluded */}
+      {/* Excluded (default) */}
       {excludedFacets.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
           <p className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Minus className="w-3 h-3" />
-            Excluindo
+            Excluindo (padrão)
           </p>
           <div className="space-y-3">
             {excludedFacets.map((facetKey) => (
@@ -1445,7 +1429,7 @@ function AudienceSummary({ data }: { data: TargetingData }) {
                   {facetLabels[facetKey]}
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  {data[facetKey].excluded.map((item) => (
+                  {def[facetKey].excluded.map((item) => (
                     <span
                       key={item.id}
                       className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-red-50 text-red-600 border border-red-200"
@@ -1480,99 +1464,144 @@ function AudienceSummary({ data }: { data: TargetingData }) {
 // Main SegmentationStep
 // ===============================
 
+// Sentinel id for the "Padrão (todas as contas)" entry in the master list.
+const DEFAULT_ADSET_ID = "__default__";
+
+// Per-facet display config for the detail panel. Order = display order.
+const PERSON_FACET_CONFIG: Array<{
+  key: keyof PersonTargeting;
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  type: FacetCardProps["type"];
+  options?: FacetItem[];
+  required?: boolean;
+}> = [
+  {
+    key: "locations",
+    icon: <MapPin className="w-4 h-4" />,
+    label: "Localizacao",
+    description: "Regioes geograficas dos profissionais",
+    type: "typeahead",
+    required: true,
+  },
+  {
+    key: "seniorities",
+    icon: <Target className="w-4 h-4" />,
+    label: "Senioridade",
+    description: "Nivel hierarquico do profissional",
+    type: "fixed",
+    options: SENIORITY_OPTIONS,
+  },
+  {
+    key: "jobFunctions",
+    icon: <Briefcase className="w-4 h-4" />,
+    label: "Funcao / Area",
+    description: "Area funcional do profissional",
+    type: "filtered-fixed",
+    options: JOB_FUNCTION_OPTIONS,
+  },
+  {
+    key: "jobTitles",
+    icon: <User className="w-4 h-4" />,
+    label: "Cargo (Job Title)",
+    description: "Titulo especifico do profissional",
+    type: "typeahead",
+  },
+  {
+    key: "yearsOfExperience",
+    icon: <Clock className="w-4 h-4" />,
+    label: "Anos de Experiencia",
+    description: "Tempo de experiencia profissional",
+    type: "fixed",
+    options: EXPERIENCE_OPTIONS,
+  },
+];
+
 export function SegmentationStep({
   data,
   onChange,
 }: SegmentationStepProps) {
-  const updateFacet = useCallback(
-    (facetKey: keyof TargetingData, sel: FacetSelection) => {
-      onChange({ ...data, [facetKey]: sel });
+  const accounts = data.companies.included;
+  const [activeId, setActiveId] = useState<string>(DEFAULT_ADSET_ID);
+
+  // If the active account was removed, fall back to the default panel.
+  useEffect(() => {
+    if (
+      activeId !== DEFAULT_ADSET_ID &&
+      !accounts.some((a) => a.id === activeId)
+    ) {
+      setActiveId(DEFAULT_ADSET_ID);
+    }
+  }, [accounts, activeId]);
+
+  // Update the accounts list. Drop overrides for accounts that no longer exist.
+  const updateCompanies = useCallback(
+    (sel: FacetSelection) => {
+      const liveIds = new Set(sel.included.map((a) => a.id));
+      const nextOverrides: Record<string, PersonTargeting> = {};
+      for (const [id, pt] of Object.entries(data.overrides)) {
+        if (liveIds.has(id)) nextOverrides[id] = pt;
+      }
+      onChange({ ...data, companies: sel, overrides: nextOverrides });
     },
     [data, onChange],
   );
 
-  const facets: FacetCardProps[] = [
-    {
-      id: "locations",
-      icon: <MapPin className="w-4 h-4" />,
-      label: "Localizacao",
-      description: "Regioes geograficas dos profissionais",
-      type: "typeahead",
-      selection: data.locations,
-      onSelectionChange: (sel) =>
-        updateFacet("locations", sel),
-      defaultOpen: true,
+  const isDefault = activeId === DEFAULT_ADSET_ID;
+  const activePerson: PersonTargeting = isDefault
+    ? data.defaultTargeting
+    : resolveTargetingForAccount(data, activeId);
+
+  const isOverridden = useCallback(
+    (accountId: string) => !!data.overrides[accountId],
+    [data.overrides],
+  );
+
+  // Edit a facet of the active ad set. On the default panel, write to
+  // defaultTargeting. On an account, create/update its override (seeded from
+  // the default the first time it diverges).
+  const updateActiveFacet = useCallback(
+    (facetKey: keyof PersonTargeting, sel: FacetSelection) => {
+      if (isDefault) {
+        onChange({
+          ...data,
+          defaultTargeting: { ...data.defaultTargeting, [facetKey]: sel },
+        });
+        return;
+      }
+      const base = data.overrides[activeId] ?? data.defaultTargeting;
+      onChange({
+        ...data,
+        overrides: {
+          ...data.overrides,
+          [activeId]: { ...base, [facetKey]: sel },
+        },
+      });
     },
-    {
-      id: "seniorities",
-      icon: <Target className="w-4 h-4" />,
-      label: "Senioridade",
-      description: "Nivel hierarquico do profissional",
-      type: "fixed",
-      options: SENIORITY_OPTIONS,
-      selection: data.seniorities,
-      onSelectionChange: (sel) =>
-        updateFacet("seniorities", sel),
-      defaultOpen: true,
-    },
-    {
-      id: "jobFunctions",
-      icon: <Briefcase className="w-4 h-4" />,
-      label: "Funcao / Area",
-      description: "Area funcional do jobTitles",
-      type: "filtered-fixed",
-      options: JOB_FUNCTION_OPTIONS,
-      selection: data.jobFunctions,
-      onSelectionChange: (sel) =>
-        updateFacet("jobFunctions", sel),
-      defaultOpen: false,
-    },
-    {
-      id: "jobTitles",
-      icon: <User className="w-4 h-4" />,
-      label: "Cargo (Job Title)",
-      description: "Titulo especifico do profissional",
-      type: "typeahead",
-      selection: data.jobTitles,
-      onSelectionChange: (sel) => updateFacet("jobTitles", sel),
-      defaultOpen: false,
-    },
-    {
-      id: "industries",
-      icon: <Factory className="w-4 h-4" />,
-      label: "Setor / Industria",
-      description: "Segmento de mercado da empresa",
-      type: "typeahead",
-      selection: data.industries,
-      onSelectionChange: (sel) =>
-        updateFacet("industries", sel),
-      defaultOpen: false,
-    },
-    {
-      id: "companySizes",
-      icon: <BarChart3 className="w-4 h-4" />,
-      label: "Porte da Empresa",
-      description: "Quantidade de funcionarios",
-      type: "fixed",
-      options: COMPANY_SIZE_OPTIONS,
-      selection: data.companySizes,
-      onSelectionChange: (sel) =>
-        updateFacet("companySizes", sel),
-      defaultOpen: false,
-    },
-    {
-      id: "yearsOfExperience",
-      icon: <Clock className="w-4 h-4" />,
-      label: "Anos de Experiencia",
-      description: "Tempo de experiencia profissional",
-      type: "fixed",
-      options: EXPERIENCE_OPTIONS,
-      selection: data.yearsOfExperience,
-      onSelectionChange: (sel) =>
-        updateFacet("yearsOfExperience", sel),
-      defaultOpen: false,
-    },
-  ];
+    [activeId, isDefault, data, onChange],
+  );
+
+  // "Aplicar a todas": clear every override so all accounts inherit the default.
+  const applyDefaultToAll = useCallback(() => {
+    if (Object.keys(data.overrides).length === 0) return;
+    const ok = window.confirm(
+      "Aplicar o padrão a todas as contas? As personalizações por conta serão removidas.",
+    );
+    if (!ok) return;
+    onChange({ ...data, overrides: {} });
+  }, [data, onChange]);
+
+  // "Voltar ao padrão": remove the active account's override.
+  const resetActiveToDefault = useCallback(() => {
+    if (isDefault) return;
+    const next = { ...data.overrides };
+    delete next[activeId];
+    onChange({ ...data, overrides: next });
+  }, [activeId, isDefault, data, onChange]);
+
+  const activeAccount = accounts.find((a) => a.id === activeId);
+  const overrideCount = Object.keys(data.overrides).length;
 
   return (
     <div className="space-y-4">
@@ -1588,32 +1617,127 @@ export function SegmentationStep({
 
       {/* Two Column Layout */}
       <div className="flex gap-6">
-        {/* Left - Cards */}
+        {/* Left - Accounts + per-account targeting */}
         <div
           className="flex-1 min-w-0 space-y-3"
           style={{ flex: "0 0 65%" }}
         >
-          {/* Hero Company Card */}
+          {/* Hero Company Card — the accounts (one ad set each) */}
           <CompanyHeroCard
             selection={data.companies}
-            onSelectionChange={(sel) =>
-              updateFacet("companies", sel)
-            }
+            onSelectionChange={updateCompanies}
           />
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 py-1">
-            <div className="flex-1 border-t border-slate-200" />
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-              Refinar Audiencia
-            </span>
-            <div className="flex-1 border-t border-slate-200" />
-          </div>
+          {accounts.length === 0 ? (
+            <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center text-sm text-slate-500">
+              Adicione uma empresa-alvo acima para configurar os conjuntos de anúncio.
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-100 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                Conjuntos de anúncio ({accounts.length})
+              </div>
+              <div className="flex flex-col md:flex-row">
+                {/* Master list */}
+                <div className="md:w-[230px] md:flex-shrink-0 border-b md:border-b-0 md:border-r border-slate-100 p-2 space-y-1">
+                  <button
+                    onClick={() => setActiveId(DEFAULT_ADSET_ID)}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                      isDefault
+                        ? "bg-blue-50 ring-1 ring-blue-200"
+                        : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <Settings2 className="w-4 h-4 text-slate-400" />
+                      Padrão (todas)
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                  </button>
+                  {accounts.map((acc) => (
+                    <button
+                      key={acc.id}
+                      onClick={() => setActiveId(acc.id)}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                        activeId === acc.id
+                          ? "bg-blue-50 ring-1 ring-blue-200"
+                          : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <CompanyLogo item={acc} size="sm" />
+                        <span className="text-sm font-medium text-slate-700 truncate">
+                          {acc.label}
+                        </span>
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                          isOverridden(acc.id)
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {isOverridden(acc.id) ? "personalizado" : "padrão"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
 
-          {/* Regular Facet Cards */}
-          {facets.map((facet) => (
-            <FacetCard key={facet.id} {...facet} />
-          ))}
+                {/* Detail panel */}
+                <div className="flex-1 min-w-0 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-bold text-slate-700 truncate">
+                      {isDefault
+                        ? "Padrão — aplicado a todas as contas"
+                        : `Conjunto: ${activeAccount?.label ?? ""}`}
+                    </h4>
+                    {isDefault ? (
+                      <button
+                        onClick={applyDefaultToAll}
+                        disabled={overrideCount === 0}
+                        className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Aplicar a todas
+                      </button>
+                    ) : (
+                      <button
+                        onClick={resetActiveToDefault}
+                        disabled={!isOverridden(activeId)}
+                        className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Voltar ao padrão
+                      </button>
+                    )}
+                  </div>
+
+                  {!isDefault && !isOverridden(activeId) && (
+                    <p className="text-[11px] text-slate-400">
+                      Esta conta usa o padrão. Editar abaixo cria uma configuração só dela.
+                    </p>
+                  )}
+
+                  {PERSON_FACET_CONFIG.map((f) => (
+                    <FacetCard
+                      key={f.key}
+                      id={f.key}
+                      icon={f.icon}
+                      label={f.required ? `${f.label} *` : f.label}
+                      description={f.description}
+                      type={f.type}
+                      options={f.options}
+                      selection={activePerson[f.key]}
+                      onSelectionChange={(sel) =>
+                        updateActiveFacet(f.key, sel)
+                      }
+                      defaultOpen={f.key === "locations"}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right - Summary Panel (sticky) */}

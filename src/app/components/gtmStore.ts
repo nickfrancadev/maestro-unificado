@@ -9,6 +9,8 @@ export interface GtmProduto {
   unidade: string;
   status: "Ativo" | "Inativo" | "Em desenvolvimento";
   pmfRating: number;
+  momentosIds?: string[];
+  publicosIds?: string[];
 }
 
 export interface GtmMomento {
@@ -34,6 +36,17 @@ export interface GtmPublico {
   expanded: boolean;
 }
 
+export interface GtmPitch {
+  id: string;
+  produto: string;
+  momento: string;
+  publico: string;
+  conteudo: string;
+  geradoEm: string;
+  tom: string;
+  canal: string;
+}
+
 export const defaultProdutos: GtmProduto[] = [
   {
     id: "p1",
@@ -44,6 +57,8 @@ export const defaultProdutos: GtmProduto[] = [
     unidade: "mês",
     status: "Ativo",
     pmfRating: 4.2,
+    momentosIds: ["m1", "m2"],
+    publicosIds: ["pub1", "pub2"],
   },
   {
     id: "p2",
@@ -54,6 +69,8 @@ export const defaultProdutos: GtmProduto[] = [
     unidade: "projeto",
     status: "Ativo",
     pmfRating: 4.7,
+    momentosIds: ["m1"],
+    publicosIds: ["pub1"],
   },
   {
     id: "p3",
@@ -63,7 +80,9 @@ export const defaultProdutos: GtmProduto[] = [
     preco: 1200,
     unidade: "pessoa",
     status: "Em desenvolvimento",
-    pmfRating: 3.8,
+    pmfRating: 2.8,
+    momentosIds: [],
+    publicosIds: ["pub2"],
   },
 ];
 
@@ -76,7 +95,7 @@ export const defaultMomentos: GtmMomento[] = [
     motivacao: "Alta demanda por soluções de automação comercial no segmento de médias empresas pós-fusões.",
     descricao: "Momento de entrada em contas mid-market que estão revisando seus stacks de tecnologia após processos de M&A.",
     percepcao: "Empresas nesse estágio percebem dificuldade em consolidar dados de CRM e ERP em uma visão única.",
-    expanded: true,
+    expanded: false,
   },
   {
     id: "m2",
@@ -108,7 +127,7 @@ export const defaultPublicos: GtmPublico[] = [
     jornada: "Consciência → Consideração → Decisão. Normalmente pesquisa ativamente antes de aceitar uma reunião.",
     contasVinculadas: ["Conta Alpha", "Conta Beta", "Conta Gamma"],
     mercadoAlvo: "Empresas de 200–1000 funcionários, B2B SaaS, receita >R$10M",
-    expanded: true,
+    expanded: false,
   },
   {
     id: "pub2",
