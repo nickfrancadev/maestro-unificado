@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 import { fetchCampaignAnalyticsFull, fetchLinkedInCampaigns, fetchCampaignComments, archiveCampaign } from '@/lib/linkedin';
 import type { CampaignAnalyticsFull, LinkedInCampaign, CampaignComment, CampaignCommentsResponse } from '@/lib/linkedin';
 import { isMockCampaign, MOCK_CAMPAIGN, getMockAnalyticsFull, getMockComments } from '@/lib/mockCampaignData';
+import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
 
 
 const DATE_RANGES = [
@@ -42,25 +43,6 @@ const DATE_RANGES = [
   { key: '90d', label: '90 dias' },
   { key: 'all', label: 'Tudo' },
 ];
-
-function fmtCurrency(amount: number, currency: string): string {
-  const s = currency === 'BRL' ? 'R$' : '$';
-  if (amount >= 1000) return `${s}${(amount / 1000).toFixed(1)}k`;
-  return `${s}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function fmtNum(n: number): string {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return n.toLocaleString();
-}
-
-function fmtDateLabel(dateStr: string): string {
-  if (!dateStr) return '';
-  const parts = dateStr.split('-');
-  const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  return `${parseInt(parts[2])} ${months[parseInt(parts[1]) - 1]}`;
-}
 
 function fmtTimestamp(ts: number | null): string {
   if (!ts) return '-';
