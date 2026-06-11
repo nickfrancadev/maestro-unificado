@@ -297,3 +297,65 @@ export interface CampaignAnalyticsByAccount {
   currency: string;
   accounts: AccountAnalytics[];
 }
+
+const EMPTY_TOTALS: AccountAnalyticsTotals = {
+  impressions: 0, clicks: 0, landingPageClicks: 0, likes: 0, shares: 0, comments: 0, follows: 0,
+  costInLocalCurrency: 0, externalWebsiteConversions: 0, externalWebsitePostClickConversions: 0,
+  externalWebsitePostViewConversions: 0, oneClickLeads: 0, oneClickLeadFormOpens: 0,
+  viralImpressions: 0, viralClicks: 0, viralLikes: 0, viralShares: 0, approximateMemberReach: 0,
+  cardClicks: 0, cardImpressions: 0,
+};
+
+export function sumTotals(accounts: AccountAnalytics[]): AccountAnalyticsTotals {
+  const acc: AccountAnalyticsTotals = { ...EMPTY_TOTALS };
+  for (const a of accounts) {
+    for (const k of Object.keys(acc) as (keyof AccountAnalyticsTotals)[]) {
+      acc[k] += a.totals[k];
+    }
+  }
+  acc.costInLocalCurrency = parseFloat(acc.costInLocalCurrency.toFixed(2));
+  return acc;
+}
+
+export function mergeSeriesByDate(accounts: AccountAnalytics[]): AccountTimeSeriesPoint[] {
+  const byDate = new Map<string, AccountTimeSeriesPoint>();
+  for (const a of accounts) {
+    for (const p of a.timeSeries) {
+      const cur = byDate.get(p.date) ?? { date: p.date, impressions: 0, clicks: 0, cost: 0, likes: 0, shares: 0 };
+      cur.impressions += p.impressions;
+      cur.clicks += p.clicks;
+      cur.cost = parseFloat((cur.cost + p.cost).toFixed(2));
+      cur.likes += p.likes;
+      cur.shares += p.shares;
+      byDate.set(p.date, cur);
+    }
+  }
+  return [...byDate.values()].sort((x, y) => x.date.localeCompare(y.date));
+}
+
+// Agrega contas selecionadas no shape consumido pelo dashboard.
+// delta sai vazio: só faz sentido vs período anterior do MESMO recorte,
+// e isso é responsabilidade de quem chama (mock/endpoint).
+export function aggregateAccounts(accounts: AccountAnalytics[], currency: string): CampaignAnalyticsFull {
+  const t = sumTotals(accounts);
+  const ctr = t.impressions > 0 ? ((t.clicks / t.impressions) * 100).toFixed(2) : '0';
+  const cpc = t.clicks > 0 ? (t.costInLocalCurrency / t.clicks).toFixed(2) : '0';
+  const cpm = t.impressions > 0 ? ((t.costInLocalCurrency / t.impressions) * 1000).toFixed(2) : '0';
+  const engagementRate = t.impressions > 0
+    ? (((t.clicks + t.likes + t.comments + t.shares + t.follows) / t.impressions) * 100).toFixed(2)
+    : '0';
+  const cpl = t.oneClickLeads > 0 ? (t.costInLocalCurrency / t.oneClickLeads).toFixed(2) : null;
+  const postClickConvRate = t.clicks > 0
+    ? ((t.externalWebsitePostClickConversions / t.clicks) * 100).toFixed(2)
+    : '0';
+  const viralAmplification = t.impressions > 0
+    ? ((t.viralImpressions / t.impressions) * 100).toFixed(2)
+    : '0';
+  return {
+    ...t,
+    ctr, cpc, cpm, engagementRate, cpl, postClickConvRate, viralAmplification,
+    timeSeries: mergeSeriesByDate(accounts),
+    delta: {},
+    currency,
+  };
+}
