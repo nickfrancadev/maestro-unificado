@@ -324,13 +324,15 @@ export function mergeSeriesByDate(accounts: AccountAnalytics[]): AccountTimeSeri
       const cur = byDate.get(p.date) ?? { date: p.date, impressions: 0, clicks: 0, cost: 0, likes: 0, shares: 0 };
       cur.impressions += p.impressions;
       cur.clicks += p.clicks;
-      cur.cost = parseFloat((cur.cost + p.cost).toFixed(2));
+      cur.cost += p.cost;
       cur.likes += p.likes;
       cur.shares += p.shares;
       byDate.set(p.date, cur);
     }
   }
-  return [...byDate.values()].sort((x, y) => x.date.localeCompare(y.date));
+  return [...byDate.values()]
+    .map(p => ({ ...p, cost: parseFloat(p.cost.toFixed(2)) }))
+    .sort((x, y) => x.date.localeCompare(y.date));
 }
 
 // Agrega contas selecionadas no shape consumido pelo dashboard.
