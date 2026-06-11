@@ -170,7 +170,15 @@ export function getMockAnalyticsFull(dateRange: string = '30d'): CampaignAnalyti
   const prevPoints = FULL_SERIES_BY_ACCOUNT.flatMap(({ series }) => prevSliceForRange(series, dateRange));
   if (prevPoints.length > 0) {
     const prev = computeFromSeries(prevPoints);
-    const pct = (c: number, p: number) => p === 0 ? null : (((c - p) / p) * 100).toFixed(1);
+    // Janelas podem ter tamanhos diferentes (série tem 47 dias; "30d anteriores" só tem 17) —
+    // compara médias diárias para o delta não inflar.
+    const curDays = sliceForRange(FULL_SERIES_BY_ACCOUNT[0].series, dateRange).length;
+    const prevDays = prevSliceForRange(FULL_SERIES_BY_ACCOUNT[0].series, dateRange).length;
+    const pct = (c: number, p: number) => {
+      if (p === 0 || prevDays === 0 || curDays === 0) return null;
+      const prevDaily = p / prevDays;
+      return (((c / curDays - prevDaily) / prevDaily) * 100).toFixed(1);
+    };
     agg.delta = {
       impressions: pct(agg.impressions, prev.impressions),
       clicks: pct(agg.clicks, prev.clicks),
