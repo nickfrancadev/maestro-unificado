@@ -31,10 +31,13 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { toast } from 'sonner';
-import { fetchCampaignAnalyticsFull, fetchLinkedInCampaigns, fetchCampaignComments, archiveCampaign } from '@/lib/linkedin';
-import type { CampaignAnalyticsFull, LinkedInCampaign, CampaignComment, CampaignCommentsResponse } from '@/lib/linkedin';
-import { isMockCampaign, MOCK_CAMPAIGN, getMockAnalyticsFull, getMockComments } from '@/lib/mockCampaignData';
+import { fetchCampaignAnalyticsFull, fetchLinkedInCampaigns, fetchCampaignComments, archiveCampaign, aggregateAccounts } from '@/lib/linkedin';
+import type { CampaignAnalyticsFull, LinkedInCampaign, CampaignComment, CampaignCommentsResponse, CampaignAnalyticsByAccount } from '@/lib/linkedin';
+import { isMockCampaign, MOCK_CAMPAIGN, getMockAnalyticsFull, getMockComments, getMockAnalyticsByAccount } from '@/lib/mockCampaignData';
 import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
+import { AccountComparisonChart } from './AccountComparisonChart';
+import { AccountPerformanceTable } from './AccountPerformanceTable';
+import { accountColor } from './accountAnalytics';
 
 
 const DATE_RANGES = [
@@ -116,6 +119,8 @@ export function CampaignAnalytics() {
   const [commentsLoading, setCommentsLoading] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [byAccount, setByAccount] = useState<CampaignAnalyticsByAccount | null>(null);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
 
   const gradientId = React.useId();
   const impressionsGradient = `gi-${gradientId}`;
@@ -155,8 +160,12 @@ export function CampaignAnalytics() {
     try {
       if (isMockCampaign(campaignId)) {
         await new Promise(r => setTimeout(r, 400));
+        const byAcc = getMockAnalyticsByAccount(dateRange);
+        setByAccount(byAcc);
+        setSelectedAccountIds(prev => prev.size > 0 ? prev : new Set(byAcc.accounts.map(a => a.accountId)));
         setData(getMockAnalyticsFull(dateRange));
       } else {
+        setByAccount(null);
         const result = await fetchCampaignAnalyticsFull(campaignId, dateRange);
         setData(result);
       }
@@ -168,6 +177,19 @@ export function CampaignAnalytics() {
   }, [campaignId, dateRange]);
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
+
+  const toggleAccount = useCallback((accountId: string) => {
+    setSelectedAccountIds(prev => {
+      const next = new Set(prev);
+      if (next.has(accountId)) {
+        if (next.size === 1) return prev; // nunca permite seleção vazia
+        next.delete(accountId);
+      } else {
+        next.add(accountId);
+      }
+      return next;
+    });
+  }, []);
 
   // Handle delete (archive)
   const handleDelete = async () => {
@@ -197,7 +219,21 @@ export function CampaignAnalytics() {
   const currency = data?.currency || 'BRL';
   const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
 
-  const d = data; // shorthand
+  const accounts = byAccount?.accounts ?? [];
+  const selectedAccounts = React.useMemo(
+    () => (byAccount?.accounts ?? []).filter(a => selectedAccountIds.has(a.accountId)),
+    [byAccount, selectedAccountIds],
+  );
+  const allSelected = accounts.length > 0 && selectedAccounts.length === accounts.length;
+  const selectAll = () => setSelectedAccountIds(new Set(accounts.map(a => a.accountId)));
+
+  // View do dashboard: agregado da seleção quando há dados por empresa.
+  // Deltas vs período anterior só com todas selecionadas (não há delta por subconjunto).
+  const d: CampaignAnalyticsFull | null = React.useMemo(() => {
+    if (!byAccount || loading) return data;
+    const agg = aggregateAccounts(selectedAccounts, byAccount.currency);
+    return { ...agg, delta: allSelected ? (data?.delta ?? {}) : {} };
+  }, [byAccount, data, selectedAccounts, allSelected, loading]);
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
@@ -258,6 +294,40 @@ export function CampaignAnalytics() {
         </div>
       </div>
 
+      {/* Filtro por empresa (1 ad set = 1 empresa) */}
+      {accounts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={selectAll}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              allSelected
+                ? 'bg-[#FFF1ED] border-[#FF5F39]/30 text-[#E54A26]'
+                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            Todas
+          </button>
+          {accounts.map((a, i) => {
+            const active = selectedAccountIds.has(a.accountId);
+            return (
+              <button
+                key={a.accountId}
+                onClick={() => toggleAccount(a.accountId)}
+                aria-pressed={active}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  active
+                    ? 'bg-white border-slate-300 text-slate-800 shadow-sm'
+                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active ? accountColor(i) : '#cbd5e1' }} />
+                {a.accountName}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* 2-column layout */}
       <div className="flex flex-col lg:flex-row gap-6">
         {/* LEFT COLUMN (65%) */}
@@ -277,48 +347,52 @@ export function CampaignAnalytics() {
             </div>
           )}
 
-          {/* Section 2 — Engagement Chart */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-slate-800">Engajamento ao longo do tempo</h3>
-              <div className="flex gap-4">
-                <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-[#FF5F39]" /> Impressões</div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-blue-400" /> Clicks</div>
+          {/* Section 2 — Chart */}
+          {byAccount ? (
+            <AccountComparisonChart accounts={accounts} selectedIds={selectedAccountIds} currency={currency} loading={loading} />
+          ) : (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="font-bold text-slate-800">Engajamento ao longo do tempo</h3>
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-[#FF5F39]" /> Impressões</div>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-blue-400" /> Clicks</div>
+                </div>
+              </div>
+              <div className="h-[260px] w-full">
+                {loading ? (
+                  <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 text-slate-300 animate-spin" /></div>
+                ) : d && d.timeSeries.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={d.timeSeries.map(t => ({ ...t, dateLabel: fmtDateLabel(t.date) }))}>
+                      <defs>
+                        <linearGradient id={impressionsGradient} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id={clicksGradient} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} dy={10} />
+                      <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
+                      <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
+                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '13px' }} />
+                      <Area yAxisId="left" type="monotone" dataKey="impressions" name="Impressões" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill={`url(#${impressionsGradient})`} />
+                      <Area yAxisId="right" type="monotone" dataKey="clicks" name="Clicks" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill={`url(#${clicksGradient})`} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                    <AlertCircle className="w-8 h-8 mb-2" />
+                    <span className="text-sm font-medium">Sem dados para o período selecionado</span>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="h-[260px] w-full">
-              {loading ? (
-                <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 text-slate-300 animate-spin" /></div>
-              ) : d && d.timeSeries.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={d.timeSeries.map(t => ({ ...t, dateLabel: fmtDateLabel(t.date) }))}>
-                    <defs>
-                      <linearGradient id={impressionsGradient} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id={clicksGradient} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} dy={10} />
-                    <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
-                    <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
-                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '13px' }} />
-                    <Area yAxisId="left" type="monotone" dataKey="impressions" name="Impressões" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill={`url(#${impressionsGradient})`} />
-                    <Area yAxisId="right" type="monotone" dataKey="clicks" name="Clicks" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill={`url(#${clicksGradient})`} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                  <AlertCircle className="w-8 h-8 mb-2" />
-                  <span className="text-sm font-medium">Sem dados para o período selecionado</span>
-                </div>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* Section 3 — Custo e Eficiência */}
           {loading ? (
@@ -398,19 +472,11 @@ export function CampaignAnalytics() {
             </div>
           )}
 
-          {/* Section 7 — Standard Tier info */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex items-start gap-3">
-              <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-slate-800 mb-1">Performance por Empresa</h3>
-                <p className="text-sm text-slate-500">
-                  Performance por empresa estará disponível após ativação do LinkedIn Standard tier.
-                  O pivot MEMBER_COMPANY requer dados de demografia com delay de 12-24h e não está disponível no tier Development.
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* Section 7 — Performance por Empresa */}
+          {byAccount && (loading
+            ? <SkeletonCard className="h-64" />
+            : <AccountPerformanceTable accounts={accounts} selectedIds={selectedAccountIds} onToggle={toggleAccount} currency={currency} />
+          )}
         </div>
 
         {/* RIGHT COLUMN (35%) — Comments */}
