@@ -101,7 +101,9 @@ KPI cards (Spend, Impressões, Clicks, CTR), Custo & Eficiência, Engajamento So
 
 - `src/app/campaigns/AccountPerformanceTable.tsx` — tabela + checkboxes.
 - `src/app/campaigns/AccountComparisonChart.tsx` — gráfico multi-linha + seletor de métrica.
-- Helpers puros de agregação (somar `totals` da seleção, mesclar séries por data, métricas derivadas) em `src/app/campaigns/accountAnalytics.ts` — testáveis isoladamente. Os tipos (`AccountAnalytics` etc.) ficam em `src/lib/linkedin/analytics.ts`, junto dos tipos de analytics existentes.
+- Helpers puros de agregação (somar `totals`, mesclar séries por data, métricas derivadas) em `src/lib/linkedin/analytics.ts`, junto dos tipos — são usados tanto pelo mock (`src/lib/mockCampaignData.ts`) quanto pela UI, e `lib` não deve importar de `app`.
+- Helpers de apresentação (paleta de cores por empresa, dados do gráfico comparativo, linhas derivadas da tabela) em `src/app/campaigns/accountAnalytics.ts`.
+- Formatadores compartilhados (`fmtCurrency`, `fmtNum`, `fmtDateLabel`), hoje locais em `CampaignAnalytics.tsx`, extraídos para `src/app/campaigns/format.ts` para reuso pelos novos componentes.
 
 ## Tratamento de erros
 
