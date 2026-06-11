@@ -46,6 +46,7 @@ export function AccountComparisonChart({ accounts, selectedIds, currency, loadin
             <button
               key={m.key}
               onClick={() => setMetric(m.key)}
+              aria-pressed={metric === m.key}
               className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                 metric === m.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
@@ -73,10 +74,10 @@ export function AccountComparisonChart({ accounts, selectedIds, currency, loadin
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} dy={10} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v: number) => fmtNum(v)} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v: number) => fmtValue(v)} />
               <Tooltip
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '13px' }}
-                formatter={(value: number, name: string) => [fmtValue(value), name]}
+                formatter={(value: number | undefined, name: string) => [typeof value === 'number' ? fmtValue(value) : '—', name]}
               />
               {selected.map(({ account, colorIndex }) => (
                 <Line
