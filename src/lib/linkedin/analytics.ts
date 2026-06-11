@@ -245,3 +245,55 @@ export async function fetchCampaignComments(
     return { comments: [], total: 0, error: err.message };
   }
 }
+
+// ---- Per-account analytics (1 ad set = 1 empresa-alvo) ----
+// Espelha a shape do futuro endpoint GET /linkedin/campaign-analytics-by-account,
+// que virá de adAnalytics?q=statistics&pivots=List(CAMPAIGN) sobre os N ad sets
+// da campanha, mapeando pivotValues -> campaign_accounts -> target_accounts.
+
+export interface AccountAnalyticsTotals {
+  impressions: number;
+  clicks: number;
+  landingPageClicks: number;
+  likes: number;
+  shares: number;
+  comments: number;
+  follows: number;
+  costInLocalCurrency: number;
+  externalWebsiteConversions: number;
+  externalWebsitePostClickConversions: number;
+  externalWebsitePostViewConversions: number;
+  oneClickLeads: number;
+  oneClickLeadFormOpens: number;
+  viralImpressions: number;
+  viralClicks: number;
+  viralLikes: number;
+  viralShares: number;
+  approximateMemberReach: number;
+  cardClicks: number;
+  cardImpressions: number;
+}
+
+export interface AccountTimeSeriesPoint {
+  date: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  likes: number;
+  shares: number;
+}
+
+export interface AccountAnalytics {
+  accountId: string;
+  accountName: string;
+  industry: string | null;
+  linkedinCampaignId: string;
+  totals: AccountAnalyticsTotals;
+  timeSeries: AccountTimeSeriesPoint[];
+}
+
+export interface CampaignAnalyticsByAccount {
+  campaignId: string;
+  currency: string;
+  accounts: AccountAnalytics[];
+}
