@@ -55,3 +55,25 @@ export function buildAccountRows(accounts: AccountAnalytics[]): AccountRow[] {
     })
     .sort((a, b) => b.account.totals.costInLocalCurrency - a.account.totals.costInLocalCurrency);
 }
+
+// Rótulos PT-BR para os CTAs do LinkedIn
+export const CTA_LABELS: Record<string, string> = {
+  LEARN_MORE: 'Saiba mais',
+  SIGN_UP: 'Cadastre-se',
+  DOWNLOAD: 'Baixar',
+  REQUEST_DEMO: 'Solicitar demo',
+  SUBSCRIBE: 'Inscrever-se',
+  REGISTER: 'Registrar',
+  APPLY_NOW: 'Candidatar-se',
+  CONTACT_US: 'Fale conosco',
+};
+
+export function ctaLabel(cta: string): string {
+  return CTA_LABELS[cta] ?? 'Saiba mais';
+}
+
+// Gradiente determinístico por índice para preview sem imagem (reusa a paleta)
+export function creativeFallbackGradient(index: number): string {
+  const c = accountColor(index);
+  return `linear-gradient(135deg, ${c} 0%, ${c}99 100%)`;
+}
