@@ -680,7 +680,7 @@ function CommentsCard({ commentsData, commentsLoading, headerSuffix }: {
 function CommentItem({ comment }: { comment: CampaignComment }) {
   const name = comment.author_name || 'LinkedIn Member';
   return (
-    <div className={`px-5 py-4 ${comment.is_reply ? 'pl-10' : ''}`}>
+    <div className={`relative px-5 py-4 ${comment.is_reply ? 'pl-10' : ''}`}>
       {comment.is_reply && <div className="absolute left-7 top-0 bottom-0 w-px bg-slate-200" />}
       <div className="flex gap-3">
         <div className={`w-8 h-8 rounded-full ${avatarColor(comment.author_name)} text-white flex items-center justify-center text-xs font-bold shrink-0`}>
