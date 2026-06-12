@@ -7,9 +7,11 @@ import type {
   CampaignAnalyticsSummary,
   CampaignAnalyticsFull,
   CampaignCommentsResponse,
+  CampaignComment,
   AccountAnalytics,
   AccountAnalyticsTotals,
   AccountTimeSeriesPoint,
+  AccountCreative,
   CampaignAnalyticsByAccount,
 } from './linkedin';
 import { aggregateAccounts } from './linkedin/analytics';
@@ -39,18 +41,39 @@ interface MockAccountProfile {
   industry: string;
   linkedinCampaignId: string;
   seed: number;
-  weight: number;    // multiplicador de volume de impressões
-  ctrBase: number;   // CTR base diário
-  convRate: number;  // conversões / clicks
-  leadRate: number;  // leads / clicks
+  weight: number;
+  ctrBase: number;
+  convRate: number;
+  leadRate: number;
+  postUrn: string;
+  creativeVariant: 'named' | 'generic';
+  creativeHeadline: string;
+  creativeBody: string;
+  creativeImageUrl: string;
+  creativeCta: string;
 }
 
 const MOCK_ACCOUNT_PROFILES: MockAccountProfile[] = [
-  { accountId: 'acc-techcorp', accountName: 'TechCorp Brasil', industry: 'Tecnologia', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-101', seed: 1101, weight: 1.35, ctrBase: 0.024, convRate: 0.020, leadRate: 0.014 },
-  { accountId: 'acc-innovatech', accountName: 'Innovatech', industry: 'SaaS', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-102', seed: 1102, weight: 1.0, ctrBase: 0.021, convRate: 0.018, leadRate: 0.012 },
-  { accountId: 'acc-datadriven', accountName: 'DataDriven Solutions', industry: 'Dados & Analytics', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-103', seed: 1103, weight: 0.75, ctrBase: 0.032, convRate: 0.026, leadRate: 0.018 },
-  { accountId: 'acc-scaleup', accountName: 'ScaleUp Ventures', industry: 'Venture Capital', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-104', seed: 1104, weight: 0.55, ctrBase: 0.014, convRate: 0.010, leadRate: 0.006 },
-  { accountId: 'acc-quantum', accountName: 'Quantum Bank', industry: 'Serviços Financeiros', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-105', seed: 1105, weight: 1.25, ctrBase: 0.015, convRate: 0.012, leadRate: 0.008 },
+  { accountId: 'acc-techcorp', accountName: 'TechCorp Brasil', industry: 'Tecnologia', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-101', seed: 1101, weight: 1.35, ctrBase: 0.024, convRate: 0.020, leadRate: 0.014,
+    postUrn: 'urn:li:ugcPost:mock-101', creativeVariant: 'named', creativeCta: 'LEARN_MORE', creativeImageUrl: '',
+    creativeHeadline: 'TechCorp Brasil: escale seu pipeline enterprise com ABM',
+    creativeBody: 'Decisores de tecnologia confiam na Maestro para orquestrar campanhas 1:1. Veja como gerar reuniões qualificadas com as contas que importam.' },
+  { accountId: 'acc-innovatech', accountName: 'Innovatech', industry: 'SaaS', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-102', seed: 1102, weight: 1.0, ctrBase: 0.021, convRate: 0.018, leadRate: 0.012,
+    postUrn: 'urn:li:ugcPost:mock-102', creativeVariant: 'named', creativeCta: 'SIGN_UP', creativeImageUrl: '',
+    creativeHeadline: 'Innovatech, acelere seu go-to-market com dados de intenção',
+    creativeBody: 'Personalize cada anúncio por conta e fale diretamente com o comitê de compra. Comece sua estratégia ABM hoje.' },
+  { accountId: 'acc-datadriven', accountName: 'DataDriven Solutions', industry: 'Dados & Analytics', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-103', seed: 1103, weight: 0.75, ctrBase: 0.032, convRate: 0.026, leadRate: 0.018,
+    postUrn: 'urn:li:ugcPost:mock-103', creativeVariant: 'named', creativeCta: 'DOWNLOAD', creativeImageUrl: '',
+    creativeHeadline: 'DataDriven: transforme dados em receita previsível',
+    creativeBody: 'Baixe o playbook de ABM orientado a dados e descubra como contas-alvo viram oportunidades de pipeline.' },
+  { accountId: 'acc-scaleup', accountName: 'ScaleUp Ventures', industry: 'Venture Capital', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-104', seed: 1104, weight: 0.55, ctrBase: 0.014, convRate: 0.010, leadRate: 0.006,
+    postUrn: 'urn:li:ugcPost:mock-104', creativeVariant: 'generic', creativeCta: 'LEARN_MORE', creativeImageUrl: '',
+    creativeHeadline: 'Marketing baseado em contas para portfólios de alto crescimento',
+    creativeBody: 'Da semente à série B, alcance os decisores certos com mensagens personalizadas por empresa.' },
+  { accountId: 'acc-quantum', accountName: 'Quantum Bank', industry: 'Serviços Financeiros', linkedinCampaignId: 'urn:li:sponsoredCampaign:mock-105', seed: 1105, weight: 1.25, ctrBase: 0.015, convRate: 0.012, leadRate: 0.008,
+    postUrn: 'urn:li:ugcPost:mock-105', creativeVariant: 'named', creativeCta: 'REQUEST_DEMO', creativeImageUrl: '',
+    creativeHeadline: 'Quantum Bank: compliance e crescimento na mesma estratégia',
+    creativeBody: 'Solicite uma demo e veja como instituições financeiras usam ABM para engajar contas corporativas com segurança.' },
 ];
 
 const FULL_DAYS = 47;
@@ -149,6 +172,14 @@ function buildAccount(profile: MockAccountProfile, series: AccountTimeSeriesPoin
     linkedinCampaignId: profile.linkedinCampaignId,
     totals,
     timeSeries: series,
+    creative: {
+      variant: profile.creativeVariant,
+      headline: profile.creativeHeadline,
+      body: profile.creativeBody,
+      imageUrl: profile.creativeImageUrl,
+      cta: profile.creativeCta,
+      postUrn: profile.postUrn,
+    },
   };
 }
 
@@ -202,38 +233,43 @@ export const MOCK_CAMPAIGN_SUMMARY: CampaignAnalyticsSummary = (() => {
   return { impressions: f.impressions, clicks: f.clicks, ctr: f.ctr, cost: f.costInLocalCurrency, currency: 'BRL' };
 })();
 
-export function getMockComments(): CampaignCommentsResponse {
+// Comentários por empresa (cada empresa = 1 post próprio com seus comentários)
+const MOCK_COMMENTS_BY_ACCOUNT: Record<string, CampaignComment[]> = {
+  'acc-techcorp': [
+    { id: 'tc1', author_name: 'Ricardo Almeida', author_title: 'VP of Sales @ Latitude Tech', text: 'Excelente conteúdo! Estamos implementando uma estratégia ABM similar e os resultados têm sido muito positivos.', created_at: '2026-03-21T14:30:00Z', likes_count: 12, is_reply: false, parent_comment_id: null },
+    { id: 'tc2', author_name: 'Mariana Costa', author_title: 'Head of Marketing @ Innovatech', text: 'Concordo totalmente. A personalização é key para engajar decision makers no B2B.', created_at: '2026-03-21T16:45:00Z', likes_count: 7, is_reply: true, parent_comment_id: 'tc1' },
+    { id: 'tc3', author_name: 'Ana Beatriz Santos', author_title: 'Growth Lead @ ScaleUp Ventures', text: '🔥 Dados impressionantes. O ROI de campanhas ABM bem executadas é incomparável.', created_at: '2026-03-20T08:20:00Z', likes_count: 15, is_reply: false, parent_comment_id: null },
+  ],
+  'acc-innovatech': [
+    { id: 'in1', author_name: 'Fernando Oliveira', author_title: 'CEO @ DataDriven Solutions', text: 'Qual ferramenta vocês usam para a segmentação de contas? Temos buscado algo mais sofisticado.', created_at: '2026-03-19T09:15:00Z', likes_count: 4, is_reply: false, parent_comment_id: null },
+    { id: 'in2', author_name: null, author_title: null, text: 'Muito bom! Salvando para referência.', created_at: '2026-03-18T11:00:00Z', likes_count: 2, is_reply: false, parent_comment_id: null },
+  ],
+  'acc-datadriven': [
+    { id: 'dd1', author_name: 'Camila Ferreira', author_title: 'Diretora de Marketing @ NorthStar', text: 'O playbook é ótimo. A parte de dados de intenção mudou nossa abordagem.', created_at: '2026-03-22T10:10:00Z', likes_count: 9, is_reply: false, parent_comment_id: null },
+  ],
+  'acc-scaleup': [
+    { id: 'su1', author_name: 'Pedro Henrique Lima', author_title: 'Partner @ Vertex Capital', text: 'Faz muito sentido para portfólios early-stage. Compartilhando com as investidas.', created_at: '2026-03-17T13:40:00Z', likes_count: 6, is_reply: false, parent_comment_id: null },
+  ],
+  'acc-quantum': [
+    { id: 'qb1', author_name: 'Juliana Rocha', author_title: 'Head of Digital @ Meridian Bank', text: 'Compliance + ABM é exatamente o que o setor financeiro precisa. Demo solicitada!', created_at: '2026-03-23T15:25:00Z', likes_count: 11, is_reply: false, parent_comment_id: null },
+    { id: 'qb2', author_name: 'Lucas Martins', author_title: 'CMO @ Quantum Bank', text: 'Obrigado pelo interesse! Nossa equipe entra em contato em breve.', created_at: '2026-03-23T17:00:00Z', likes_count: 3, is_reply: true, parent_comment_id: 'qb1' },
+  ],
+};
+
+export function getMockCommentsByAccount(accountId: string): CampaignCommentsResponse {
+  const profile = MOCK_ACCOUNT_PROFILES.find(p => p.accountId === accountId);
+  const comments = MOCK_COMMENTS_BY_ACCOUNT[accountId] ?? [];
   return {
-    post_urn: 'urn:li:ugcPost:mock-001',
-    total: 5,
-    comments: [
-      {
-        id: 'c1', author_name: 'Ricardo Almeida', author_title: 'VP of Sales @ TechCorp Brasil',
-        text: 'Excelente conteúdo! Estamos implementando uma estratégia ABM similar na nossa empresa e os resultados têm sido muito positivos.',
-        created_at: '2026-03-21T14:30:00Z', likes_count: 12, is_reply: false, parent_comment_id: null,
-      },
-      {
-        id: 'c2', author_name: 'Mariana Costa', author_title: 'Head of Marketing @ Innovatech',
-        text: 'Concordo totalmente. A personalização é key para engajar decision makers no B2B.',
-        created_at: '2026-03-21T16:45:00Z', likes_count: 7, is_reply: true, parent_comment_id: 'c1',
-      },
-      {
-        id: 'c3', author_name: 'Fernando Oliveira', author_title: 'CEO @ DataDriven Solutions',
-        text: 'Qual ferramenta vocês usam para a segmentação de contas? Temos buscado algo mais sofisticado do que o que temos hoje.',
-        created_at: '2026-03-19T09:15:00Z', likes_count: 4, is_reply: false, parent_comment_id: null,
-      },
-      {
-        id: 'c4', author_name: null, author_title: null,
-        text: 'Muito bom! Salvando para referência.',
-        created_at: '2026-03-18T11:00:00Z', likes_count: 2, is_reply: false, parent_comment_id: null,
-      },
-      {
-        id: 'c5', author_name: 'Ana Beatriz Santos', author_title: 'Growth Lead @ ScaleUp Ventures',
-        text: '🔥 Dados impressionantes. O ROI de campanhas ABM bem executadas é incomparável. Compartilhando com meu time!',
-        created_at: '2026-03-17T08:20:00Z', likes_count: 15, is_reply: false, parent_comment_id: null,
-      },
-    ],
+    post_urn: profile?.postUrn,
+    total: comments.length,
+    comments,
   };
+}
+
+// Legado: feed agregado (mantido para compat; dashboard usa getMockCommentsByAccount no caminho mock)
+export function getMockComments(): CampaignCommentsResponse {
+  const all = Object.values(MOCK_COMMENTS_BY_ACCOUNT).flat();
+  return { post_urn: 'urn:li:ugcPost:mock-001', total: all.length, comments: all };
 }
 
 // Keep backward compat for CampaignAnalyticsDetail (used by old code path)

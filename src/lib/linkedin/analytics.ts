@@ -283,6 +283,15 @@ export interface AccountTimeSeriesPoint {
   shares: number;
 }
 
+export interface AccountCreative {
+  variant: 'named' | 'generic';
+  headline: string;
+  body: string;
+  imageUrl: string;   // '' => preview usa gradiente de fallback
+  cta: string;        // ex: 'LEARN_MORE'
+  postUrn: string;    // urn:li:ugcPost:...
+}
+
 export interface AccountAnalytics {
   accountId: string;
   accountName: string;
@@ -290,6 +299,7 @@ export interface AccountAnalytics {
   linkedinCampaignId: string;
   totals: AccountAnalyticsTotals;
   timeSeries: AccountTimeSeriesPoint[];
+  creative: AccountCreative;
 }
 
 export interface CampaignAnalyticsByAccount {
