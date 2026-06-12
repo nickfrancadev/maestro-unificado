@@ -299,6 +299,7 @@ export function CampaignAnalytics() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={selectAll}
+            aria-pressed={allSelected}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               allSelected
                 ? 'bg-[#FFF1ED] border-[#FF5F39]/30 text-[#E54A26]'

@@ -16,6 +16,8 @@ export function AccountPerformanceTable({ accounts, selectedIds, onToggle, curre
   const rows = useMemo(() => buildAccountRows(accounts), [accounts]);
   const totals = useMemo(() => sumTotals(accounts), [accounts]);
   const totalCtr = totals.impressions > 0 ? ((totals.clicks / totals.impressions) * 100).toFixed(2) : '0';
+  const totalCpc = totals.clicks > 0 ? (totals.costInLocalCurrency / totals.clicks).toFixed(2) : '0';
+  const totalCpl = totals.oneClickLeads > 0 ? (totals.costInLocalCurrency / totals.oneClickLeads).toFixed(2) : null;
   const cy = currency === 'BRL' ? 'R$' : '$';
 
   return (
@@ -59,6 +61,7 @@ export function AccountPerformanceTable({ accounts, selectedIds, onToggle, curre
                       onChange={() => onToggle(account.accountId)}
                       onClick={e => e.stopPropagation()}
                       className="accent-[#FF5F39] cursor-pointer"
+                      aria-label={account.accountName}
                     />
                   </td>
                   <td className="px-2 py-3">
@@ -90,10 +93,10 @@ export function AccountPerformanceTable({ accounts, selectedIds, onToggle, curre
               <td className="px-3 py-3 text-right">{fmtNum(totals.impressions)}</td>
               <td className="px-3 py-3 text-right">{fmtNum(totals.clicks)}</td>
               <td className="px-3 py-3 text-right">{totalCtr}%</td>
-              <td className="px-3 py-3 text-right">—</td>
+              <td className="px-3 py-3 text-right">{cy}{totalCpc}</td>
               <td className="px-3 py-3 text-right">{totals.externalWebsiteConversions}</td>
               <td className="px-3 py-3 text-right">{totals.oneClickLeads}</td>
-              <td className="px-4 py-3 text-right">—</td>
+              <td className="px-4 py-3 text-right">{totalCpl ? `${cy}${totalCpl}` : '—'}</td>
             </tr>
           </tfoot>
         </table>
