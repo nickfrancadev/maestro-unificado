@@ -33,7 +33,9 @@ import {
 import { toast } from 'sonner';
 import { fetchCampaignAnalyticsFull, fetchLinkedInCampaigns, fetchCampaignComments, archiveCampaign, aggregateAccounts } from '@/lib/linkedin';
 import type { CampaignAnalyticsFull, LinkedInCampaign, CampaignComment, CampaignCommentsResponse, CampaignAnalyticsByAccount } from '@/lib/linkedin';
-import { isMockCampaign, MOCK_CAMPAIGN, getMockAnalyticsFull, getMockComments, getMockAnalyticsByAccount } from '@/lib/mockCampaignData';
+import { isMockCampaign, MOCK_CAMPAIGN, getMockAnalyticsFull, getMockComments, getMockAnalyticsByAccount, getMockCommentsByAccount } from '@/lib/mockCampaignData';
+import { AccountAdPreview } from './AccountAdPreview';
+import { AccountFocusSwitcher } from './AccountFocusSwitcher';
 import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
 import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
@@ -121,6 +123,7 @@ export function CampaignAnalytics() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [byAccount, setByAccount] = useState<CampaignAnalyticsByAccount | null>(null);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
 
   const gradientId = React.useId();
   const impressionsGradient = `gi-${gradientId}`;
@@ -136,22 +139,6 @@ export function CampaignAnalytics() {
       const found = campaigns.find(c => c.id === campaignId);
       if (found) setCampaign(found);
     });
-  }, [campaignId]);
-
-  // Load comments once
-  useEffect(() => {
-    setCommentsLoading(true);
-    if (isMockCampaign(campaignId)) {
-      setTimeout(() => {
-        setCommentsData(getMockComments());
-        setCommentsLoading(false);
-      }, 300);
-      return;
-    }
-    fetchCampaignComments(campaignId).then(d => {
-      setCommentsData(d);
-      setCommentsLoading(false);
-    }).catch(() => setCommentsLoading(false));
   }, [campaignId]);
 
   // Load analytics
@@ -226,6 +213,52 @@ export function CampaignAnalytics() {
   );
   const allSelected = accounts.length > 0 && selectedAccounts.length === accounts.length;
   const selectAll = () => setSelectedAccountIds(new Set(accounts.map(a => a.accountId)));
+
+  // Empresa em foco na coluna direita: sempre uma das selecionadas, na ordem original.
+  const focusedAccount = React.useMemo(() => {
+    if (selectedAccounts.length === 0) return null;
+    return selectedAccounts.find(a => a.accountId === focusedAccountId) ?? selectedAccounts[0];
+  }, [selectedAccounts, focusedAccountId]);
+
+  const focusedIndex = focusedAccount ? selectedAccounts.findIndex(a => a.accountId === focusedAccount.accountId) : -1;
+
+  const focusPrev = useCallback(() => {
+    setFocusedAccountId(() => {
+      if (selectedAccounts.length === 0) return null;
+      const i = selectedAccounts.findIndex(a => a.accountId === (focusedAccount?.accountId));
+      const prev = (i - 1 + selectedAccounts.length) % selectedAccounts.length;
+      return selectedAccounts[prev].accountId;
+    });
+  }, [selectedAccounts, focusedAccount]);
+
+  const focusNext = useCallback(() => {
+    setFocusedAccountId(() => {
+      if (selectedAccounts.length === 0) return null;
+      const i = selectedAccounts.findIndex(a => a.accountId === (focusedAccount?.accountId));
+      const next = (i + 1) % selectedAccounts.length;
+      return selectedAccounts[next].accountId;
+    });
+  }, [selectedAccounts, focusedAccount]);
+
+  // O colorIndex estável da empresa focada (ordem original em accounts)
+  const focusedColorIndex = focusedAccount ? accounts.findIndex(a => a.accountId === focusedAccount.accountId) : 0;
+
+  // Load comments (by focused account in mock path)
+  useEffect(() => {
+    setCommentsLoading(true);
+    if (isMockCampaign(campaignId)) {
+      const accId = focusedAccount?.accountId;
+      const t = setTimeout(() => {
+        setCommentsData(accId ? getMockCommentsByAccount(accId) : getMockComments());
+        setCommentsLoading(false);
+      }, 250);
+      return () => clearTimeout(t);
+    }
+    fetchCampaignComments(campaignId).then(d => {
+      setCommentsData(d);
+      setCommentsLoading(false);
+    }).catch(() => setCommentsLoading(false));
+  }, [campaignId, focusedAccount?.accountId]);
 
   // View do dashboard: agregado da seleção quando há dados por empresa.
   // Deltas vs período anterior só com todas selecionadas (não há delta por subconjunto).
@@ -480,52 +513,37 @@ export function CampaignAnalytics() {
           )}
         </div>
 
-        {/* RIGHT COLUMN (35%) — Comments */}
-        <div className="lg:w-[35%]">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm sticky top-6">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <MessageCircle className="w-4 h-4 text-slate-500" />
-                Comentários {commentsData && !commentsLoading ? `(${commentsData.total})` : ''}
-              </h3>
+        {/* RIGHT COLUMN (35%) — Ad Preview + Comments */}
+        <div className="lg:w-[35%] space-y-6">
+          {byAccount && focusedAccount && (
+            <div className="sticky top-6 space-y-6">
+              <AccountFocusSwitcher
+                label={focusedAccount.accountName}
+                index={focusedIndex}
+                total={selectedAccounts.length}
+                onPrev={focusPrev}
+                onNext={focusNext}
+              />
+              <AccountAdPreview
+                creative={focusedAccount.creative}
+                accountName={focusedAccount.accountName}
+                industry={focusedAccount.industry}
+                colorIndex={focusedColorIndex}
+              />
+              <CommentsCard
+                commentsData={commentsData}
+                commentsLoading={commentsLoading}
+                headerSuffix={focusedAccount.accountName}
+              />
             </div>
-
-            <div className="max-h-[60vh] overflow-y-auto">
-              {commentsLoading ? (
-                <div className="p-5 space-y-4">
-                  {[1,2,3].map(i => (
-                    <div key={i} className="animate-pulse flex gap-3">
-                      <div className="w-9 h-9 rounded-full bg-slate-100 shrink-0" />
-                      <div className="flex-1 space-y-2">
-                        <div className="h-3 w-28 bg-slate-100 rounded" />
-                        <div className="h-3 w-full bg-slate-100 rounded" />
-                        <div className="h-3 w-2/3 bg-slate-100 rounded" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : commentsData?.error && commentsData.total === 0 ? (
-                <div className="p-8 text-center">
-                  <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-slate-500">Não foi possível carregar comentários.</p>
-                  <p className="text-xs text-slate-400 mt-1">{commentsData.error}</p>
-                </div>
-              ) : commentsData && commentsData.comments.length === 0 ? (
-                <div className="p-8 text-center">
-                  <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-slate-500">Nenhum comentário neste anúncio ainda.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-50">
-                  {commentsData?.comments
-                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                    .map((comment) => (
-                      <CommentItem key={comment.id} comment={comment} />
-                    ))}
-                </div>
-              )}
-            </div>
-          </div>
+          )}
+          {!byAccount && (
+            <CommentsCard
+              commentsData={commentsData}
+              commentsLoading={commentsLoading}
+              headerSuffix={null}
+            />
+          )}
         </div>
       </div>
 
@@ -602,6 +620,59 @@ function IconCard({ icon, label, value, delta }: { icon: React.ReactNode; label:
       <p className="text-lg font-bold text-slate-900">{value}</p>
       <p className="text-xs text-slate-500">{label}</p>
       {delta !== undefined && <div className="mt-1"><DeltaBadge value={delta} /></div>}
+    </div>
+  );
+}
+
+function CommentsCard({ commentsData, commentsLoading, headerSuffix }: {
+  commentsData: CampaignCommentsResponse | null;
+  commentsLoading: boolean;
+  headerSuffix: string | null;
+}) {
+  return (
+    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${headerSuffix === null ? 'sticky top-6' : ''}`}>
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+          <MessageCircle className="w-4 h-4 text-slate-500" />
+          Comentários{headerSuffix ? ` · ${headerSuffix}` : ''} {commentsData && !commentsLoading ? `(${commentsData.total})` : ''}
+        </h3>
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto">
+        {commentsLoading ? (
+          <div className="p-5 space-y-4">
+            {[1,2,3].map(i => (
+              <div key={i} className="animate-pulse flex gap-3">
+                <div className="w-9 h-9 rounded-full bg-slate-100 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 w-28 bg-slate-100 rounded" />
+                  <div className="h-3 w-full bg-slate-100 rounded" />
+                  <div className="h-3 w-2/3 bg-slate-100 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : commentsData?.error && commentsData.total === 0 ? (
+          <div className="p-8 text-center">
+            <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-medium text-slate-500">Não foi possível carregar comentários.</p>
+            <p className="text-xs text-slate-400 mt-1">{commentsData.error}</p>
+          </div>
+        ) : commentsData && commentsData.comments.length === 0 ? (
+          <div className="p-8 text-center">
+            <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-medium text-slate-500">Nenhum comentário neste anúncio ainda.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-50">
+            {commentsData?.comments
+              .slice()
+              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .map((comment) => (
+                <CommentItem key={comment.id} comment={comment} />
+              ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
