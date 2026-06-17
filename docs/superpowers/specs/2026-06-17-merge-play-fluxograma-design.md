@@ -79,11 +79,17 @@ nenhuma dep exclusiva deste repo se perde).
   `/play-flow`), e o novo import de `GtmPage` (`./components/GtmPage`).
   **Não remover:** rotas `campaigns/*`, rota `integrations`, import de `Integrations`,
   rota `/docs/ads` (se aplicável). Resultado = união, não substituição.
-- **`src/app/components/touchpoints/TouchpointDetails.tsx`** — base = versão deste
-  repo (preserva painel LinkedIn Ads: `getLinkedInStatus`, `LinkedInAdDrawer`,
-  publicação). A versão deles não tem esse painel. Enxertar melhorias de plays/UI
-  deles somente se existirem e não conflitarem; na dúvida, manter a versão deste
-  repo. Sinalizar divergências ao usuário na revisão.
+- **`src/app/components/touchpoints/TouchpointDetails.tsx`** — base = **versão do
+  repo externo** (traz 100% das melhorias de plays/UI deles). Enxertar de volta
+  **apenas o bloco de integração LinkedIn Ads** deste repo, que só se ativa quando
+  o touchpoint é do canal LinkedIn (`itemType === 'linkedin-ad'`):
+  - imports: `getLinkedInStatus` (`@/lib/linkedin`), `LinkedInAdDrawer`,
+    tipo `LinkedInAdData`
+  - estado `linkedinConnected` + `useEffect` que chama `getLinkedInStatus()`
+  - handlers `handlePublishAd` e `handleConnectLinkedIn`, flag `isLinkedInAd`
+  - o JSX do painel "LinkedIn Ads" (estados conectado/desconectado/publicado) e o
+    `<LinkedInAdDrawer />`
+  Tudo o mais (layout, plays, demais canais) vem da versão deles.
 
 ## Plano de execução (alto nível)
 
@@ -112,10 +118,9 @@ Branch `feat/merge-play-fluxograma` para revisão do usuário. **Não** mesclar 
 
 ## Riscos
 
-- **R1:** features de plays deles podem importar arquivos/tipos que diferem dos
-  daqui (ex.: assinaturas de `TouchpointManagerPage`, tipos de `gtmStore`).
-  Mitigação: resolver erros de tipo na etapa 6, guiado pelo build.
-- **R2:** `TouchpointDetails.tsx` é o ponto de maior atrito. Mitigação: manter
-  base deste repo; enxerto conservador.
-- **R3:** arquivos neutros deles podem referenciar rotas/telas que removeram
-  (campaigns). Mitigação: build + smoke test das rotas protegidas.
+- **R1 (aceito):** trazer 100% das features/arquivos deles. Erros de tipo
+  decorrentes são resolvidos na etapa 6, guiados pelo build.
+- **R2 (resolvido):** `TouchpointDetails.tsx` usa a versão **deles** como base e
+  reenxerta só o bloco LinkedIn Ads (ativo quando canal = LinkedIn). Ver Balde 3.
+- **R3 (aceito):** sem ressalvas nos arquivos neutros. Build + smoke test das
+  rotas protegidas garantem que campaigns/LinkedIn seguem funcionando.
