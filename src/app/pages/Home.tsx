@@ -37,6 +37,16 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
+import { InternoTab } from './dashboard/InternoTab';
+import { FunilTab } from './dashboard/FunilTab';
+
+type DashboardTab = 'estrategico' | 'funil' | 'interno';
+
+const DASHBOARD_TABS: { id: DashboardTab; label: string }[] = [
+  { id: 'estrategico', label: 'Estratégico' },
+  { id: 'funil', label: 'Funil' },
+  { id: 'interno', label: 'Interno' },
+];
 
 // Mock Data
 const temperatureData = [
@@ -191,6 +201,7 @@ const mockTasks: Task[] = [
 ];
 
 export function Home() {
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('estrategico');
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>('month');
   const [showOKRModal, setShowOKRModal] = useState(false);
   const [editingOKR, setEditingOKR] = useState<OKR | null>(null);
@@ -306,13 +317,56 @@ export function Home() {
             <p className="text-sm text-gray-600">Visão geral de temperatura, engajamento e performance</p>
           </div>
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-              <Calendar className="w-4 h-4" />
-              Última atualização: Hoje
-            </button>
+            {dashboardTab === 'interno' ? (
+              <div className="relative">
+                <select
+                  defaultValue="30"
+                  className="appearance-none pl-4 pr-9 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer focus:outline-none"
+                >
+                  <option value="30">Últimos 30 dias</option>
+                  <option value="7">Últimos 7 dias</option>
+                  <option value="90">Últimos 90 dias</option>
+                </select>
+                <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500" />
+              </div>
+            ) : (
+              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                <Calendar className="w-4 h-4" />
+                Última atualização: Hoje
+              </button>
+            )}
           </div>
         </div>
 
+        {/* Abas do Dashboard */}
+        <div className="flex items-center gap-6 border-b border-gray-200">
+          {DASHBOARD_TABS.map((tab) => {
+            const isActive = dashboardTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setDashboardTab(tab.id)}
+                className="relative pb-3 text-sm font-semibold transition-colors"
+                style={{ color: isActive ? '#FF5F39' : '#828282' }}
+              >
+                {tab.label}
+                {isActive && (
+                  <span
+                    className="absolute left-0 right-0 -bottom-px h-0.5 rounded-full"
+                    style={{ background: '#FF5F39' }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {dashboardTab === 'funil' && <FunilTab />}
+
+        {dashboardTab === 'interno' && <InternoTab />}
+
+        {dashboardTab === 'estrategico' && (
+        <>
         {/* Temperatura & Engajamento */}
         <div className="bg-white rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
@@ -873,6 +927,8 @@ export function Home() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* OKR Modal */}
