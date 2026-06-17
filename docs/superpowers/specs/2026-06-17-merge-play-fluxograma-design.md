@@ -44,8 +44,16 @@ aplicados**. Um merge automático seria destrutivo.
 - `src/lib/linkedin/analytics.ts`
 - `docs/superpowers/**` (specs/plans de campaigns deste repo)
 
-**Crítico:** o repo externo **deleta** `Integrations.tsx` e **remove** o painel
-LinkedIn Ads de `TouchpointDetails.tsx`. Essas remoções **NÃO** são aplicadas.
+**Crítico:** o repo externo **deleta** todo `src/app/integrations/**`
+(`Integrations.tsx`, `LinkedInConnectionModal.tsx`, `providers.ts`,
+`statusBadge.tsx`, `types.ts`) e **remove** o painel LinkedIn Ads de
+`TouchpointDetails.tsx`. Essas remoções **NÃO** são aplicadas.
+
+### Balde 1b — PROTEGER (dashboard, decisão do usuário)
+O dashboard deste repo (`src/app/pages/dashboard/**` — `FunilTab`, `InternoTab`,
+`ConsumoHistorico`, `GastoPorPessoa`, `RangeCalendar`, `useCountUp`) é mantido.
+`Home.tsx` é tratado no Balde 3 (merge manual): base = versão deles, com as 3 abas
+reenxertadas.
 
 ### Balde 2 — TRAZER do repo externo (features novas + neutros)
 Novos arquivos (não existem aqui):
@@ -90,6 +98,11 @@ nenhuma dep exclusiva deste repo se perde).
   - o JSX do painel "LinkedIn Ads" (estados conectado/desconectado/publicado) e o
     `<LinkedInAdDrawer />`
   Tudo o mais (layout, plays, demais canais) vem da versão deles.
+- **`src/app/pages/Home.tsx`** — base = **versão do repo externo** (o dashboard
+  deles passa a ser o conteúdo da aba **"Estratégico"**). Reenxertar o sistema de
+  abas deste repo com as 3 abas: `Estratégico` (dashboard deles), `Funil`
+  (`<FunilTab />`), `Interno` (`<InternoTab />`). Mantém os imports de
+  `./dashboard/FunilTab` e `./dashboard/InternoTab` e o estado `dashboardTab`.
 
 ## Plano de execução (alto nível)
 
