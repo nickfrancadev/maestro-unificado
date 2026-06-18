@@ -39,6 +39,7 @@ import { AccountFocusSwitcher } from './AccountFocusSwitcher';
 import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
 import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
+import { AccountDetailPanel } from './AccountDetailPanel';
 import { accountColor } from './accountAnalytics';
 
 
@@ -124,6 +125,14 @@ export function CampaignAnalytics() {
   const [byAccount, setByAccount] = useState<CampaignAnalyticsByAccount | null>(null);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
+  const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const gradientId = React.useId();
   const impressionsGradient = `gi-${gradientId}`;
@@ -177,6 +186,12 @@ export function CampaignAnalytics() {
       return next;
     });
   }, []);
+
+  const openDetail = useCallback((accountId: string) => {
+    setDetailAccountId(accountId);
+    setFocusedAccountId(accountId); // coluna direita (anúncio + comentários) acompanha
+  }, []);
+  const closeDetail = useCallback(() => setDetailAccountId(null), []);
 
   // Handle delete (archive)
   const handleDelete = async () => {
@@ -242,6 +257,12 @@ export function CampaignAnalytics() {
 
   // O colorIndex estável da empresa focada (ordem original em accounts)
   const focusedColorIndex = focusedAccount ? accounts.findIndex(a => a.accountId === focusedAccount.accountId) : 0;
+
+  const detailAccount = React.useMemo(
+    () => accounts.find(a => a.accountId === detailAccountId) ?? null,
+    [accounts, detailAccountId],
+  );
+  const detailColorIndex = detailAccount ? accounts.findIndex(a => a.accountId === detailAccount.accountId) : 0;
 
   // Load comments (by focused account in mock path)
   useEffect(() => {
@@ -367,6 +388,17 @@ export function CampaignAnalytics() {
         {/* LEFT COLUMN (65%) */}
         <div className="lg:w-[65%] space-y-6">
 
+        {!isDesktop && detailAccount ? (
+          <AccountDetailPanel
+            account={detailAccount}
+            colorIndex={detailColorIndex}
+            currency={currency}
+            variant="fullscreen"
+            onBack={closeDetail}
+          />
+        ) : (
+          <>
+
           {/* Section 1 — KPI Cards */}
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -379,6 +411,20 @@ export function CampaignAnalytics() {
               <MetricCard icon={<MousePointerClick className="w-4 h-4 text-purple-600" />} label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
               <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={`${d?.ctr || '0'}%`} delta={null} />
             </div>
+          )}
+
+          {/* Tabela comparativa — sobe pra logo abaixo dos KPIs (coração da comparação) */}
+          {byAccount && (loading
+            ? <SkeletonCard className="h-64" />
+            : <AccountPerformanceTable
+                accounts={accounts}
+                selectedIds={selectedAccountIds}
+                onToggle={toggleAccount}
+                onOpenDetail={openDetail}
+                expandedId={isDesktop ? detailAccountId : null}
+                expandInline={isDesktop}
+                currency={currency}
+              />
           )}
 
           {/* Section 2 — Chart */}
@@ -425,6 +471,14 @@ export function CampaignAnalytics() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Métricas agregadas — soma das empresas selecionadas, não por empresa */}
+          {byAccount && !loading && (
+            <div className="pt-2">
+              <h3 className="text-sm font-semibold text-slate-700">Métricas agregadas</h3>
+              <p className="text-xs text-slate-400">Soma das empresas selecionadas — não é por empresa.</p>
             </div>
           )}
 
@@ -506,11 +560,8 @@ export function CampaignAnalytics() {
             </div>
           )}
 
-          {/* Section 7 — Performance por Empresa */}
-          {byAccount && (loading
-            ? <SkeletonCard className="h-64" />
-            : <AccountPerformanceTable accounts={accounts} selectedIds={selectedAccountIds} onToggle={toggleAccount} currency={currency} />
-          )}
+          </>
+        )}
         </div>
 
         {/* RIGHT COLUMN (35%) — Ad Preview + Comments */}
