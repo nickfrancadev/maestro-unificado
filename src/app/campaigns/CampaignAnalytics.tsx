@@ -344,6 +344,14 @@ export function CampaignAnalytics() {
         ) : (
           <>
 
+          {/* ===== BLOCO 1 — Métricas agregadas (todas as empresas) ===== */}
+          {byAccount && !loading && (
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700">Métricas agregadas</h3>
+              <p className="text-xs text-slate-400">Soma de todas as empresas da campanha.</p>
+            </div>
+          )}
+
           {/* Section 1 — KPI Cards */}
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -358,22 +366,8 @@ export function CampaignAnalytics() {
             </div>
           )}
 
-          {/* Tabela comparativa — sobe pra logo abaixo dos KPIs (coração da comparação) */}
-          {byAccount && (loading
-            ? <SkeletonCard className="h-64" />
-            : <AccountPerformanceTable
-                accounts={accounts}
-                onOpenDetail={openDetail}
-                expandedId={isDesktop ? detailAccountId : null}
-                expandInline={isDesktop}
-                currency={currency}
-              />
-          )}
-
-          {/* Section 2 — Chart */}
-          {byAccount ? (
-            <AccountComparisonChart accounts={accounts} selectedIds={allAccountIds} currency={currency} loading={loading} />
-          ) : (
+          {/* Engagement chart agregado — só quando NÃO há dados por empresa (o comparativo por empresa vai no bloco 2) */}
+          {!byAccount && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between mb-5">
                 <h3 className="font-bold text-slate-800">Engajamento ao longo do tempo</h3>
@@ -414,14 +408,6 @@ export function CampaignAnalytics() {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Métricas agregadas — soma das empresas selecionadas, não por empresa */}
-          {byAccount && !loading && (
-            <div className="pt-2">
-              <h3 className="text-sm font-semibold text-slate-700">Métricas agregadas</h3>
-              <p className="text-xs text-slate-400">Soma das empresas selecionadas — não é por empresa.</p>
             </div>
           )}
 
@@ -501,6 +487,29 @@ export function CampaignAnalytics() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ===== BLOCO 2 — Por empresa (comparação + detalhe) ===== */}
+          {byAccount && (
+            <>
+              {!loading && (
+                <div className="pt-2">
+                  <h3 className="text-sm font-semibold text-slate-700">Por empresa</h3>
+                  <p className="text-xs text-slate-400">Compare as empresas e clique numa linha para ver o detalhe.</p>
+                </div>
+              )}
+              {loading
+                ? <SkeletonCard className="h-64" />
+                : <AccountPerformanceTable
+                    accounts={accounts}
+                    onOpenDetail={openDetail}
+                    expandedId={isDesktop ? detailAccountId : null}
+                    expandInline={isDesktop}
+                    currency={currency}
+                  />
+              }
+              <AccountComparisonChart accounts={accounts} selectedIds={allAccountIds} currency={currency} loading={loading} />
+            </>
           )}
 
           </>
