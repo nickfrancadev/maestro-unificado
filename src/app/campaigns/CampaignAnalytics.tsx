@@ -40,7 +40,6 @@ import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
 import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
 import { AccountDetailPanel } from './AccountDetailPanel';
-import { accountColor } from './accountAnalytics';
 
 
 const DATE_RANGES = [
@@ -123,7 +122,6 @@ export function CampaignAnalytics() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [byAccount, setByAccount] = useState<CampaignAnalyticsByAccount | null>(null);
-  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
   const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
@@ -158,7 +156,6 @@ export function CampaignAnalytics() {
         await new Promise(r => setTimeout(r, 400));
         const byAcc = getMockAnalyticsByAccount(dateRange);
         setByAccount(byAcc);
-        setSelectedAccountIds(prev => prev.size > 0 ? prev : new Set(byAcc.accounts.map(a => a.accountId)));
         setData(getMockAnalyticsFull(dateRange));
       } else {
         setByAccount(null);
@@ -174,21 +171,8 @@ export function CampaignAnalytics() {
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
 
-  const toggleAccount = useCallback((accountId: string) => {
-    setSelectedAccountIds(prev => {
-      const next = new Set(prev);
-      if (next.has(accountId)) {
-        if (next.size === 1) return prev; // nunca permite seleção vazia
-        next.delete(accountId);
-      } else {
-        next.add(accountId);
-      }
-      return next;
-    });
-  }, []);
-
   const openDetail = useCallback((accountId: string) => {
-    setDetailAccountId(accountId);
+    setDetailAccountId(prev => (prev === accountId ? null : accountId)); // toggle: clicar na linha aberta fecha
     setFocusedAccountId(accountId); // coluna direita (anúncio + comentários) acompanha
   }, []);
   const closeDetail = useCallback(() => setDetailAccountId(null), []);
@@ -222,14 +206,11 @@ export function CampaignAnalytics() {
   const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
 
   const accounts = byAccount?.accounts ?? [];
-  const selectedAccounts = React.useMemo(
-    () => (byAccount?.accounts ?? []).filter(a => selectedAccountIds.has(a.accountId)),
-    [byAccount, selectedAccountIds],
-  );
-  const allSelected = accounts.length > 0 && selectedAccounts.length === accounts.length;
-  const selectAll = () => setSelectedAccountIds(new Set(accounts.map(a => a.accountId)));
+  // Sem filtro de seleção: o agregado considera sempre TODAS as empresas.
+  const selectedAccounts = accounts;
+  const allAccountIds = React.useMemo(() => new Set(accounts.map(a => a.accountId)), [accounts]);
 
-  // Empresa em foco na coluna direita: sempre uma das selecionadas, na ordem original.
+  // Empresa em foco na coluna direita: sempre uma das empresas, na ordem original.
   const focusedAccount = React.useMemo(() => {
     if (selectedAccounts.length === 0) return null;
     return selectedAccounts.find(a => a.accountId === focusedAccountId) ?? selectedAccounts[0];
@@ -281,13 +262,12 @@ export function CampaignAnalytics() {
     }).catch(() => setCommentsLoading(false));
   }, [campaignId, focusedAccount?.accountId]);
 
-  // View do dashboard: agregado da seleção quando há dados por empresa.
-  // Deltas vs período anterior só com todas selecionadas (não há delta por subconjunto).
+  // View do dashboard: agregado de TODAS as empresas quando há dados por empresa.
   const d: CampaignAnalyticsFull | null = React.useMemo(() => {
     if (!byAccount || loading) return data;
     const agg = aggregateAccounts(selectedAccounts, byAccount.currency);
-    return { ...agg, delta: allSelected ? (data?.delta ?? {}) : {} };
-  }, [byAccount, data, selectedAccounts, allSelected, loading]);
+    return { ...agg, delta: data?.delta ?? {} };
+  }, [byAccount, data, selectedAccounts, loading]);
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
@@ -348,41 +328,6 @@ export function CampaignAnalytics() {
         </div>
       </div>
 
-      {/* Filtro por empresa (1 ad set = 1 empresa) */}
-      {accounts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={selectAll}
-            aria-pressed={allSelected}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              allSelected
-                ? 'bg-[#FFF1ED] border-[#FF5F39]/30 text-[#E54A26]'
-                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            Todas
-          </button>
-          {accounts.map((a, i) => {
-            const active = selectedAccountIds.has(a.accountId);
-            return (
-              <button
-                key={a.accountId}
-                onClick={() => toggleAccount(a.accountId)}
-                aria-pressed={active}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  active
-                    ? 'bg-white border-slate-300 text-slate-800 shadow-sm'
-                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active ? accountColor(i) : '#cbd5e1' }} />
-                {a.accountName}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* 2-column layout */}
       <div className="flex flex-col lg:flex-row gap-6">
         {/* LEFT COLUMN (65%) */}
@@ -418,8 +363,6 @@ export function CampaignAnalytics() {
             ? <SkeletonCard className="h-64" />
             : <AccountPerformanceTable
                 accounts={accounts}
-                selectedIds={selectedAccountIds}
-                onToggle={toggleAccount}
                 onOpenDetail={openDetail}
                 expandedId={isDesktop ? detailAccountId : null}
                 expandInline={isDesktop}
@@ -429,7 +372,7 @@ export function CampaignAnalytics() {
 
           {/* Section 2 — Chart */}
           {byAccount ? (
-            <AccountComparisonChart accounts={accounts} selectedIds={selectedAccountIds} currency={currency} loading={loading} />
+            <AccountComparisonChart accounts={accounts} selectedIds={allAccountIds} currency={currency} loading={loading} />
           ) : (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between mb-5">

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
-import { ArrowLeft, DollarSign, Eye, MousePointerClick, TrendingUp, Heart, Share2, MessageCircle, UserPlus } from 'lucide-react';
+import { ArrowLeft, DollarSign, Eye, MousePointerClick, TrendingUp, Heart, Share2, MessageCircle, UserPlus, Users, Megaphone } from 'lucide-react';
 import type { AccountAnalytics } from '@/lib/linkedin';
 import { accountColor } from './accountAnalytics';
 import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
@@ -19,6 +19,11 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
   const cy = currency === 'BRL' ? 'R$' : '$';
   const ctr = t.impressions > 0 ? ((t.clicks / t.impressions) * 100).toFixed(2) : '0';
   const cpc = t.clicks > 0 ? (t.costInLocalCurrency / t.clicks).toFixed(2) : '0';
+  const cpm = t.impressions > 0 ? ((t.costInLocalCurrency / t.impressions) * 1000).toFixed(2) : '0';
+  const engagementRate = t.impressions > 0
+    ? (((t.clicks + t.likes + t.comments + t.shares + t.follows) / t.impressions) * 100).toFixed(2)
+    : '0';
+  const cpl = t.oneClickLeads > 0 ? (t.costInLocalCurrency / t.oneClickLeads).toFixed(2) : null;
   const gradId = React.useId();
   const series = account.timeSeries.map(p => ({ ...p, dateLabel: fmtDateLabel(p.date) }));
 
@@ -86,6 +91,38 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><Share2 className="w-3.5 h-3.5 text-blue-500" /> Shares</p><p className="text-base font-bold text-slate-900">{fmtNum(t.shares)}</p></div>
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5 text-amber-500" /> Comments</p><p className="text-base font-bold text-slate-900">{fmtNum(t.comments)}</p></div>
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><UserPlus className="w-3.5 h-3.5 text-green-500" /> Follows</p><p className="text-base font-bold text-slate-900">{fmtNum(t.follows)}</p></div>
+      </div>
+
+      {/* Custo e Eficiência */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPM</p><p className="text-base font-bold text-slate-900">{cy}{cpm}</p><p className="text-[11px] text-slate-400">Custo por mil impressões</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Engagement Rate</p><p className="text-base font-bold text-slate-900">{engagementRate}%</p><p className="text-[11px] text-slate-400">Engajamento / impressões</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPL</p><p className="text-base font-bold text-slate-900">{cpl ? `${cy}${cpl}` : '—'}</p><p className="text-[11px] text-slate-400">Custo por lead</p></div>
+      </div>
+
+      {/* Conversões */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Conversões</p><p className="text-base font-bold text-slate-900">{fmtNum(t.externalWebsiteConversions)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Pós-Clique</p><p className="text-base font-bold text-slate-900">{fmtNum(t.externalWebsitePostClickConversions)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Leads</p><p className="text-base font-bold text-slate-900">{fmtNum(t.oneClickLeads)}</p></div>
+      </div>
+
+      {/* Alcance e Virais */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+          <div className="flex items-center gap-2 text-sm text-slate-500 font-medium"><Users className="w-4 h-4 text-[#FF5F39]" /> Alcance e Virais</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><p className="text-xs text-slate-500">Alcance Estimado</p><p className="text-base font-bold text-slate-900">{fmtNum(t.approximateMemberReach)}</p></div>
+            <div><p className="text-xs text-slate-500">Impressões Virais</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralImpressions)}</p></div>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+          <div className="flex items-center gap-2 text-sm text-slate-500 font-medium"><Megaphone className="w-4 h-4 text-purple-500" /> Amplificação Viral</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><p className="text-xs text-slate-500">Viral Clicks</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralClicks)}</p></div>
+            <div><p className="text-xs text-slate-500">Viral Likes</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralLikes)}</p></div>
+          </div>
+        </div>
       </div>
     </div>
   );

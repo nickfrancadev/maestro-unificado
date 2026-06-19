@@ -8,8 +8,6 @@ import { fmtCurrency, fmtNum } from './format';
 
 interface AccountPerformanceTableProps {
   accounts: AccountAnalytics[];   // todas as contas, na ordem original (cores estáveis)
-  selectedIds: Set<string>;
-  onToggle: (accountId: string) => void;
   onOpenDetail: (accountId: string) => void;
   expandedId: string | null;
   expandInline: boolean;          // true no desktop → renderiza AccountDetailPanel sob a linha
@@ -18,7 +16,7 @@ interface AccountPerformanceTableProps {
 
 type SortKey = 'spend' | 'impressions' | 'clicks' | 'ctr' | 'cpc' | 'conv' | 'leads' | 'cpl';
 
-export function AccountPerformanceTable({ accounts, selectedIds, onToggle, onOpenDetail, expandedId, expandInline, currency }: AccountPerformanceTableProps) {
+export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, expandInline, currency }: AccountPerformanceTableProps) {
   const rows = useMemo(() => buildAccountRows(accounts), [accounts]);
   const totals = useMemo(() => sumTotals(accounts), [accounts]);
   const totalCtr = totals.impressions > 0 ? ((totals.clicks / totals.impressions) * 100).toFixed(2) : '0';
@@ -78,13 +76,13 @@ export function AccountPerformanceTable({ accounts, selectedIds, onToggle, onOpe
           <Building2 className="w-4 h-4 text-slate-500" />
           Performance por Empresa
         </h3>
-        <p className="text-xs text-slate-400 mt-0.5">Cada empresa-alvo tem seu próprio conjunto de anúncios. Clique numa linha para ver o detalhe; marque para filtrar o dashboard.</p>
+        <p className="text-xs text-slate-400 mt-0.5">Cada empresa-alvo tem seu próprio conjunto de anúncios. Clique numa linha para ver o detalhe.</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
-              <th className="px-4 py-2.5 w-8" />
+              <th className="px-4 py-2.5 w-6" />
               <th className="px-2 py-2.5 font-medium">Empresa</th>
               <SortableTh k="spend">Spend</SortableTh>
               <SortableTh k="impressions">Impressões</SortableTh>
@@ -98,26 +96,18 @@ export function AccountPerformanceTable({ accounts, selectedIds, onToggle, onOpe
           </thead>
           <tbody className="divide-y divide-slate-50">
             {sortedRows.map(({ account, colorIndex, ctr, cpc, cpl }) => {
-              const checked = selectedIds.has(account.accountId);
               const expanded = expandedId === account.accountId;
               return (
                 <React.Fragment key={account.accountId}>
                   <tr
                     onClick={() => onOpenDetail(account.accountId)}
-                    className={`cursor-pointer transition-colors ${checked ? 'hover:bg-slate-50' : 'opacity-50 hover:opacity-75'} ${expanded ? 'bg-slate-50' : ''}`}
+                    className={`cursor-pointer transition-colors hover:bg-slate-50 ${expanded ? 'bg-slate-50' : ''}`}
                   >
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => onToggle(account.accountId)}
-                        className="accent-[#FF5F39] cursor-pointer"
-                        aria-label={`Filtrar ${account.accountName}`}
-                      />
+                    <td className="px-4 py-3 text-slate-400">
+                      {expandInline && (expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />)}
                     </td>
                     <td className="px-2 py-3">
                       <div className="flex items-center gap-2">
-                        {expandInline && (expanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />)}
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: accountColor(colorIndex) }} />
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-800 truncate">{account.accountName}</p>
