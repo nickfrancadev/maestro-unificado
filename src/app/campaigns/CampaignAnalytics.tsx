@@ -39,7 +39,7 @@ import { AccountFocusSwitcher } from './AccountFocusSwitcher';
 import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
 import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
-import { accountColor } from './accountAnalytics';
+import { AccountDetailPanel } from './AccountDetailPanel';
 
 
 const DATE_RANGES = [
@@ -122,8 +122,15 @@ export function CampaignAnalytics() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [byAccount, setByAccount] = useState<CampaignAnalyticsByAccount | null>(null);
-  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
+  const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const gradientId = React.useId();
   const impressionsGradient = `gi-${gradientId}`;
@@ -149,7 +156,6 @@ export function CampaignAnalytics() {
         await new Promise(r => setTimeout(r, 400));
         const byAcc = getMockAnalyticsByAccount(dateRange);
         setByAccount(byAcc);
-        setSelectedAccountIds(prev => prev.size > 0 ? prev : new Set(byAcc.accounts.map(a => a.accountId)));
         setData(getMockAnalyticsFull(dateRange));
       } else {
         setByAccount(null);
@@ -165,18 +171,11 @@ export function CampaignAnalytics() {
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
 
-  const toggleAccount = useCallback((accountId: string) => {
-    setSelectedAccountIds(prev => {
-      const next = new Set(prev);
-      if (next.has(accountId)) {
-        if (next.size === 1) return prev; // nunca permite seleção vazia
-        next.delete(accountId);
-      } else {
-        next.add(accountId);
-      }
-      return next;
-    });
+  const openDetail = useCallback((accountId: string) => {
+    setDetailAccountId(prev => (prev === accountId ? null : accountId)); // toggle: clicar na linha aberta fecha
+    setFocusedAccountId(accountId); // coluna direita (anúncio + comentários) acompanha
   }, []);
+  const closeDetail = useCallback(() => setDetailAccountId(null), []);
 
   // Handle delete (archive)
   const handleDelete = async () => {
@@ -204,17 +203,15 @@ export function CampaignAnalytics() {
   const startDate = campaign?.runSchedule?.start || null;
   const endDate = campaign?.runSchedule?.end || null;
   const currency = data?.currency || 'BRL';
+  const cy = currency === 'BRL' ? 'R$' : '$';
   const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
 
   const accounts = byAccount?.accounts ?? [];
-  const selectedAccounts = React.useMemo(
-    () => (byAccount?.accounts ?? []).filter(a => selectedAccountIds.has(a.accountId)),
-    [byAccount, selectedAccountIds],
-  );
-  const allSelected = accounts.length > 0 && selectedAccounts.length === accounts.length;
-  const selectAll = () => setSelectedAccountIds(new Set(accounts.map(a => a.accountId)));
+  // Sem filtro de seleção: o agregado considera sempre TODAS as empresas.
+  const selectedAccounts = accounts;
+  const allAccountIds = React.useMemo(() => new Set(accounts.map(a => a.accountId)), [accounts]);
 
-  // Empresa em foco na coluna direita: sempre uma das selecionadas, na ordem original.
+  // Empresa em foco na coluna direita: sempre uma das empresas, na ordem original.
   const focusedAccount = React.useMemo(() => {
     if (selectedAccounts.length === 0) return null;
     return selectedAccounts.find(a => a.accountId === focusedAccountId) ?? selectedAccounts[0];
@@ -243,6 +240,12 @@ export function CampaignAnalytics() {
   // O colorIndex estável da empresa focada (ordem original em accounts)
   const focusedColorIndex = focusedAccount ? accounts.findIndex(a => a.accountId === focusedAccount.accountId) : 0;
 
+  const detailAccount = React.useMemo(
+    () => accounts.find(a => a.accountId === detailAccountId) ?? null,
+    [accounts, detailAccountId],
+  );
+  const detailColorIndex = detailAccount ? accounts.findIndex(a => a.accountId === detailAccount.accountId) : 0;
+
   // Load comments (by focused account in mock path)
   useEffect(() => {
     setCommentsLoading(true);
@@ -260,18 +263,17 @@ export function CampaignAnalytics() {
     }).catch(() => setCommentsLoading(false));
   }, [campaignId, focusedAccount?.accountId]);
 
-  // View do dashboard: agregado da seleção quando há dados por empresa.
-  // Deltas vs período anterior só com todas selecionadas (não há delta por subconjunto).
+  // View do dashboard: agregado de TODAS as empresas quando há dados por empresa.
   const d: CampaignAnalyticsFull | null = React.useMemo(() => {
     if (!byAccount || loading) return data;
     const agg = aggregateAccounts(selectedAccounts, byAccount.currency);
-    return { ...agg, delta: allSelected ? (data?.delta ?? {}) : {} };
-  }, [byAccount, data, selectedAccounts, allSelected, loading]);
+    return { ...agg, delta: data?.delta ?? {} };
+  }, [byAccount, data, selectedAccounts, loading]);
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
             <ArrowLeft className="w-5 h-5" />
@@ -327,64 +329,46 @@ export function CampaignAnalytics() {
         </div>
       </div>
 
-      {/* Filtro por empresa (1 ad set = 1 empresa) */}
-      {accounts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={selectAll}
-            aria-pressed={allSelected}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              allSelected
-                ? 'bg-[#FFF1ED] border-[#FF5F39]/30 text-[#E54A26]'
-                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            Todas
-          </button>
-          {accounts.map((a, i) => {
-            const active = selectedAccountIds.has(a.accountId);
-            return (
-              <button
-                key={a.accountId}
-                onClick={() => toggleAccount(a.accountId)}
-                aria-pressed={active}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  active
-                    ? 'bg-white border-slate-300 text-slate-800 shadow-sm'
-                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active ? accountColor(i) : '#cbd5e1' }} />
-                {a.accountName}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* 2-column layout */}
       <div className="flex flex-col lg:flex-row gap-6">
         {/* LEFT COLUMN (65%) */}
         <div className="lg:w-[65%] space-y-6">
 
-          {/* Section 1 — KPI Cards */}
+        {!isDesktop && detailAccount ? (
+          <AccountDetailPanel
+            account={detailAccount}
+            colorIndex={detailColorIndex}
+            currency={currency}
+            variant="fullscreen"
+            onBack={closeDetail}
+          />
+        ) : (
+          <>
+
+          {/* ===== BLOCO 1 — Métricas agregadas (todas as empresas) ===== */}
+          {byAccount && !loading && (
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">Métricas agregadas</h3>
+              <p className="text-xs text-slate-400">Soma de todas as empresas da campanha.</p>
+            </div>
+          )}
+
+          {/* KPIs separados em painéis quando há dados por empresa; layout antigo no fallback */}
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[1,2,3,4].map(i => <SkeletonCard key={i} />)}
             </div>
-          ) : (
+          ) : !byAccount ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
               <MetricCard icon={<Eye className="w-4 h-4 text-blue-600" />} label="Impressões" value={fmtNum(d?.impressions || 0)} delta={d?.delta?.impressions} />
               <MetricCard icon={<MousePointerClick className="w-4 h-4 text-purple-600" />} label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
               <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={`${d?.ctr || '0'}%`} delta={null} />
             </div>
-          )}
+          ) : null}
 
-          {/* Section 2 — Chart */}
-          {byAccount ? (
-            <AccountComparisonChart accounts={accounts} selectedIds={selectedAccountIds} currency={currency} loading={loading} />
-          ) : (
+          {/* Engagement chart agregado — só quando NÃO há dados por empresa (o comparativo por empresa vai no bloco 2) */}
+          {!byAccount && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between mb-5">
                 <h3 className="font-bold text-slate-800">Engajamento ao longo do tempo</h3>
@@ -428,89 +412,95 @@ export function CampaignAnalytics() {
             </div>
           )}
 
-          {/* Section 3 — Custo e Eficiência */}
-          {loading ? (
-            <div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <SmallCard label="CPC" value={`${currency === 'BRL' ? 'R$' : '$'}${d?.cpc || '0'}`} sub="Custo por clique" delta={null} />
-              <SmallCard label="CPM" value={`${currency === 'BRL' ? 'R$' : '$'}${d?.cpm || '0'}`} sub="Custo por mil impressões" delta={null} />
-              <SmallCard label="Engagement Rate" value={`${d?.engagementRate || '0'}%`} sub="(clicks+likes+comments+shares+follows)/impressions" delta={null} />
+          {/* Painéis agrupados (ordem funil: custo → alcance → engajamento → conversão → viral) */}
+          {byAccount && loading && (
+            <div className="space-y-4">{[1,2,3].map(i => <SkeletonCard key={i} className="h-32" />)}</div>
+          )}
+          {byAccount && !loading && (
+            <div className="space-y-4">
+              <MetricPanel icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} title="Investimento & Custo">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatCell label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
+                  <StatCell label="CPC" value={`${cy}${d?.cpc || '0'}`} sub="Custo por clique" />
+                  <StatCell label="CPM" value={`${cy}${d?.cpm || '0'}`} sub="Custo por mil impr." />
+                  <StatCell label="CPL" value={d?.cpl ? `${cy}${d.cpl}` : '—'} sub="Custo por lead" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Eye className="w-4 h-4 text-blue-600" />} title="Alcance & Tráfego">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <StatCell label="Impressões" value={fmtNum(d?.impressions || 0)} delta={d?.delta?.impressions} />
+                  <StatCell label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
+                  <StatCell label="CTR" value={`${d?.ctr || '0'}%`} sub="Taxa de cliques" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Heart className="w-4 h-4 text-rose-500" />} title="Engajamento">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <StatCell label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
+                  <StatCell label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
+                  <StatCell label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
+                  <StatCell label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
+                  <StatCell label="Eng. Rate" value={`${d?.engagementRate || '0'}%`} sub="Engaj./impressões" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Target className="w-4 h-4 text-green-600" />} title="Conversões">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatCell label="Conversões Totais" value={String(d?.externalWebsiteConversions ?? '—')} delta={d?.delta?.conversions} />
+                  <StatCell label="Pós-Clique" value={String(d?.externalWebsitePostClickConversions ?? '—')} sub={`Taxa: ${d?.postClickConvRate || '0'}%`} />
+                  <StatCell label="Pós-Visualização" value={String(d?.externalWebsitePostViewConversions ?? '—')} sub="Post-view" />
+                  <StatCell label="Leads (One-Click)" value={String(d?.oneClickLeads ?? '—')} delta={d?.delta?.oneClickLeads} tooltip="Requer configuração de Lead Gen Form no LinkedIn Campaign Manager" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Megaphone className="w-4 h-4 text-purple-500" />} title="Alcance Viral">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatCell label="Alcance Estimado" value={fmtNum(d?.approximateMemberReach || 0)} sub="Membros únicos" />
+                  <StatCell label="Impressões Virais" value={fmtNum(d?.viralImpressions || 0)} />
+                  <StatCell label="Amplificação" value={`${d?.viralAmplification || '0'}%`} sub="Virais/total" />
+                  <StatCell label="Viral Clicks" value={fmtNum(d?.viralClicks || 0)} />
+                </div>
+              </MetricPanel>
             </div>
           )}
 
-          {/* Section 4 — Engajamento Social */}
-          {loading ? (
-            <div className="grid grid-cols-4 gap-4">{[1,2,3,4].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <IconCard icon={<Heart className="w-4 h-4 text-rose-500" />} label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
-              <IconCard icon={<Share2 className="w-4 h-4 text-blue-500" />} label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
-              <IconCard icon={<MessageCircle className="w-4 h-4 text-amber-500" />} label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
-              <IconCard icon={<UserPlus className="w-4 h-4 text-green-500" />} label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
-            </div>
-          )}
-
-          {/* Section 5 — Conversões */}
-          {loading ? (
-            <div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
+          {/* Fallback (sem dados por empresa): layout antigo de cards */}
+          {!byAccount && !loading && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <SmallCard label="Conversões Totais" value={String(d?.externalWebsiteConversions ?? '—')} sub="externalWebsiteConversions" delta={d?.delta?.conversions} />
-                <SmallCard label="Pós-Clique" value={String(d?.externalWebsitePostClickConversions ?? '—')} sub={`Taxa: ${d?.postClickConvRate || '0'}%`} delta={null} />
-                <SmallCard label="Pós-Visualização" value={String(d?.externalWebsitePostViewConversions ?? '—')} sub="Post-view conversions" delta={null} />
+                <SmallCard label="CPC" value={`${cy}${d?.cpc || '0'}`} sub="Custo por clique" delta={null} />
+                <SmallCard label="CPM" value={`${cy}${d?.cpm || '0'}`} sub="Custo por mil impressões" delta={null} />
+                <SmallCard label="Engagement Rate" value={`${d?.engagementRate || '0'}%`} sub="(clicks+likes+comments+shares+follows)/impressions" delta={null} />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <SmallCard label="Leads (One-Click)" value={String(d?.oneClickLeads ?? '—')} sub="Requer Lead Gen Form" delta={d?.delta?.oneClickLeads} tooltip="Requer configuração de Lead Gen Form no LinkedIn Campaign Manager" />
-                <SmallCard label="CPL" value={d?.cpl ? `${currency === 'BRL' ? 'R$' : '$'}${d.cpl}` : '—'} sub="Custo por lead" delta={null} />
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <IconCard icon={<Heart className="w-4 h-4 text-rose-500" />} label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
+                <IconCard icon={<Share2 className="w-4 h-4 text-blue-500" />} label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
+                <IconCard icon={<MessageCircle className="w-4 h-4 text-amber-500" />} label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
+                <IconCard icon={<UserPlus className="w-4 h-4 text-green-500" />} label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
               </div>
             </>
           )}
 
-          {/* Section 6 — Alcance e Virais */}
-          {loading ? (
-            <div className="grid grid-cols-2 gap-4">{[1,2].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                  <Users className="w-4 h-4 text-[#FF5F39]" /> Alcance e Virais
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Alcance Estimado</p>
-                    <p className="text-lg font-bold text-slate-900">{fmtNum(d?.approximateMemberReach || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Impressões Virais</p>
-                    <p className="text-lg font-bold text-slate-900">{fmtNum(d?.viralImpressions || 0)}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                  <Megaphone className="w-4 h-4 text-purple-500" /> Amplificação Viral
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Amplificação</p>
-                    <p className="text-lg font-bold text-slate-900">{d?.viralAmplification || '0'}%</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Viral Clicks</p>
-                    <p className="text-lg font-bold text-slate-900">{fmtNum(d?.viralClicks || 0)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+          {/* ===== BLOCO 2 — Por empresa (comparação + detalhe) ===== */}
+          {byAccount && (
+            <>
+              {loading
+                ? <SkeletonCard className="h-64" />
+                : <AccountPerformanceTable
+                    accounts={accounts}
+                    onOpenDetail={openDetail}
+                    expandedId={isDesktop ? detailAccountId : null}
+                    expandInline={isDesktop}
+                    currency={currency}
+                  />
+              }
+              <AccountComparisonChart accounts={accounts} selectedIds={allAccountIds} currency={currency} loading={loading} />
+            </>
           )}
 
-          {/* Section 7 — Performance por Empresa */}
-          {byAccount && (loading
-            ? <SkeletonCard className="h-64" />
-            : <AccountPerformanceTable accounts={accounts} selectedIds={selectedAccountIds} onToggle={toggleAccount} currency={currency} />
-          )}
+          </>
+        )}
         </div>
 
         {/* RIGHT COLUMN (35%) — Ad Preview + Comments */}
@@ -583,6 +573,36 @@ export function CampaignAnalytics() {
 }
 
 // ---- Sub-components ----
+
+// Painel que agrupa uma família de métricas (cabeçalho + grid interno)
+function MetricPanel({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {icon}
+        <h4 className="text-sm font-semibold text-slate-700">{title}</h4>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// Célula de métrica unificada para uso dentro de um MetricPanel (fundo claro, sem borda dupla)
+function StatCell({ label, value, sub, delta, tooltip }: { label: string; value: string; sub?: string; delta?: string | null; tooltip?: string }) {
+  return (
+    <div className="bg-slate-50/70 rounded-lg p-3">
+      <div className="flex justify-between items-start gap-1">
+        <p className="text-xs text-slate-500 flex items-center gap-1">
+          {label}
+          {tooltip && <span title={tooltip}><Info className="w-3 h-3 text-slate-400 cursor-help" /></span>}
+        </p>
+        {delta !== undefined && <DeltaBadge value={delta} />}
+      </div>
+      <p className="text-lg font-bold text-slate-900 mt-0.5">{value}</p>
+      {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
 
 function MetricCard({ icon, label, value, delta }: { icon: React.ReactNode; label: string; value: string; delta: string | null | undefined }) {
   return (
