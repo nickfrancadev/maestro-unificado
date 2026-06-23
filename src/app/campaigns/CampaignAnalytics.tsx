@@ -203,6 +203,7 @@ export function CampaignAnalytics() {
   const startDate = campaign?.runSchedule?.start || null;
   const endDate = campaign?.runSchedule?.end || null;
   const currency = data?.currency || 'BRL';
+  const cy = currency === 'BRL' ? 'R$' : '$';
   const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
 
   const accounts = byAccount?.accounts ?? [];
@@ -352,19 +353,19 @@ export function CampaignAnalytics() {
             </div>
           )}
 
-          {/* Section 1 — KPI Cards */}
+          {/* KPIs separados em painéis quando há dados por empresa; layout antigo no fallback */}
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[1,2,3,4].map(i => <SkeletonCard key={i} />)}
             </div>
-          ) : (
+          ) : !byAccount ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
               <MetricCard icon={<Eye className="w-4 h-4 text-blue-600" />} label="Impressões" value={fmtNum(d?.impressions || 0)} delta={d?.delta?.impressions} />
               <MetricCard icon={<MousePointerClick className="w-4 h-4 text-purple-600" />} label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
               <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={`${d?.ctr || '0'}%`} delta={null} />
             </div>
-          )}
+          ) : null}
 
           {/* Engagement chart agregado — só quando NÃO há dados por empresa (o comparativo por empresa vai no bloco 2) */}
           {!byAccount && (
@@ -411,82 +412,74 @@ export function CampaignAnalytics() {
             </div>
           )}
 
-          {/* Section 3 — Custo e Eficiência */}
-          {loading ? (
-            <div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <SmallCard label="CPC" value={`${currency === 'BRL' ? 'R$' : '$'}${d?.cpc || '0'}`} sub="Custo por clique" delta={null} />
-              <SmallCard label="CPM" value={`${currency === 'BRL' ? 'R$' : '$'}${d?.cpm || '0'}`} sub="Custo por mil impressões" delta={null} />
-              <SmallCard label="Engagement Rate" value={`${d?.engagementRate || '0'}%`} sub="(clicks+likes+comments+shares+follows)/impressions" delta={null} />
+          {/* Painéis agrupados (ordem funil: custo → alcance → engajamento → conversão → viral) */}
+          {byAccount && loading && (
+            <div className="space-y-4">{[1,2,3].map(i => <SkeletonCard key={i} className="h-32" />)}</div>
+          )}
+          {byAccount && !loading && (
+            <div className="space-y-4">
+              <MetricPanel icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} title="Investimento & Custo">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatCell label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
+                  <StatCell label="CPC" value={`${cy}${d?.cpc || '0'}`} sub="Custo por clique" />
+                  <StatCell label="CPM" value={`${cy}${d?.cpm || '0'}`} sub="Custo por mil impr." />
+                  <StatCell label="CPL" value={d?.cpl ? `${cy}${d.cpl}` : '—'} sub="Custo por lead" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Eye className="w-4 h-4 text-blue-600" />} title="Alcance & Tráfego">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <StatCell label="Impressões" value={fmtNum(d?.impressions || 0)} delta={d?.delta?.impressions} />
+                  <StatCell label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
+                  <StatCell label="CTR" value={`${d?.ctr || '0'}%`} sub="Taxa de cliques" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Heart className="w-4 h-4 text-rose-500" />} title="Engajamento">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <StatCell label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
+                  <StatCell label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
+                  <StatCell label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
+                  <StatCell label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
+                  <StatCell label="Eng. Rate" value={`${d?.engagementRate || '0'}%`} sub="Engaj./impressões" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Target className="w-4 h-4 text-green-600" />} title="Conversões">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatCell label="Conversões Totais" value={String(d?.externalWebsiteConversions ?? '—')} delta={d?.delta?.conversions} />
+                  <StatCell label="Pós-Clique" value={String(d?.externalWebsitePostClickConversions ?? '—')} sub={`Taxa: ${d?.postClickConvRate || '0'}%`} />
+                  <StatCell label="Pós-Visualização" value={String(d?.externalWebsitePostViewConversions ?? '—')} sub="Post-view" />
+                  <StatCell label="Leads (One-Click)" value={String(d?.oneClickLeads ?? '—')} delta={d?.delta?.oneClickLeads} tooltip="Requer configuração de Lead Gen Form no LinkedIn Campaign Manager" />
+                </div>
+              </MetricPanel>
+
+              <MetricPanel icon={<Megaphone className="w-4 h-4 text-purple-500" />} title="Alcance Viral">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <StatCell label="Alcance Estimado" value={fmtNum(d?.approximateMemberReach || 0)} sub="Membros únicos" />
+                  <StatCell label="Impressões Virais" value={fmtNum(d?.viralImpressions || 0)} />
+                  <StatCell label="Amplificação" value={`${d?.viralAmplification || '0'}%`} sub="Virais/total" />
+                  <StatCell label="Viral Clicks" value={fmtNum(d?.viralClicks || 0)} />
+                </div>
+              </MetricPanel>
             </div>
           )}
 
-          {/* Section 4 — Engajamento Social */}
-          {loading ? (
-            <div className="grid grid-cols-4 gap-4">{[1,2,3,4].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <IconCard icon={<Heart className="w-4 h-4 text-rose-500" />} label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
-              <IconCard icon={<Share2 className="w-4 h-4 text-blue-500" />} label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
-              <IconCard icon={<MessageCircle className="w-4 h-4 text-amber-500" />} label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
-              <IconCard icon={<UserPlus className="w-4 h-4 text-green-500" />} label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
-            </div>
-          )}
-
-          {/* Section 5 — Conversões */}
-          {loading ? (
-            <div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
+          {/* Fallback (sem dados por empresa): layout antigo de cards */}
+          {!byAccount && !loading && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <SmallCard label="Conversões Totais" value={String(d?.externalWebsiteConversions ?? '—')} sub="externalWebsiteConversions" delta={d?.delta?.conversions} />
-                <SmallCard label="Pós-Clique" value={String(d?.externalWebsitePostClickConversions ?? '—')} sub={`Taxa: ${d?.postClickConvRate || '0'}%`} delta={null} />
-                <SmallCard label="Pós-Visualização" value={String(d?.externalWebsitePostViewConversions ?? '—')} sub="Post-view conversions" delta={null} />
+                <SmallCard label="CPC" value={`${cy}${d?.cpc || '0'}`} sub="Custo por clique" delta={null} />
+                <SmallCard label="CPM" value={`${cy}${d?.cpm || '0'}`} sub="Custo por mil impressões" delta={null} />
+                <SmallCard label="Engagement Rate" value={`${d?.engagementRate || '0'}%`} sub="(clicks+likes+comments+shares+follows)/impressions" delta={null} />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <SmallCard label="Leads (One-Click)" value={String(d?.oneClickLeads ?? '—')} sub="Requer Lead Gen Form" delta={d?.delta?.oneClickLeads} tooltip="Requer configuração de Lead Gen Form no LinkedIn Campaign Manager" />
-                <SmallCard label="CPL" value={d?.cpl ? `${currency === 'BRL' ? 'R$' : '$'}${d.cpl}` : '—'} sub="Custo por lead" delta={null} />
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <IconCard icon={<Heart className="w-4 h-4 text-rose-500" />} label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
+                <IconCard icon={<Share2 className="w-4 h-4 text-blue-500" />} label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
+                <IconCard icon={<MessageCircle className="w-4 h-4 text-amber-500" />} label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
+                <IconCard icon={<UserPlus className="w-4 h-4 text-green-500" />} label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
               </div>
             </>
-          )}
-
-          {/* Section 6 — Alcance e Virais */}
-          {loading ? (
-            <div className="grid grid-cols-2 gap-4">{[1,2].map(i => <SkeletonCard key={i} />)}</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                  <Users className="w-4 h-4 text-[#FF5F39]" /> Alcance e Virais
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Alcance Estimado</p>
-                    <p className="text-lg font-bold text-slate-900">{fmtNum(d?.approximateMemberReach || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Impressões Virais</p>
-                    <p className="text-lg font-bold text-slate-900">{fmtNum(d?.viralImpressions || 0)}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                  <Megaphone className="w-4 h-4 text-purple-500" /> Amplificação Viral
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Amplificação</p>
-                    <p className="text-lg font-bold text-slate-900">{d?.viralAmplification || '0'}%</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Viral Clicks</p>
-                    <p className="text-lg font-bold text-slate-900">{fmtNum(d?.viralClicks || 0)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
           )}
 
           {/* ===== BLOCO 2 — Por empresa (comparação + detalhe) ===== */}
@@ -586,6 +579,36 @@ export function CampaignAnalytics() {
 }
 
 // ---- Sub-components ----
+
+// Painel que agrupa uma família de métricas (cabeçalho + grid interno)
+function MetricPanel({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {icon}
+        <h4 className="text-sm font-semibold text-slate-700">{title}</h4>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// Célula de métrica unificada para uso dentro de um MetricPanel (fundo claro, sem borda dupla)
+function StatCell({ label, value, sub, delta, tooltip }: { label: string; value: string; sub?: string; delta?: string | null; tooltip?: string }) {
+  return (
+    <div className="bg-slate-50/70 rounded-lg p-3">
+      <div className="flex justify-between items-start gap-1">
+        <p className="text-xs text-slate-500 flex items-center gap-1">
+          {label}
+          {tooltip && <span title={tooltip}><Info className="w-3 h-3 text-slate-400 cursor-help" /></span>}
+        </p>
+        {delta !== undefined && <DeltaBadge value={delta} />}
+      </div>
+      <p className="text-lg font-bold text-slate-900 mt-0.5">{value}</p>
+      {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
 
 function MetricCard({ icon, label, value, delta }: { icon: React.ReactNode; label: string; value: string; delta: string | null | undefined }) {
   return (
