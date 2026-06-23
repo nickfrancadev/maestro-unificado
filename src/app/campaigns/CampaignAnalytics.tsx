@@ -273,7 +273,7 @@ export function CampaignAnalytics() {
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
             <ArrowLeft className="w-5 h-5" />
@@ -348,7 +348,7 @@ export function CampaignAnalytics() {
           {/* ===== BLOCO 1 — Métricas agregadas (todas as empresas) ===== */}
           {byAccount && !loading && (
             <div>
-              <h3 className="text-sm font-semibold text-slate-700">Métricas agregadas</h3>
+              <h3 className="text-lg font-bold text-slate-800">Métricas agregadas</h3>
               <p className="text-xs text-slate-400">Soma de todas as empresas da campanha.</p>
             </div>
           )}
@@ -485,12 +485,6 @@ export function CampaignAnalytics() {
           {/* ===== BLOCO 2 — Por empresa (comparação + detalhe) ===== */}
           {byAccount && (
             <>
-              {!loading && (
-                <div className="pt-2">
-                  <h3 className="text-sm font-semibold text-slate-700">Por empresa</h3>
-                  <p className="text-xs text-slate-400">Compare as empresas e clique numa linha para ver o detalhe.</p>
-                </div>
-              )}
               {loading
                 ? <SkeletonCard className="h-64" />
                 : <AccountPerformanceTable
