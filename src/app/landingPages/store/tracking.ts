@@ -15,7 +15,9 @@ function read<T>(key: string): T[] {
   try { return JSON.parse(globalThis.localStorage.getItem(key) ?? '[]'); } catch { return []; }
 }
 function write<T>(key: string, rows: T[]): void { globalThis.localStorage.setItem(key, JSON.stringify(rows)); }
-const uid = (p: string) => `${p}_${Date.now().toString(36)}_${Math.floor(performance.now())}`;
+
+let counter = 0;
+const uid = (p: string): string => { counter += 1; return `${p}_${Date.now().toString(36)}_${counter}`; };
 
 const EK = 'maestro.landingPages.events.v1';
 const SK = 'maestro.landingPages.submissions.v1';
