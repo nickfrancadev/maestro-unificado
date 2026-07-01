@@ -3,16 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus,
   Search,
-  MoreVertical,
-  Pencil,
-  Copy,
-  Link2,
-  BarChart3,
-  Archive,
-  Globe,
-  EyeOff,
   LayoutTemplate,
   Bell,
+  LayoutGrid,
+  Rows3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { listPages, duplicatePage, savePage } from '../store/repo';
@@ -23,9 +17,23 @@ import { listAccounts, type LpAccount } from '../store/accounts';
 import { AlertsPanel } from '../alerts/AlertsPanel';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import { LpThumbnail } from '../components/LpThumbnail';
+import { PageActionsMenu, type PageActionHandlers } from './PageActions';
 
 type StatusFilter = 'all' | LandingPage['status'];
 type SortKey = 'recent' | 'visits' | 'engagement';
+type ViewMode = 'cards' | 'list';
+
+const VIEW_MODE_STORAGE_KEY = 'maestro.landingPages.viewMode';
+
+function loadViewMode(): ViewMode {
+  if (typeof window === 'undefined') return 'cards';
+  try {
+    const stored = window.localStorage?.getItem(VIEW_MODE_STORAGE_KEY);
+    return stored === 'list' ? 'list' : 'cards';
+  } catch {
+    return 'cards';
+  }
+}
 
 interface PageMetrics {
   visits: number;
@@ -61,79 +69,6 @@ function formatDate(iso: string): string {
   return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function RowActionsMenu({
-  page,
-  onEdit,
-  onDuplicate,
-  onTogglePublish,
-  onAnalytics,
-  onArchive,
-  onCopyUrl,
-}: {
-  page: LandingPage;
-  onEdit: () => void;
-  onDuplicate: () => void;
-  onTogglePublish: () => void;
-  onAnalytics: () => void;
-  onArchive: () => void;
-  onCopyUrl: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, [open]);
-
-  const item = (label: string, icon: React.ReactNode, onClick: () => void, danger?: boolean) => (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setOpen(false);
-        onClick();
-      }}
-      className={`flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-slate-50 ${
-        danger ? 'text-red-600' : 'text-slate-700'
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-
-  return (
-    <div className="relative" onClick={(e) => e.stopPropagation()}>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-        className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded"
-        title="Ações"
-      >
-        <MoreVertical className="w-4 h-4" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-9 z-20 w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
-          {item('Editar', <Pencil className="w-4 h-4" />, onEdit)}
-          {item('Duplicar', <Copy className="w-4 h-4" />, onDuplicate)}
-          {item(
-            page.status === 'published' ? 'Despublicar' : 'Publicar',
-            page.status === 'published' ? <EyeOff className="w-4 h-4" /> : <Globe className="w-4 h-4" />,
-            onTogglePublish,
-          )}
-          {item('Ver analytics', <BarChart3 className="w-4 h-4" />, onAnalytics)}
-          {item('Copiar URL', <Link2 className="w-4 h-4" />, onCopyUrl)}
-          <div className="my-1 border-t border-slate-100" />
-          {item('Arquivar', <Archive className="w-4 h-4" />, onArchive, true)}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function LandingPagesOverview() {
   const navigate = useNavigate();
   const [pages, setPages] = useState<LandingPage[]>([]);
@@ -144,8 +79,18 @@ export function LandingPagesOverview() {
   const [sort, setSort] = useState<SortKey>('recent');
   const [alertCount, setAlertCount] = useState(0);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => loadViewMode());
 
   const reload = () => setPages(listPages());
+
+  const changeViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    try {
+      window.localStorage?.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    } catch {
+      // ignore persistence failures (e.g. storage disabled)
+    }
+  };
 
   useEffect(() => {
     ensureSeeded();
@@ -210,6 +155,15 @@ export function LandingPagesOverview() {
     toast.success('URL copiada para a área de transferência.');
   };
 
+  const buildActionHandlers = (page: LandingPage): PageActionHandlers => ({
+    onEdit: () => navigate(`/landing-pages/${page.id}/edit`),
+    onDuplicate: () => handleDuplicate(page.id),
+    onTogglePublish: () => handleTogglePublish(page),
+    onAnalytics: () => navigate(`/landing-pages/${page.id}/analytics`),
+    onArchive: () => handleArchive(page),
+    onCopyUrl: () => handleCopyUrl(page),
+  });
+
   const totalCount = pages.length;
   const publishedCount = pages.filter((p) => p.status === 'published').length;
   const draftCount = pages.filter((p) => p.status === 'draft').length;
@@ -242,6 +196,34 @@ export function LandingPagesOverview() {
               {alertCount} alerta{alertCount !== 1 ? 's' : ''}
             </button>
           )}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm" role="group" aria-label="Alternar visualização">
+            <button
+              onClick={() => changeViewMode('cards')}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'cards'
+                  ? 'bg-[#FFF1ED] text-[#E54A26]'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+              title="Visualização em cards"
+              aria-pressed={viewMode === 'cards'}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Cards
+            </button>
+            <button
+              onClick={() => changeViewMode('list')}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-[#FFF1ED] text-[#E54A26]'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+              title="Visualização em lista"
+              aria-pressed={viewMode === 'list'}
+            >
+              <Rows3 className="w-4 h-4" />
+              Lista
+            </button>
+          </div>
           <button
             onClick={() => navigate('/landing-pages/new')}
             className="flex items-center gap-2 px-4 py-2.5 bg-[#FF5F39] text-white rounded-lg text-sm font-medium hover:bg-[#E54A26] transition-colors shadow-sm"
@@ -308,7 +290,96 @@ export function LandingPagesOverview() {
         </select>
       </div>
 
-      {/* Table */}
+      {/* Cards / grid view (default) */}
+      {viewMode === 'cards' && (
+        filteredRows.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredRows.map(({ page, metrics }) => {
+              const linkedAccounts = page.links.accountIds
+                .map((id) => accountsById.get(id))
+                .filter((a): a is LpAccount => Boolean(a));
+
+              return (
+                <div
+                  key={page.id}
+                  onClick={() => navigate(`/landing-pages/${page.id}/edit`)}
+                  className="group relative flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden cursor-pointer hover:shadow-md hover:border-slate-300 transition-all"
+                >
+                  <div className="relative">
+                    <LpThumbnail page={page} height={150} />
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <PageActionsMenu
+                        page={page}
+                        handlers={buildActionHandlers(page)}
+                        buttonClassName="p-1.5 bg-white/90 backdrop-blur text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg shadow-sm border border-slate-200"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-semibold text-slate-900 leading-snug">{page.name}</span>
+                      <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border ${STATUS_STYLE[page.status]}`}>
+                        {STATUS_LABEL[page.status]}
+                      </span>
+                    </div>
+
+                    <span className="text-xs text-slate-500 font-mono truncate">/p/{page.slug}</span>
+
+                    {linkedAccounts.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {linkedAccounts.slice(0, 2).map((a) => (
+                          <span
+                            key={a.id}
+                            className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 border border-slate-200"
+                          >
+                            {a.name}
+                          </span>
+                        ))}
+                        {linkedAccounts.length > 2 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500 border border-slate-200">
+                            +{linkedAccounts.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">Nenhuma conta vinculada</span>
+                    )}
+
+                    <div className="flex gap-4 pt-1">
+                      <div className="text-xs">
+                        <span className="text-slate-500 block">Visitas</span>
+                        <span className="font-semibold text-slate-700">{metrics.visits.toLocaleString()}</span>
+                      </div>
+                      <div className="text-xs">
+                        <span className="text-slate-500 block">CTA</span>
+                        <span className="font-semibold text-slate-700">{metrics.ctaClicks.toLocaleString()}</span>
+                      </div>
+                      <div className="text-xs">
+                        <span className="text-slate-500 block">Forms</span>
+                        <span className="font-semibold text-slate-700">{metrics.formSubmits.toLocaleString()}</span>
+                      </div>
+                      <div className="text-xs">
+                        <span className="text-slate-500 block">Conv.</span>
+                        <span className="font-semibold text-slate-700">{metrics.conversion.toFixed(1)}%</span>
+                      </div>
+                    </div>
+
+                    <span className="text-xs text-slate-400 pt-1">Atualizada em {formatDate(page.updatedAt)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-6 py-12 text-center text-slate-500">
+            Nenhuma landing page encontrada com os filtros atuais.
+          </div>
+        )
+      )}
+
+      {/* Table / list view */}
+      {viewMode === 'list' && (
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -409,15 +480,7 @@ export function LandingPagesOverview() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                        <RowActionsMenu
-                          page={page}
-                          onEdit={() => navigate(`/landing-pages/${page.id}/edit`)}
-                          onDuplicate={() => handleDuplicate(page.id)}
-                          onTogglePublish={() => handleTogglePublish(page)}
-                          onAnalytics={() => navigate(`/landing-pages/${page.id}/analytics`)}
-                          onArchive={() => handleArchive(page)}
-                          onCopyUrl={() => handleCopyUrl(page)}
-                        />
+                        <PageActionsMenu page={page} handlers={buildActionHandlers(page)} />
                       </div>
                     </td>
                   </tr>
@@ -434,6 +497,7 @@ export function LandingPagesOverview() {
           </table>
         </div>
       </div>
+      )}
 
       <Dialog open={alertsOpen} onOpenChange={setAlertsOpen}>
         <DialogContent className="sm:max-w-xl p-0 overflow-hidden">
