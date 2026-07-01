@@ -19,6 +19,7 @@ import { CampaignWizard } from "./campaigns/CampaignWizard";
 import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
 import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
 import { LandingPagesOverview } from "./landingPages/overview/LandingPagesOverview";
+import { CreateSelector } from "./landingPages/create/CreateSelector";
 
 function PlaysRoute() {
   const navigate = useNavigate();
@@ -96,9 +97,8 @@ export default function App() {
           <Route path="campaigns/:id/edit" element={<CampaignWizard />} />
           <Route path="campaigns/:id" element={<CampaignAnalytics />} />
           <Route path="landing-pages" element={<LandingPagesOverview />} />
-          {/* TODO Task 13: replace with the real builder/editor screen. */}
-          <Route path="landing-pages/new" element={<Placeholder title="Nova Landing Page" />} />
-          {/* TODO Task 13: replace with the real builder/editor screen. */}
+          <Route path="landing-pages/new" element={<CreateSelector />} />
+          {/* TODO Task 15: replace with the real builder/editor screen. */}
           <Route path="landing-pages/:id/edit" element={<Placeholder title="Editar Landing Page" />} />
           {/* TODO Task 17: replace with the real per-page analytics screen. */}
           <Route path="landing-pages/:id/analytics" element={<Placeholder title="Analytics da Landing Page" />} />
