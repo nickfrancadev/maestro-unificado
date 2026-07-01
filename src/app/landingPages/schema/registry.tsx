@@ -1,9 +1,8 @@
 // Block registry — the heart of the WYSIWYG system. For each of the 14
 // BlockTypes we define defaults, a Render component (reused by editor
 // canvas, mobile preview and public page) and a Panel (props editor).
-import type * as React from 'react';
+import type { RenderContext, BlockDef } from './registryTypes';
 import type { Block, BlockType } from './blockTypes';
-import type { RenderContext } from './registryTypes';
 
 import { NavbarRender, NavbarPanel, navbarDefaults } from './blocks/navbar';
 import { HeroRender, HeroPanel, heroDefaults } from './blocks/hero';
@@ -20,17 +19,7 @@ import { FooterRender, FooterPanel, footerDefaults } from './blocks/footer';
 import { SpacerRender, SpacerPanel, spacerDefaults } from './blocks/spacer';
 import { EmbedRender, EmbedPanel, embedDefaults } from './blocks/embed';
 
-export type { RenderContext } from './registryTypes';
-
-export interface BlockDef {
-  type: BlockType;
-  label: string;
-  group: 'estrutura' | 'conteudo' | 'conversao' | 'prova';
-  defaults: () => Record<string, unknown>;
-  tokens: string[];
-  Render: React.FC<{ block: Block; ctx: RenderContext }>;
-  Panel: React.FC<{ block: Block; onChange: (patch: Partial<Block>) => void }>;
-}
+export type { RenderContext, BlockDef } from './registryTypes';
 
 export const REGISTRY: Record<BlockType, BlockDef> = {
   navbar: {
