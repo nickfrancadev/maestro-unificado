@@ -10,6 +10,7 @@ import { getPageBySlug } from '../store/repo';
 import { listAccounts, toAccountContext } from '../store/accounts';
 import { logEvent, listEvents, saveAlert, type PageEvent } from '../store/tracking';
 import { evaluateIntent } from '../alerts/rules';
+import { handleSubmit, listContacts, saveContacts } from '../forms/submit';
 
 const SCROLL_THRESHOLDS = [25, 50, 75, 100] as const;
 
@@ -102,7 +103,29 @@ export function PublicPage() {
     }
   };
 
-  return <BlockRenderer page={page} accountId={accountId ?? null} ctx={ctx} onEvent={handleEvent} />;
+  const handleFormSubmit = (fields: Record<string, string>) => {
+    const existing = listContacts();
+    const { contact, deduped } = handleSubmit(page.id, accountId ?? null, fields, existing);
+    if (deduped) {
+      const idx = existing.findIndex((c) => c.email.toLowerCase() === contact.email.toLowerCase());
+      const next = [...existing];
+      if (idx >= 0) next[idx] = contact;
+      else next.push(contact);
+      saveContacts(next);
+    } else {
+      saveContacts([...existing, contact]);
+    }
+  };
+
+  return (
+    <BlockRenderer
+      page={page}
+      accountId={accountId ?? null}
+      ctx={ctx}
+      onEvent={handleEvent}
+      onFormSubmit={handleFormSubmit}
+    />
+  );
 }
 
 export default PublicPage;

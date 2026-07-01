@@ -9,4 +9,5 @@ export interface RenderContext {
   ctx: AccountContext | null;
   brandKit: BrandKit;
   onEvent?: (type: PageEvent['type'], value?: number) => void;
+  onFormSubmit?: (fields: Record<string, string>) => void;
 }

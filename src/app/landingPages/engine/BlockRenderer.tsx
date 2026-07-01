@@ -14,12 +14,13 @@ export interface BlockRendererProps {
   accountId?: string | null;
   ctx: AccountContext | null;
   onEvent?: (type: PageEvent['type'], value?: number) => void;
+  onFormSubmit?: (fields: Record<string, string>) => void;
 }
 
-export const BlockRenderer: React.FC<BlockRendererProps> = ({ page, accountId, ctx, onEvent }) => {
+export const BlockRenderer: React.FC<BlockRendererProps> = ({ page, accountId, ctx, onEvent, onFormSubmit }) => {
   const overridesForAccount = accountId ? page.accountOverrides[accountId] : undefined;
   const resolved = resolveBlocks(page.blocks, overridesForAccount, ctx);
-  const renderCtx: RenderContext = { ctx, brandKit: page.brandKit, onEvent };
+  const renderCtx: RenderContext = { ctx, brandKit: page.brandKit, onEvent, onFormSubmit };
 
   return (
     <div
