@@ -21,7 +21,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { getPage, savePage, isSlugAvailable } from '../store/repo';
+import { savePage, isSlugAvailable } from '../store/repo';
 import { slugify, type LandingPage } from '../store/model';
 
 type DomainStatus = 'idle' | 'provisioning' | 'active';
@@ -106,16 +106,21 @@ export function PublishDialog({ page, open, onOpenChange, onChanged }: PublishDi
 
   const handlePublish = () => {
     if (!canPublish) return;
-    const latest = getPage(page.id) ?? page;
-    const updated: LandingPage = { ...latest, slug: normalizedSlug, status: 'published' };
+    // Build from the in-memory `page` prop — it's the authoritative, current
+    // document (the editor's autosave only writes it to storage on a 600ms
+    // debounce, so storage can only be stale relative to this prop, never
+    // fresher). Re-reading via getPage() here would risk publishing a
+    // pre-edit snapshot and clobbering unsaved changes.
+    const updated: LandingPage = { ...page, slug: normalizedSlug, status: 'published' };
     savePage(updated);
     onChanged?.(updated);
     toast.success(`"${updated.name}" publicada com sucesso.`);
   };
 
   const handleUnpublish = () => {
-    const latest = getPage(page.id) ?? page;
-    const updated: LandingPage = { ...latest, status: 'draft' };
+    // Same rationale as handlePublish: use the `page` prop, not a storage
+    // re-read, so we never discard edits made in the last autosave window.
+    const updated: LandingPage = { ...page, status: 'draft' };
     savePage(updated);
     onChanged?.(updated);
     toast.success(`"${updated.name}" despublicada. O rascunho continua editável.`);
