@@ -1,7 +1,8 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
-import { resolveTokens } from '../../engine/resolveTokens';
+import type { SlotStyle } from '../../editor/slotStyle';
 import { TextField, TextAreaField } from './panelFields';
+import { SlotText, SlotButton, SlotImage } from './slots';
 
 export interface HeroProps {
   eyebrow: string;
@@ -11,6 +12,9 @@ export interface HeroProps {
   ctaHref: string;
   imageUrl: string;
 }
+
+const HERO_SUBHEADLINE_STYLE: SlotStyle = { fontSize: 18, color: '#475569' };
+const HERO_IMAGE_STYLE: SlotStyle = { objectFit: 'cover', radius: 8 };
 
 export function heroDefaults(): HeroProps {
   return {
@@ -26,29 +30,65 @@ export function heroDefaults(): HeroProps {
 export function HeroRender({ block, ctx }: { block: Block; ctx: RenderContext }) {
   const p = block.props as unknown as HeroProps;
   const primary = ctx.brandKit.colors.primary || '#0F172A';
+  const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
+  const eyebrowStyle: SlotStyle = { fontSize: 14, fontWeight: 'semibold', color: primary };
+  const headlineStyle: SlotStyle = { fontSize: 32, fontWeight: 'bold', color: '#0F172A' };
+  const ctaStyle: SlotStyle = { bgColor: primary, textColor: '#FFFFFF', radius: 6 };
   return (
     <section className="grid gap-8 px-6 py-16 sm:grid-cols-2 sm:items-center sm:px-12">
       <div>
         {p.eyebrow && (
-          <p className="mb-3 text-sm font-semibold uppercase tracking-wide" style={{ color: primary }}>
-            {resolveTokens(p.eyebrow, ctx.ctx)}
-          </p>
+          <SlotText
+            slotId="eyebrow"
+            as="p"
+            className="mb-3 uppercase tracking-wide"
+            value={p.eyebrow}
+            ctx={ctx}
+            defaultStyle={eyebrowStyle}
+            styleOverride={styles.eyebrow}
+          />
         )}
-        <h1 className="text-3xl font-bold text-slate-900 sm:text-4xl" style={{ fontFamily: ctx.brandKit.fontFamily || undefined }}>
-          {resolveTokens(p.headline ?? '', ctx.ctx)}
-        </h1>
-        <p className="mt-4 text-lg text-slate-600">{resolveTokens(p.subheadline ?? '', ctx.ctx)}</p>
-        <a
+        <div style={{ fontFamily: ctx.brandKit.fontFamily || undefined }}>
+          <SlotText
+            slotId="headline"
+            as="h1"
+            className="sm:text-4xl"
+            value={p.headline ?? ''}
+            ctx={ctx}
+            defaultStyle={headlineStyle}
+            styleOverride={styles.headline}
+          />
+        </div>
+        <SlotText
+          slotId="subheadline"
+          as="p"
+          className="mt-4"
+          value={p.subheadline ?? ''}
+          ctx={ctx}
+          defaultStyle={HERO_SUBHEADLINE_STYLE}
+          styleOverride={styles.subheadline}
+        />
+        <SlotButton
+          slotId="cta"
+          className="mt-6 inline-block px-6 py-3 text-sm font-semibold"
+          label={p.ctaLabel ?? ''}
           href={p.ctaHref}
-          className="mt-6 inline-block rounded-md px-6 py-3 text-sm font-semibold text-white"
-          style={{ backgroundColor: primary }}
-        >
-          {resolveTokens(p.ctaLabel ?? '', ctx.ctx)}
-        </a>
+          ctx={ctx}
+          defaultStyle={ctaStyle}
+          styleOverride={styles.cta}
+        />
       </div>
       <div className="flex items-center justify-center">
         {p.imageUrl ? (
-          <img src={p.imageUrl} alt="" className="max-h-80 w-full rounded-lg object-cover" />
+          <SlotImage
+            slotId="image"
+            className="max-h-80 w-full"
+            url={p.imageUrl}
+            alt=""
+            ctx={ctx}
+            defaultStyle={HERO_IMAGE_STYLE}
+            styleOverride={styles.image}
+          />
         ) : (
           <div className="flex h-56 w-full items-center justify-center rounded-lg bg-slate-100 text-sm text-slate-400">
             Imagem de destaque

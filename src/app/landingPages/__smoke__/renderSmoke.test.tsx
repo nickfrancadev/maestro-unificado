@@ -21,6 +21,8 @@ import { LandingPageEditor } from '../editor/LandingPageEditor';
 import { PublicPage } from '../public/PublicPage';
 import { LandingPagesOverview } from '../overview/LandingPagesOverview';
 import { LpThumbnail } from '../components/LpThumbnail';
+import { BlockRenderer } from '../engine/BlockRenderer';
+import type { Block } from '../schema/blockTypes';
 
 function mem(): Storage {
   const m = new Map<string, string>();
@@ -56,6 +58,10 @@ function seedBlankPage(): LandingPage {
   const page = newLandingPage({ name: 'Em branco', templateOrigin: 'blank', blocks: [newBlock('navbar'), newBlock('footer')], brandKit: brandKit() });
   savePage(page);
   return page;
+}
+
+function pageWith(block: Block): LandingPage {
+  return newLandingPage({ name: 'x', templateOrigin: 'blank', blocks: [block], brandKit: brandKit() });
 }
 
 beforeEach(() => { (globalThis as any).localStorage = mem(); });
@@ -116,4 +122,13 @@ describe('overview renders without throwing', () => {
       </MemoryRouter>,
     )).not.toThrow();
   });
+});
+
+describe('each block renders (public) without throwing', () => {
+  for (const type of ['hero', 'cta', 'footer', 'navbar'] as const) {
+    it(type, () => {
+      const page = pageWith(newBlock(type));
+      expect(() => render(<BlockRenderer page={page} accountId={null} ctx={null} />)).not.toThrow();
+    });
+  }
 });

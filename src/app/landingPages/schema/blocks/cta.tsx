@@ -1,7 +1,8 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
-import { resolveTokens } from '../../engine/resolveTokens';
+import type { SlotStyle } from '../../editor/slotStyle';
 import { TextField, TextAreaField } from './panelFields';
+import { SlotText, SlotButton } from './slots';
 
 export interface CtaProps {
   headline: string;
@@ -9,6 +10,9 @@ export interface CtaProps {
   buttonLabel: string;
   buttonHref: string;
 }
+
+const CTA_HEADLINE_STYLE: SlotStyle = { fontSize: 24, fontWeight: 'bold', color: '#0F172A' };
+const CTA_SUBHEADLINE_STYLE: SlotStyle = { fontSize: 16, color: '#475569' };
 
 export function ctaDefaults(): CtaProps {
   return {
@@ -22,18 +26,40 @@ export function ctaDefaults(): CtaProps {
 export function CtaRender({ block, ctx }: { block: Block; ctx: RenderContext }) {
   const p = block.props as unknown as CtaProps;
   const primary = ctx.brandKit.colors.primary || '#0F172A';
+  const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
+  const buttonStyle: SlotStyle = { bgColor: primary, textColor: '#FFFFFF', radius: 6 };
   return (
     <section className="px-6 py-16 text-center sm:px-12" style={{ backgroundColor: `${primary}10` }}>
-      <h2 className="text-2xl font-bold text-slate-900 sm:text-3xl">{resolveTokens(p.headline ?? '', ctx.ctx)}</h2>
-      {p.subheadline && <p className="mt-3 text-slate-600">{resolveTokens(p.subheadline, ctx.ctx)}</p>}
-      <a
+      <SlotText
+        slotId="headline"
+        as="h2"
+        className="sm:text-3xl"
+        value={p.headline ?? ''}
+        ctx={ctx}
+        defaultStyle={CTA_HEADLINE_STYLE}
+        styleOverride={styles.headline}
+      />
+      {p.subheadline && (
+        <SlotText
+          slotId="subheadline"
+          as="p"
+          className="mt-3"
+          value={p.subheadline}
+          ctx={ctx}
+          defaultStyle={CTA_SUBHEADLINE_STYLE}
+          styleOverride={styles.subheadline}
+        />
+      )}
+      <SlotButton
+        slotId="cta"
+        className="mt-6 inline-block px-6 py-3 text-sm font-semibold"
+        label={p.buttonLabel ?? ''}
         href={p.buttonHref}
         onClick={() => ctx.onEvent?.('cta_click')}
-        className="mt-6 inline-block rounded-md px-6 py-3 text-sm font-semibold text-white"
-        style={{ backgroundColor: primary }}
-      >
-        {resolveTokens(p.buttonLabel ?? '', ctx.ctx)}
-      </a>
+        ctx={ctx}
+        defaultStyle={buttonStyle}
+        styleOverride={styles.cta}
+      />
     </section>
   );
 }

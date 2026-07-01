@@ -9,6 +9,12 @@ interface SlotCommon {
   ctx: RenderContext;
   styleOverride?: SlotStyle;
   defaultStyle: SlotStyle;
+  // Structural/layout Tailwind classes that have no SlotStyle-modeled
+  // equivalent (spacing, sizing, responsive/hover variants). Kept as a plain
+  // className passthrough so migrating a leaf element to a Slot helper does
+  // not regress pixel-for-pixel layout. Visual *style* (color/size/weight/
+  // bg/radius/etc.) still flows through defaultStyle/styleOverride.
+  className?: string;
 }
 
 const SELECTED_OUTLINE: React.CSSProperties = { outline: '2px solid #FF5F39', outlineOffset: 2 };
@@ -18,12 +24,12 @@ interface SlotTextProps extends SlotCommon {
   value: string;
 }
 
-export function SlotText({ slotId, ctx, styleOverride, defaultStyle, as = 'p', value }: SlotTextProps) {
+export function SlotText({ slotId, ctx, styleOverride, defaultStyle, as = 'p', value, className }: SlotTextProps) {
   const Tag = as as keyof React.JSX.IntrinsicElements;
   const style = slotStyleToCss('text', resolveSlotStyle(defaultStyle, styleOverride));
 
   if (!ctx.editing) {
-    return <Tag style={style}>{resolveTokens(value, ctx.ctx)}</Tag>;
+    return <Tag className={className} style={style}>{resolveTokens(value, ctx.ctx)}</Tag>;
   }
 
   const { editing } = ctx;
@@ -40,6 +46,7 @@ export function SlotText({ slotId, ctx, styleOverride, defaultStyle, as = 'p', v
     return (
       <Tag
         data-slot={slotId}
+        className={className}
         style={finalStyle}
         contentEditable
         suppressContentEditableWarning
@@ -52,7 +59,7 @@ export function SlotText({ slotId, ctx, styleOverride, defaultStyle, as = 'p', v
   }
 
   return (
-    <Tag data-slot={slotId} style={finalStyle} onClick={handleClick}>
+    <Tag data-slot={slotId} className={className} style={finalStyle} onClick={handleClick}>
       {resolveTokens(value, ctx.ctx)}
     </Tag>
   );
@@ -61,13 +68,17 @@ export function SlotText({ slotId, ctx, styleOverride, defaultStyle, as = 'p', v
 interface SlotButtonProps extends SlotCommon {
   label: string;
   href: string;
+  // Public-mode-only click passthrough (e.g. analytics tracking on the real
+  // anchor click). Editor mode intercepts clicks for selection instead, so
+  // this is never invoked while ctx.editing is set.
+  onClick?: () => void;
 }
 
-export function SlotButton({ slotId, ctx, styleOverride, defaultStyle, label, href }: SlotButtonProps) {
+export function SlotButton({ slotId, ctx, styleOverride, defaultStyle, label, href, className, onClick }: SlotButtonProps) {
   const style = slotStyleToCss('button', resolveSlotStyle(defaultStyle, styleOverride));
 
   if (!ctx.editing) {
-    return <a href={href} style={style}>{resolveTokens(label, ctx.ctx)}</a>;
+    return <a href={href} className={className} style={style} onClick={onClick}>{resolveTokens(label, ctx.ctx)}</a>;
   }
 
   const { editing } = ctx;
@@ -78,6 +89,7 @@ export function SlotButton({ slotId, ctx, styleOverride, defaultStyle, label, hr
     <a
       href={href}
       data-slot={slotId}
+      className={className}
       style={finalStyle}
       onClick={(e: React.MouseEvent) => {
         e.preventDefault();
@@ -96,11 +108,15 @@ interface SlotImageProps extends SlotCommon {
   placeholder?: string;
 }
 
-export function SlotImage({ slotId, ctx, styleOverride, defaultStyle, url, alt, placeholder }: SlotImageProps) {
+export function SlotImage({ slotId, ctx, styleOverride, defaultStyle, url, alt, placeholder, className }: SlotImageProps) {
   const style = slotStyleToCss('image', resolveSlotStyle(defaultStyle, styleOverride));
 
   if (!ctx.editing) {
-    return url ? <img src={url} alt={alt ?? ''} style={style} /> : <div style={style}>{placeholder}</div>;
+    return url ? (
+      <img src={url} alt={alt ?? ''} className={className} style={style} />
+    ) : (
+      <div className={className} style={style}>{placeholder}</div>
+    );
   }
 
   const { editing } = ctx;
@@ -113,9 +129,9 @@ export function SlotImage({ slotId, ctx, styleOverride, defaultStyle, url, alt, 
   };
 
   return url ? (
-    <img src={url} alt={alt ?? ''} data-slot={slotId} style={finalStyle} onClick={handleClick} />
+    <img src={url} alt={alt ?? ''} data-slot={slotId} className={className} style={finalStyle} onClick={handleClick} />
   ) : (
-    <div data-slot={slotId} style={finalStyle} onClick={handleClick}>
+    <div data-slot={slotId} className={className} style={finalStyle} onClick={handleClick}>
       {placeholder}
     </div>
   );

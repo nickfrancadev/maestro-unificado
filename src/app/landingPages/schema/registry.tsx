@@ -30,6 +30,10 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: ['account.name'],
     Render: NavbarRender,
     Panel: NavbarPanel,
+    slots: [
+      { id: 'logoText', kind: 'text', label: 'Logo' },
+      { id: 'cta', kind: 'button', label: 'Botão' },
+    ],
   },
   hero: {
     type: 'hero',
@@ -39,6 +43,13 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: ['account.name', 'account.industry'],
     Render: HeroRender,
     Panel: HeroPanel,
+    slots: [
+      { id: 'eyebrow', kind: 'text', label: 'Chamada superior' },
+      { id: 'headline', kind: 'text', label: 'Título' },
+      { id: 'subheadline', kind: 'text', label: 'Subtítulo' },
+      { id: 'cta', kind: 'button', label: 'Botão' },
+      { id: 'image', kind: 'image', label: 'Imagem' },
+    ],
   },
   logos: {
     type: 'logos',
@@ -102,6 +113,11 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: ['contact.firstName', 'account.name'],
     Render: CtaRender,
     Panel: CtaPanel,
+    slots: [
+      { id: 'headline', kind: 'text', label: 'Título' },
+      { id: 'subheadline', kind: 'text', label: 'Subtítulo' },
+      { id: 'cta', kind: 'button', label: 'Botão' },
+    ],
   },
   form: {
     type: 'form',
@@ -129,6 +145,9 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: ['account.name'],
     Render: FooterRender,
     Panel: FooterPanel,
+    slots: [
+      { id: 'companyText', kind: 'text', label: 'Texto de rodapé' },
+    ],
   },
   spacer: {
     type: 'spacer',
