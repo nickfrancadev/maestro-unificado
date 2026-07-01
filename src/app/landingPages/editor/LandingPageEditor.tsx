@@ -110,6 +110,13 @@ export function LandingPageEditor() {
   const ctx = toAccountContext(previewAccount);
   const renderCtx: RenderContext = { ctx, brandKit: page.brandKit };
   const isPersonalizing = mode === 'personalize' && !!previewAccountId;
+  // Canvas WYSIWYG parity with the public page: whenever a preview account
+  // is selected (regardless of base/personalize mode toggle — the toggle
+  // only controls the WRITE path), the canvas should render that account's
+  // override-merged + visibility-resolved view, same as `/p/:slug?a=<id>`.
+  // No preview account selected -> undefined -> canvas renders base blocks,
+  // matching the public page with no `?a=`.
+  const overridesForAccount = previewAccountId ? page.accountOverrides[previewAccountId] : undefined;
 
   const updatePage = (patch: Partial<LandingPage>) => {
     history.set({ ...page, ...patch });
@@ -310,6 +317,7 @@ export function LandingPageEditor() {
             selectedId={selectedId}
             renderCtx={renderCtx}
             viewport={viewport}
+            overridesForAccount={overridesForAccount}
             onSelect={setSelectedId}
             onRemove={handleRemove}
             onDuplicate={handleDuplicate}

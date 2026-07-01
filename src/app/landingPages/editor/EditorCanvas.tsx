@@ -14,10 +14,11 @@
 // keeps the canvas simple and correct rather than partially working.
 import * as React from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { GripVertical, Copy, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { GripVertical, Copy, Trash2, ChevronUp, ChevronDown, EyeOff } from 'lucide-react';
 import { REGISTRY } from '../schema/registry';
 import type { RenderContext } from '../schema/registry';
 import type { Block } from '../schema/blockTypes';
+import { mergeOverride, isVisible } from '../engine/resolveBlock';
 import { NEW_BLOCK_DND_TYPE, type NewBlockDragItem } from './BlockLibrary';
 
 const EXISTING_BLOCK_DND_TYPE = 'EXISTING_BLOCK';
@@ -35,6 +36,8 @@ function DropIndicator() {
 
 function BlockShell({
   block,
+  resolvedBlock,
+  hiddenForAccount,
   index,
   total,
   selected,
@@ -45,7 +48,18 @@ function BlockShell({
   onMove,
   onReorderDrop,
 }: {
+  /** Base block (from page.blocks) — selection/reorder/remove/duplicate all
+   * target this id so the account-resolved view never leaks into the base
+   * document. */
   block: Block;
+  /** Override-merged block for the currently selected preview account (or
+   * the same as `block` when no preview account is selected). This is what
+   * actually gets rendered, so the canvas matches the public page. */
+  resolvedBlock: Block;
+  /** True when `showIf` hides this block for the selected preview account.
+   * The editor still renders it (dimmed + tagged) so authors can select and
+   * edit it, unlike the public page which omits it entirely. */
+  hiddenForAccount: boolean;
   index: number;
   total: number;
   selected: boolean;
@@ -112,6 +126,12 @@ function BlockShell({
           selected ? 'ring-2 ring-[#FF5F39] ring-inset' : 'ring-1 ring-transparent group-hover:ring-slate-300 ring-inset'
         }`}
       />
+      {hiddenForAccount && (
+        <div className="pointer-events-none absolute -top-3 right-3 z-20 flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 shadow-sm">
+          <EyeOff className="size-3" />
+          Oculto para este segmento
+        </div>
+      )}
       <div className="pointer-events-none absolute -top-3 left-3 z-20 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="pointer-events-auto flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1 py-1 shadow-sm">
           <span className="cursor-grab px-1 text-slate-400" title="Arrastar para reordenar">
@@ -154,7 +174,9 @@ function BlockShell({
           </button>
         </div>
       </div>
-      <Render block={block} ctx={renderCtx} />
+      <div style={hiddenForAccount ? { opacity: 0.4 } : undefined}>
+        <Render block={resolvedBlock} ctx={renderCtx} />
+      </div>
     </div>
   );
 }
@@ -182,6 +204,11 @@ export interface EditorCanvasProps {
   selectedId: string | null;
   renderCtx: RenderContext;
   viewport: ViewportMode;
+  /** Overrides for the currently selected preview account
+   * (`page.accountOverrides[previewAccountId]`), or undefined when no
+   * preview account is selected (base/default mode — matches the public
+   * page with no `?a=`). Same shape `resolveBlocks` consumes. */
+  overridesForAccount?: Record<string, Partial<Block>>;
   onSelect: (id: string | null) => void;
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -194,6 +221,7 @@ export function EditorCanvas({
   selectedId,
   renderCtx,
   viewport,
+  overridesForAccount,
   onSelect,
   onRemove,
   onDuplicate,
@@ -205,6 +233,16 @@ export function EditorCanvas({
     if (to < 0 || to >= blocks.length) return;
     onReorder(index, to);
   };
+
+  // Account-resolved view for WYSIWYG parity with the public page: each base
+  // block gets merged with its override for the selected preview account
+  // (same `mergeOverride` the public renderer uses via `resolveBlocks`).
+  // Selection/reorder/remove/duplicate always key off the BASE block's id —
+  // only the rendered *content* below reflects the resolved/merged version.
+  const resolvedBlocks = React.useMemo(
+    () => blocks.map((b) => mergeOverride(b, overridesForAccount?.[b.id])),
+    [blocks, overridesForAccount],
+  );
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-y-auto bg-slate-100" onClick={() => onSelect(null)}>
@@ -223,6 +261,8 @@ export function EditorCanvas({
             <React.Fragment key={block.id}>
               <BlockShell
                 block={block}
+                resolvedBlock={resolvedBlocks[index]}
+                hiddenForAccount={!isVisible(block.showIf, renderCtx.ctx)}
                 index={index}
                 total={blocks.length}
                 selected={block.id === selectedId}
