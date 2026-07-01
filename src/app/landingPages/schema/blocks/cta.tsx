@@ -28,6 +28,7 @@ export function CtaRender({ block, ctx }: { block: Block; ctx: RenderContext }) 
       {p.subheadline && <p className="mt-3 text-slate-600">{resolveTokens(p.subheadline, ctx.ctx)}</p>}
       <a
         href={p.buttonHref}
+        onClick={() => ctx.onEvent?.('cta_click')}
         className="mt-6 inline-block rounded-md px-6 py-3 text-sm font-semibold text-white"
         style={{ backgroundColor: primary }}
       >

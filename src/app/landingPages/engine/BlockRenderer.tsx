@@ -16,10 +16,10 @@ export interface BlockRendererProps {
   onEvent?: (type: PageEvent['type'], value?: number) => void;
 }
 
-export const BlockRenderer: React.FC<BlockRendererProps> = ({ page, accountId, ctx }) => {
+export const BlockRenderer: React.FC<BlockRendererProps> = ({ page, accountId, ctx, onEvent }) => {
   const overridesForAccount = accountId ? page.accountOverrides[accountId] : undefined;
   const resolved = resolveBlocks(page.blocks, overridesForAccount, ctx);
-  const renderCtx: RenderContext = { ctx, brandKit: page.brandKit };
+  const renderCtx: RenderContext = { ctx, brandKit: page.brandKit, onEvent };
 
   return (
     <div

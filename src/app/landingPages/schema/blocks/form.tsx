@@ -35,7 +35,13 @@ export function FormRender({ block, ctx }: { block: Block; ctx: RenderContext })
       <div className="mx-auto max-w-md rounded-lg border border-border/60 p-6">
         {p.title && <h2 className="text-xl font-bold text-slate-900">{resolveTokens(p.title, ctx.ctx)}</h2>}
         {p.subtitle && <p className="mt-1 text-sm text-slate-600">{resolveTokens(p.subtitle, ctx.ctx)}</p>}
-        <div className="mt-4 space-y-3">
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            ctx.onEvent?.('form_submit');
+          }}
+        >
           {fields.map((f, i) => (
             <div key={i}>
               <label className="mb-1 block text-xs font-medium text-slate-600">{resolveTokens(f.label ?? '', ctx.ctx)}</label>
@@ -48,14 +54,14 @@ export function FormRender({ block, ctx }: { block: Block; ctx: RenderContext })
             </div>
           ))}
           <button
-            type="button"
+            type="submit"
             disabled
             className="mt-2 w-full rounded-md px-4 py-2 text-sm font-semibold text-white opacity-90"
             style={{ backgroundColor: primary }}
           >
             {resolveTokens(p.submitLabel ?? '', ctx.ctx)}
           </button>
-        </div>
+        </form>
       </div>
     </section>
   );
