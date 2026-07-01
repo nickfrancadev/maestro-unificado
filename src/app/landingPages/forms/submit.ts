@@ -1,7 +1,12 @@
 // Form submission handling — creates/updates a Contact linked to an Account
-// from a landing-page form submission, deduping by email (case-insensitive)
-// or domain, and persists a FormSubmission via the tracking store.
+// from a landing-page form submission. Dedup identity is exact email
+// (case-insensitive) ONLY — a shared domain never merges two people into one
+// Contact (ABM buying committees are distinct contacts on the same account).
+// Domain is used only to associate a new contact with a known account when no
+// explicit accountId was supplied. Persists a FormSubmission via the
+// tracking store.
 import { saveSubmission } from '../store/tracking';
+import { listAccounts } from '../store/accounts';
 
 export interface Contact {
   email: string;
@@ -34,14 +39,19 @@ function emailDomain(email: string): string {
   return at === -1 ? '' : email.slice(at + 1).toLowerCase();
 }
 
+// Exact-email match ONLY — this is the sole identity key for a Contact.
 function findMatch(email: string, existing: Contact[]): Contact | undefined {
   const lowerEmail = email.toLowerCase();
+  return existing.find((c) => c.email.toLowerCase() === lowerEmail);
+}
+
+// Looks up a known account by the submitted email's domain, for ACCOUNT
+// ASSOCIATION only — never used for contact identity/merge decisions.
+function accountIdForDomain(email: string): string | null {
   const domain = emailDomain(email);
-  return existing.find((c) => {
-    if (c.email.toLowerCase() === lowerEmail) return true;
-    if (domain && emailDomain(c.email) === domain) return true;
-    return false;
-  });
+  if (!domain) return null;
+  const account = listAccounts().find((a) => a.domain.toLowerCase() === domain);
+  return account ? account.id : null;
 }
 
 export function handleSubmit(
@@ -53,10 +63,15 @@ export function handleSubmit(
   const email = fields.email ?? '';
   const firstName = fields.firstName ?? fields.name;
   const match = findMatch(email, existing);
+  const domainAccountId = accountIdForDomain(email);
 
   const contact: Contact = match
-    ? { ...match, firstName: firstName ?? match.firstName, accountId: accountId ?? match.accountId }
-    : { email, firstName, accountId };
+    ? {
+        ...match,
+        firstName: firstName || match.firstName,
+        accountId: accountId ?? domainAccountId ?? match.accountId,
+      }
+    : { email, firstName, accountId: accountId ?? domainAccountId ?? null };
 
   saveSubmission({ landingPageId, accountId, fields });
 

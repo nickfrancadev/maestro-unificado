@@ -15,4 +15,17 @@ describe('handleSubmit', () => {
     const r = handleSubmit('lp1', 'a1', { email: 'X@ACME.COM', firstName: 'Ana' }, existing);
     expect(r.deduped).toBe(true);
   });
+  it('two different emails at the same domain create TWO contacts (not merged)', () => {
+    const alice = handleSubmit('lp1', 'a1', { email: 'alice@acme.com', firstName: 'Alice' }, []);
+    expect(alice.deduped).toBe(false);
+
+    const existing = [alice.contact];
+    const bob = handleSubmit('lp1', 'a1', { email: 'bob@acme.com', firstName: 'Bob' }, existing);
+
+    expect(bob.deduped).toBe(false);
+    expect(bob.contact.email).toBe('bob@acme.com');
+    // Alice's record must be untouched — not overwritten/merged by Bob's submission.
+    expect(existing[0]).toEqual(alice.contact);
+    expect(existing[0].email).toBe('alice@acme.com');
+  });
 });
