@@ -22,6 +22,7 @@ import { ensureSeeded } from '../store/seed';
 import { listAccounts, type LpAccount } from '../store/accounts';
 import { AlertsPanel } from '../alerts/AlertsPanel';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
+import { LpThumbnail } from '../components/LpThumbnail';
 
 type StatusFilter = 'all' | LandingPage['status'];
 type SortKey = 'recent' | 'visits' | 'engagement';
@@ -313,6 +314,7 @@ export function LandingPagesOverview() {
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Capa</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Página</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">Status</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">URL</th>
@@ -334,6 +336,11 @@ export function LandingPagesOverview() {
                     className="hover:bg-slate-50 group transition-colors cursor-pointer"
                     onClick={() => navigate(`/landing-pages/${page.id}/analytics`)}
                   >
+                    <td className="px-6 py-4">
+                      <div className="w-28 shrink-0 overflow-hidden rounded-lg border border-slate-200">
+                        <LpThumbnail page={page} height={64} className="rounded-lg" />
+                      </div>
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div
@@ -418,7 +425,7 @@ export function LandingPagesOverview() {
               })}
               {filteredRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                     Nenhuma landing page encontrada com os filtros atuais.
                   </td>
                 </tr>

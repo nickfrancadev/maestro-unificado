@@ -20,6 +20,7 @@ import { newBlock } from '../schema/registry';
 import { LandingPageEditor } from '../editor/LandingPageEditor';
 import { PublicPage } from '../public/PublicPage';
 import { LandingPagesOverview } from '../overview/LandingPagesOverview';
+import { LpThumbnail } from '../components/LpThumbnail';
 
 function mem(): Storage {
   const m = new Map<string, string>();
@@ -87,6 +88,18 @@ describe('public page renders without throwing', () => {
         </Routes>
       </MemoryRouter>,
     )).not.toThrow();
+  });
+});
+
+describe('LpThumbnail renders without throwing', () => {
+  it('with a page that has blocks', () => {
+    const page = seedTemplatePage();
+    expect(() => render(<LpThumbnail page={page} />)).not.toThrow();
+  });
+
+  it('with an empty page (placeholder path)', () => {
+    const page = newLandingPage({ name: 'Vazia', templateOrigin: 'blank', blocks: [], brandKit: brandKit() });
+    expect(() => render(<LpThumbnail page={page} />)).not.toThrow();
   });
 });
 

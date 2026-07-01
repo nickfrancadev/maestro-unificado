@@ -1,16 +1,17 @@
 // Creation selector — /landing-pages/new. Three paths (AI / template / blank)
 // that all end by creating a draft LandingPage in the repo and navigating
 // into the editor.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Sparkles, LayoutTemplate, FileText, Loader2, ArrowRight } from 'lucide-react';
 import { TEMPLATES } from '../templates/catalog';
 import { composePage, type AiBrief } from './composer';
-import { newLandingPage } from '../store/model';
+import { newLandingPage, type LandingPage } from '../store/model';
 import { savePage } from '../store/repo';
 import { newBlock } from '../schema/registry';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE, type BrandKit } from '../../campaigns/wizard/brandKit';
 import { AiBriefForm, type AiBriefSubmission } from './AiBriefForm';
+import { LpThumbnail } from '../components/LpThumbnail';
 
 type Mode = 'choose' | 'ai' | 'template';
 
@@ -28,6 +29,21 @@ export function CreateSelector() {
   const [mode, setMode] = useState<Mode>('choose');
   const [generating, setGenerating] = useState(false);
   const aiTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  // Ephemeral, never-saved LandingPage per template — built once and memoized
+  // purely so LpThumbnail has something to render as a live WYSIWYG cover for
+  // each gallery card. These are not persisted (no savePage call).
+  const templatePreviewPages = useMemo(() => {
+    const brandKit = buildBrandKit();
+    const map = new Map<string, LandingPage>();
+    TEMPLATES.forEach((t) => {
+      map.set(
+        t.id,
+        newLandingPage({ name: t.name, templateOrigin: t.id, blocks: t.buildBlocks(), brandKit }),
+      );
+    });
+    return map;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -160,29 +176,35 @@ export function CreateSelector() {
 
       {mode === 'template' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {TEMPLATES.map((template) => (
-            <button
-              key={template.id}
-              onClick={() => handleTemplate(template.id)}
-              className="text-left p-5 rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-[#FF5F39] transition-all group"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-slate-900">{template.name}</h3>
-                <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-[#FF5F39] transition-colors" />
-              </div>
-              <p className="text-sm text-slate-600 mb-3">{template.useCase}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {template.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 border border-slate-200"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </button>
-          ))}
+          {TEMPLATES.map((template) => {
+            const previewPage = templatePreviewPages.get(template.id);
+            return (
+              <button
+                key={template.id}
+                onClick={() => handleTemplate(template.id)}
+                className="text-left rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-[#FF5F39] transition-all group overflow-hidden"
+              >
+                {previewPage && <LpThumbnail page={previewPage} height={160} />}
+                <div className="p-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-semibold text-slate-900">{template.name}</h3>
+                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-[#FF5F39] transition-colors" />
+                  </div>
+                  <p className="text-sm text-slate-600 mb-3">{template.useCase}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {template.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600 border border-slate-200"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
