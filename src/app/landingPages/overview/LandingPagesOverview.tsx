@@ -405,7 +405,7 @@ export function LandingPagesOverview() {
                   <tr
                     key={page.id}
                     className="hover:bg-slate-50 group transition-colors cursor-pointer"
-                    onClick={() => navigate(`/landing-pages/${page.id}/analytics`)}
+                    onClick={() => navigate(`/landing-pages/${page.id}/edit`)}
                   >
                     <td className="px-6 py-4">
                       <div className="w-28 shrink-0 overflow-hidden rounded-lg border border-slate-200">
