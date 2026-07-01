@@ -47,6 +47,7 @@ function BlockShell({
   onDuplicate,
   onMove,
   onReorderDrop,
+  onInsertDrop,
 }: {
   /** Base block (from page.blocks) — selection/reorder/remove/duplicate all
    * target this id so the account-resolved view never leaks into the base
