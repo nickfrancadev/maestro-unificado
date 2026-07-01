@@ -20,6 +20,7 @@ import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
 import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
 import { LandingPagesOverview } from "./landingPages/overview/LandingPagesOverview";
 import { CreateSelector } from "./landingPages/create/CreateSelector";
+import { PublicPage } from "./landingPages/public/PublicPage";
 
 function PlaysRoute() {
   const navigate = useNavigate();
@@ -76,8 +77,7 @@ export default function App() {
       <Routes>
         <Route path="/auth/linkedin/callback" element={<LinkedInOAuthCallback />} />
         <Route path="/docs/ads" element={<AdsPipelineDocs />} />
-        {/* TODO Task 14: replace with the real public landing page renderer (no app chrome). */}
-        <Route path="/p/:slug" element={<Placeholder title="Landing Page Pública" />} />
+        <Route path="/p/:slug" element={<PublicPage />} />
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="contas" element={<ContasRoute />} />
