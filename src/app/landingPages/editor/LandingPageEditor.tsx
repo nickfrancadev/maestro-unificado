@@ -23,11 +23,11 @@ import { getPage, savePage } from '../store/repo';
 import type { LandingPage } from '../store/model';
 import type { Block, BlockType } from '../schema/blockTypes';
 import type { RenderContext } from '../schema/registry';
-import { newBlock } from '../schema/registry';
+import { newBlock, REGISTRY } from '../schema/registry';
 import { listAccounts, toAccountContext, type LpAccount } from '../store/accounts';
 import { useEditorHistory } from './useEditorHistory';
 import { BlockLibrary } from './BlockLibrary';
-import { EditorCanvas, type ViewportMode } from './EditorCanvas';
+import { EditorCanvas, type ViewportMode, type CanvasSelection } from './EditorCanvas';
 import { PropsPanel } from './PropsPanel';
 import { PublishDialog } from '../publish/PublishDialog';
 
@@ -35,6 +35,13 @@ const AUTOSAVE_DELAY_MS = 600;
 
 type SaveStatus = 'idle' | 'pending' | 'saved';
 type PersonalizationMode = 'base' | 'personalize';
+
+/** A single selection: a slot within a block, or `'__block__'` for the
+ * block's own container (background click, not a specific slot). Only one
+ * block/slot pair can be selected at a time — mirrors the single
+ * `editingText` boolean below (only one text slot can be in inline-edit
+ * mode at once). Alias of `CanvasSelection` (same shape EditorCanvas expects). */
+type Selection = CanvasSelection;
 
 function NotFoundState() {
   const navigate = useNavigate();
@@ -60,7 +67,8 @@ export function LandingPageEditor() {
   const history = useEditorHistory<LandingPage | null>(initialPage ?? null);
   const page = history.value;
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [editingText, setEditingText] = useState(false);
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
   const [accounts, setAccounts] = useState<LpAccount[]>([]);
   const [previewAccountId, setPreviewAccountId] = useState<string>('');
@@ -105,7 +113,7 @@ export function LandingPageEditor() {
 
   if (!id || !page) return <NotFoundState />;
 
-  const selectedBlock = page.blocks.find((b) => b.id === selectedId) ?? null;
+  const selectedBlock = page.blocks.find((b) => b.id === selection?.blockId) ?? null;
   const previewAccount = previewAccountId ? accounts.find((a) => a.id === previewAccountId) ?? null : null;
   const ctx = toAccountContext(previewAccount);
   const renderCtx: RenderContext = { ctx, brandKit: page.brandKit };
@@ -132,12 +140,16 @@ export function LandingPageEditor() {
     const at = index ?? blocks.length;
     blocks.splice(at, 0, block);
     updateBlocks(blocks);
-    setSelectedId(block.id);
+    setSelection({ blockId: block.id, slotId: '__block__' });
+    setEditingText(false);
   };
 
   const handleRemove = (blockId: string) => {
     updateBlocks(page.blocks.filter((b) => b.id !== blockId));
-    if (selectedId === blockId) setSelectedId(null);
+    if (selection?.blockId === blockId) {
+      setSelection(null);
+      setEditingText(false);
+    }
   };
 
   const handleDuplicate = (blockId: string) => {
@@ -148,7 +160,38 @@ export function LandingPageEditor() {
     const blocks = page.blocks.slice();
     blocks.splice(idx + 1, 0, copy);
     updateBlocks(blocks);
-    setSelectedId(copy.id);
+    setSelection({ blockId: copy.id, slotId: '__block__' });
+    setEditingText(false);
+  };
+
+  // Slot selection: clicking an unselected slot selects it. Clicking an
+  // already-selected TEXT slot a second time promotes it into inline
+  // contentEditable mode (the SlotText helper reacts to `editingText`).
+  // Non-text slots (button/image) and the block container never enter
+  // text-edit mode — a second click on those just re-selects (no-op).
+  const handleSelectSlot = (blockId: string, slotId: string) => {
+    const block = page.blocks.find((b) => b.id === blockId);
+    const isTextSlot = slotId !== '__block__' && block && REGISTRY[block.type].slots.find((s) => s.id === slotId)?.kind === 'text';
+    if (selection?.blockId === blockId && selection.slotId === slotId && isTextSlot) {
+      setEditingText(true);
+      return;
+    }
+    setSelection({ blockId, slotId });
+    setEditingText(false);
+  };
+
+  // Writes the inline-edited text back to the block's content prop. Since a
+  // text slot's id IS its content prop name (established during the slots
+  // migration, e.g. hero's 'headline' slot <-> `props.headline`), this is a
+  // direct `{ props: { [slotId]: value } }` patch through the existing
+  // `handleChangeBlock` path — so it respects base-vs-personalize mode the
+  // same way every Panel edit already does.
+  const handleEditText = (blockId: string, slotId: string, value: string) => {
+    const block = page.blocks.find((b) => b.id === blockId);
+    if (block) {
+      handleChangeBlock({ props: { ...block.props, [slotId]: value } }, block);
+    }
+    setEditingText(false);
   };
 
   const handleReorder = (fromIndex: number, toIndex: number) => {
@@ -161,13 +204,17 @@ export function LandingPageEditor() {
 
   // Writes a props/showIf patch either to the base block (editing mode) or
   // into page.accountOverrides[accountId][blockId] (personalize mode).
-  const handleChangeBlock = (patch: Partial<Block>) => {
-    if (!selectedBlock) return;
+  // `target` defaults to the currently selected block (Panel edits), but
+  // callers that already resolved a specific block (e.g. inline text edit)
+  // may pass it explicitly — both write through the same base-vs-personalize
+  // branch below.
+  const handleChangeBlock = (patch: Partial<Block>, target: Block | null = selectedBlock) => {
+    if (!target) return;
     if (isPersonalizing && previewAccountId) {
       const accountOverrides = { ...page.accountOverrides };
       const forAccount = { ...(accountOverrides[previewAccountId] ?? {}) };
-      const existing = forAccount[selectedBlock.id] ?? {};
-      forAccount[selectedBlock.id] = {
+      const existing = forAccount[target.id] ?? {};
+      forAccount[target.id] = {
         ...existing,
         ...patch,
         props: { ...(existing.props ?? {}), ...(patch.props ?? {}) },
@@ -176,7 +223,7 @@ export function LandingPageEditor() {
       updatePage({ accountOverrides });
     } else {
       const blocks = page.blocks.map((b) =>
-        b.id === selectedBlock.id ? { ...b, ...patch, props: { ...b.props, ...(patch.props ?? {}) } } : b,
+        b.id === target.id ? { ...b, ...patch, props: { ...b.props, ...(patch.props ?? {}) } } : b,
       );
       updateBlocks(blocks);
     }
@@ -314,11 +361,14 @@ export function LandingPageEditor() {
           </div>
           <EditorCanvas
             blocks={page.blocks}
-            selectedId={selectedId}
+            selection={selection}
+            editingText={editingText}
             renderCtx={renderCtx}
             viewport={viewport}
             overridesForAccount={overridesForAccount}
-            onSelect={setSelectedId}
+            onSelectSlot={handleSelectSlot}
+            onEditText={handleEditText}
+            onDeselect={() => { setSelection(null); setEditingText(false); }}
             onRemove={handleRemove}
             onDuplicate={handleDuplicate}
             onReorder={handleReorder}

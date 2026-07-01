@@ -19,7 +19,7 @@ import { FooterRender, FooterPanel, footerDefaults } from './blocks/footer';
 import { SpacerRender, SpacerPanel, spacerDefaults } from './blocks/spacer';
 import { EmbedRender, EmbedPanel, embedDefaults } from './blocks/embed';
 
-export type { RenderContext, BlockDef } from './registryTypes';
+export type { RenderContext, BlockDef, EditingContext } from './registryTypes';
 
 export const REGISTRY: Record<BlockType, BlockDef> = {
   navbar: {

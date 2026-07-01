@@ -7,7 +7,7 @@
 // component was ever mounted. These tests mount the real screens with a
 // seeded localStorage.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -80,6 +80,47 @@ describe('editor renders without throwing', () => {
   it('AI-composed page', () => { expect(() => renderEditor(seedAiPage().id)).not.toThrow(); });
   it('template page', () => { expect(() => renderEditor(seedTemplatePage().id)).not.toThrow(); });
   it('blank page', () => { expect(() => renderEditor(seedBlankPage().id)).not.toThrow(); });
+});
+
+describe('editor slot selection + inline text editing', () => {
+  it('clicking a text slot selects it (outline), a second click enters contentEditable, blur commits the new text', () => {
+    const page = seedTemplatePage();
+    const { container } = renderEditor(page.id);
+
+    // Find any rendered text slot in the canvas (data-slot is only present
+    // in editor mode — see slots.tsx).
+    const slotEl = container.querySelector('[data-slot]') as HTMLElement;
+    expect(slotEl).toBeTruthy();
+    const slotId = slotEl.getAttribute('data-slot')!;
+
+    // First click selects — outline applied, not yet contentEditable.
+    fireEvent.click(slotEl);
+    const selectedEl = container.querySelector(`[data-slot="${slotId}"]`) as HTMLElement;
+    expect(selectedEl.style.outline).toContain('#FF5F39');
+    expect(selectedEl.getAttribute('contenteditable')).not.toBe('true');
+
+    // Second click on the already-selected slot enters inline edit mode.
+    fireEvent.click(selectedEl);
+    const editingEl = container.querySelector(`[data-slot="${slotId}"]`) as HTMLElement;
+    expect(editingEl.getAttribute('contenteditable')).toBe('true');
+
+    // Typing + blur commits the new text back into the block's content prop
+    // and exits edit mode without throwing.
+    editingEl.textContent = 'Novo texto editado inline';
+    expect(() => fireEvent.blur(editingEl)).not.toThrow();
+
+    const afterBlur = container.querySelector(`[data-slot="${slotId}"]`) as HTMLElement;
+    expect(afterBlur.getAttribute('contenteditable')).not.toBe('true');
+    expect(container.textContent).toContain('Novo texto editado inline');
+  });
+
+  it('clicking a block background selects the container (__block__), not a slot', () => {
+    const page = seedTemplatePage();
+    const { container } = renderEditor(page.id);
+    const shell = container.querySelector('.group.relative') as HTMLElement;
+    expect(shell).toBeTruthy();
+    expect(() => fireEvent.click(shell)).not.toThrow();
+  });
 });
 
 describe('public page renders without throwing', () => {

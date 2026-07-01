@@ -1,6 +1,10 @@
 // BlockRenderer — renders a LandingPage document to DOM. This is the single
-// source of truth for WYSIWYG fidelity: the editor canvas, the mobile
-// preview, and the public page all render through this same component.
+// source of truth for WYSIWYG fidelity: the mobile preview and the public
+// page render through this component (the editor canvas renders blocks
+// itself via EditorCanvas/BlockShell, since it needs a per-block
+// selection/reorder/hover-controls wrapper — but both paths apply the same
+// `__block__` container style so what you see in the editor matches what
+// ships to `/p/:slug`).
 import type * as React from 'react';
 import { REGISTRY } from '../schema/registry';
 import type { RenderContext } from '../schema/registry';
@@ -8,6 +12,12 @@ import { resolveBlocks } from './resolveBlock';
 import type { AccountContext } from './resolveTokens';
 import type { LandingPage } from '../store/model';
 import type { PageEvent } from '../store/tracking';
+import type { SlotStyle } from '../editor/slotStyle';
+import { resolveSlotStyle, slotStyleToCss } from '../editor/slotStyle';
+
+/** Neutral/empty default for the block container style — see the matching
+ * constant + comment in editor/EditorCanvas.tsx. */
+const BLOCK_DEFAULT_STYLE: SlotStyle = {};
 
 export interface BlockRendererProps {
   page: LandingPage;
@@ -35,7 +45,13 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ page, accountId, c
         const def = REGISTRY[block.type];
         if (!def) return null;
         const Render = def.Render;
-        return <Render key={block.id} block={block} ctx={renderCtx} />;
+        const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
+        const blockCss = slotStyleToCss('block', resolveSlotStyle(BLOCK_DEFAULT_STYLE, styles.__block__));
+        return (
+          <div key={block.id} style={blockCss}>
+            <Render block={block} ctx={renderCtx} />
+          </div>
+        );
       })}
     </div>
   );

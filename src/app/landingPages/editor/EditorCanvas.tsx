@@ -1,25 +1,35 @@
-// EditorCanvas — center panel. Renders the resolved document through the
-// SAME `BlockRenderer` used by the public page (WYSIWYG), but wraps each
-// block in a selection/reorder/hover-controls shell so authors can select,
-// duplicate, remove, reorder (drag handle + up/down buttons) and drop new
-// blocks from the library at a specific position.
+// EditorCanvas — center panel. Renders each block's `Render` component
+// directly (same components the public page uses via BlockRenderer, so the
+// canvas stays WYSIWYG) wrapped in a selection/reorder/hover-controls shell
+// so authors can select, duplicate, remove, reorder (drag handle + up/down
+// buttons) and drop new blocks from the library at a specific position.
 //
-// Scope decision: inline `contentEditable` text editing was judged too risky
-// to do robustly in the time available — BlockRenderer's Render components
-// are shared with the read-only public page and were not designed to host
-// contentEditable regions safely (no selection/caret preservation across
-// re-renders, no per-field mapping back to props). Instead the canvas is
-// selection-only: clicking a block selects it and the right-hand PropsPanel
-// (already backed by each block's typed Panel) is the editing surface. This
-// keeps the canvas simple and correct rather than partially working.
+// Slot selection + inline text editing: each block gets a per-block
+// `EditingContext` (see schema/registryTypes.ts) threaded through
+// `renderCtx.editing`. The slot helpers (schema/blocks/slots.tsx) already
+// know how to render an outline on `selectedSlot` and go contentEditable
+// when `editingText` is also true — this file's job is just wiring: only
+// the block matching the current `selection.blockId` gets a live
+// `selectedSlot`/`editingText`; every other block gets a "dead" editing
+// context (`selectedSlot: null, editingText: false`) so its slots stay
+// clickable (to move selection there) but never show an outline or edit
+// state that belongs to a different block.
 import * as React from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import { GripVertical, Copy, Trash2, ChevronUp, ChevronDown, EyeOff } from 'lucide-react';
 import { REGISTRY } from '../schema/registry';
-import type { RenderContext } from '../schema/registry';
+import type { RenderContext, EditingContext } from '../schema/registry';
 import type { Block } from '../schema/blockTypes';
+import type { SlotStyle } from './slotStyle';
+import { resolveSlotStyle, slotStyleToCss } from './slotStyle';
 import { mergeOverride, isVisible } from '../engine/resolveBlock';
 import { NEW_BLOCK_DND_TYPE, type NewBlockDragItem } from './BlockLibrary';
+
+/** Neutral/empty default for the block container style — `__block__` has no
+ * built-in visual style of its own (unlike text/button/image slots, which
+ * have per-block defaults defined alongside their Render). An override (set
+ * via the container Panel, Task 8) is layered on top via `resolveSlotStyle`. */
+const BLOCK_DEFAULT_STYLE: SlotStyle = {};
 
 const EXISTING_BLOCK_DND_TYPE = 'EXISTING_BLOCK';
 
@@ -41,8 +51,10 @@ function BlockShell({
   index,
   total,
   selected,
+  editingContext,
+  blockStyleOverride,
   renderCtx,
-  onSelect,
+  onSelectBlock,
   onRemove,
   onDuplicate,
   onMove,
@@ -63,9 +75,17 @@ function BlockShell({
   hiddenForAccount: boolean;
   index: number;
   total: number;
+  /** True when ANY slot (including `'__block__'`) within this block is the
+   * current selection — drives the outer selection ring. */
   selected: boolean;
+  /** Per-block EditingContext (only "live" — i.e. with a non-null
+   * `selectedSlot` — for the currently selected block; see EditorCanvas). */
+  editingContext: EditingContext;
+  /** Resolved `styles.__block__` override for the container, already merged
+   * with the neutral default. */
+  blockStyleOverride?: SlotStyle;
   renderCtx: RenderContext;
-  onSelect: () => void;
+  onSelectBlock: () => void;
   onRemove: () => void;
   onDuplicate: () => void;
   onMove: (delta: -1 | 1) => void;
@@ -111,15 +131,17 @@ function BlockShell({
 
   if (!def) return null;
   const Render = def.Render;
+  const blockCss = slotStyleToCss('block', resolveSlotStyle(BLOCK_DEFAULT_STYLE, blockStyleOverride));
+  const blockRenderCtx: RenderContext = { ...renderCtx, editing: editingContext };
 
   return (
     <div
       ref={ref}
       className="group relative"
-      style={{ opacity: isDragging ? 0.35 : 1, outline: isOver ? '2px dashed #FF5F39' : undefined }}
+      style={{ opacity: isDragging ? 0.35 : 1, outline: isOver ? '2px dashed #FF5F39' : undefined, ...blockCss }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        onSelectBlock();
       }}
     >
       <div
@@ -176,7 +198,7 @@ function BlockShell({
         </div>
       </div>
       <div style={hiddenForAccount ? { opacity: 0.4 } : undefined}>
-        <Render block={resolvedBlock} ctx={renderCtx} />
+        <Render block={resolvedBlock} ctx={blockRenderCtx} />
       </div>
     </div>
   );
@@ -200,9 +222,17 @@ function InsertZone({ index, onDropNewBlock }: { index: number; onDropNewBlock: 
   );
 }
 
+/** The active slot selection: which block, and which slot within it
+ * (`'__block__'` for the block's own container). `null` means nothing is
+ * selected (empty canvas click). Mirrors `Selection` in LandingPageEditor. */
+export interface CanvasSelection { blockId: string; slotId: string; }
+
 export interface EditorCanvasProps {
   blocks: Block[];
-  selectedId: string | null;
+  selection: CanvasSelection | null;
+  /** Whether the currently selected slot is in inline contentEditable mode
+   * (only meaningful when `selection` points at a text slot). */
+  editingText: boolean;
   renderCtx: RenderContext;
   viewport: ViewportMode;
   /** Overrides for the currently selected preview account
@@ -210,20 +240,37 @@ export interface EditorCanvasProps {
    * preview account is selected (base/default mode — matches the public
    * page with no `?a=`). Same shape `resolveBlocks` consumes. */
   overridesForAccount?: Record<string, Partial<Block>>;
-  onSelect: (id: string | null) => void;
+  /** A slot (or `'__block__'`) inside `blockId` was clicked. */
+  onSelectSlot: (blockId: string, slotId: string) => void;
+  /** Inline text edit committed (blur) for `slotId` inside `blockId`. */
+  onEditText: (blockId: string, slotId: string, value: string) => void;
+  /** Empty canvas background clicked — clears selection entirely. */
+  onDeselect: () => void;
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onInsert: (type: string, index: number) => void;
 }
 
+/** An EditingContext with no active selection — handed to every block that
+ * ISN'T the currently selected one, so its slots stay clickable (selection
+ * can move there) without showing an outline or edit state that belongs
+ * elsewhere. The callbacks still work: clicking a slot on an unselected
+ * block calls `onSelectSlot` for THAT block, moving selection to it. */
+function inertEditingContext(onSelectSlot: (slotId: string) => void): EditingContext {
+  return { selectedSlot: null, editingText: false, onSelectSlot, onEditText: () => {} };
+}
+
 export function EditorCanvas({
   blocks,
-  selectedId,
+  selection,
+  editingText,
   renderCtx,
   viewport,
   overridesForAccount,
-  onSelect,
+  onSelectSlot,
+  onEditText,
+  onDeselect,
   onRemove,
   onDuplicate,
   onReorder,
@@ -246,7 +293,7 @@ export function EditorCanvas({
   );
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-y-auto bg-slate-100" onClick={() => onSelect(null)}>
+    <div className="flex h-full flex-1 flex-col overflow-y-auto bg-slate-100" onClick={onDeselect}>
       <div className="flex justify-center px-6 py-8">
         <div
           className="w-full bg-white shadow-sm transition-[max-width] duration-200"
@@ -258,26 +305,41 @@ export function EditorCanvas({
             </div>
           )}
           <InsertZone index={0} onDropNewBlock={onInsert} />
-          {blocks.map((block, index) => (
-            <React.Fragment key={block.id}>
-              <BlockShell
-                block={block}
-                resolvedBlock={resolvedBlocks[index]}
-                hiddenForAccount={!isVisible(block.showIf, renderCtx.ctx)}
-                index={index}
-                total={blocks.length}
-                selected={block.id === selectedId}
-                renderCtx={renderCtx}
-                onSelect={() => onSelect(block.id)}
-                onRemove={() => onRemove(block.id)}
-                onDuplicate={() => onDuplicate(block.id)}
-                onMove={(delta) => move(index, delta)}
-                onReorderDrop={onReorder}
-                onInsertDrop={onInsert}
-              />
-              <InsertZone index={index + 1} onDropNewBlock={onInsert} />
-            </React.Fragment>
-          ))}
+          {blocks.map((block, index) => {
+            const isSelectedBlock = selection?.blockId === block.id;
+            const editingContext: EditingContext = isSelectedBlock
+              ? {
+                  selectedSlot: selection!.slotId,
+                  editingText,
+                  onSelectSlot: (slotId) => onSelectSlot(block.id, slotId),
+                  onEditText: (slotId, value) => onEditText(block.id, slotId, value),
+                }
+              : inertEditingContext((slotId) => onSelectSlot(block.id, slotId));
+            const resolved = resolvedBlocks[index];
+            const blockStyles = (resolved.props.styles ?? {}) as Record<string, SlotStyle>;
+            return (
+              <React.Fragment key={block.id}>
+                <BlockShell
+                  block={block}
+                  resolvedBlock={resolved}
+                  hiddenForAccount={!isVisible(block.showIf, renderCtx.ctx)}
+                  index={index}
+                  total={blocks.length}
+                  selected={isSelectedBlock}
+                  editingContext={editingContext}
+                  blockStyleOverride={blockStyles.__block__}
+                  renderCtx={renderCtx}
+                  onSelectBlock={() => onSelectSlot(block.id, '__block__')}
+                  onRemove={() => onRemove(block.id)}
+                  onDuplicate={() => onDuplicate(block.id)}
+                  onMove={(delta) => move(index, delta)}
+                  onReorderDrop={onReorder}
+                  onInsertDrop={onInsert}
+                />
+                <InsertZone index={index + 1} onDropNewBlock={onInsert} />
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
     </div>
