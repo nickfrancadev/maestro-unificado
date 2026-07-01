@@ -12,13 +12,16 @@ import {
   Globe,
   EyeOff,
   LayoutTemplate,
+  Bell,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { listPages, duplicatePage, savePage } from '../store/repo';
 import type { LandingPage } from '../store/model';
-import { listEvents } from '../store/tracking';
+import { listEvents, listAlerts } from '../store/tracking';
 import { ensureSeeded } from '../store/seed';
 import { listAccounts, type LpAccount } from '../store/accounts';
+import { AlertsPanel } from '../alerts/AlertsPanel';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 
 type StatusFilter = 'all' | LandingPage['status'];
 type SortKey = 'recent' | 'visits' | 'engagement';
@@ -138,6 +141,8 @@ export function LandingPagesOverview() {
   const [accountFilter, setAccountFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortKey>('recent');
+  const [alertCount, setAlertCount] = useState(0);
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
   const reload = () => setPages(listPages());
 
@@ -145,6 +150,7 @@ export function LandingPagesOverview() {
     ensureSeeded();
     setPages(listPages());
     setAccounts(listAccounts());
+    setAlertCount(listAlerts().length);
   }, []);
 
   const accountsById = useMemo(() => {
@@ -207,6 +213,11 @@ export function LandingPagesOverview() {
   const publishedCount = pages.filter((p) => p.status === 'published').length;
   const draftCount = pages.filter((p) => p.status === 'draft').length;
 
+  const openAlerts = () => {
+    setAlertCount(listAlerts().length);
+    setAlertsOpen(true);
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
@@ -219,13 +230,25 @@ export function LandingPagesOverview() {
               : 'Crie e gerencie landing pages personalizadas por conta.'}
           </p>
         </div>
-        <button
-          onClick={() => navigate('/landing-pages/new')}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#FF5F39] text-white rounded-lg text-sm font-medium hover:bg-[#E54A26] transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Nova Landing Page
-        </button>
+        <div className="flex items-center gap-3">
+          {alertCount > 0 && (
+            <button
+              onClick={openAlerts}
+              className="flex items-center gap-2 px-3 py-2.5 bg-white border border-[#FFD0C2] text-[#E54A26] rounded-lg text-sm font-medium hover:bg-[#FFF1ED] transition-colors shadow-sm"
+              title="Ver alertas de intenção"
+            >
+              <Bell className="w-4 h-4" />
+              {alertCount} alerta{alertCount !== 1 ? 's' : ''}
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/landing-pages/new')}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#FF5F39] text-white rounded-lg text-sm font-medium hover:bg-[#E54A26] transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Nova Landing Page
+          </button>
+        </div>
       </div>
 
       {/* Filters & Search */}
@@ -404,6 +427,23 @@ export function LandingPagesOverview() {
           </table>
         </div>
       </div>
+
+      <Dialog open={alertsOpen} onOpenChange={setAlertsOpen}>
+        <DialogContent className="sm:max-w-xl p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-[#FF5F39]" />
+              Alertas de intenção
+            </DialogTitle>
+            <DialogDescription>
+              Contas com sinais de alta intenção nas suas landing pages.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-y-auto">
+            <AlertsPanel bare />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
