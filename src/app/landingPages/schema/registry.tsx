@@ -149,7 +149,10 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: FormRender,
     Panel: FormPanel,
-    slots: [],
+    slots: [
+      { id: 'title', kind: 'text', label: 'Título' },
+      { id: 'subtitle', kind: 'text', label: 'Subtítulo' },
+    ],
   },
   faq: {
     type: 'faq',

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
+import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
 import { TextField, TextAreaField, ItemListEditor } from './panelFields';
+import { SlotText } from './slots';
 
 interface FormFieldDef { name: string; label: string; type: 'text' | 'email' | 'phone' }
 
@@ -13,6 +15,9 @@ export interface FormProps {
   submitLabel: string;
   successMessage?: string;
 }
+
+const FORM_TITLE_STYLE: SlotStyle = { fontSize: 20, fontWeight: 'bold', color: '#0F172A' };
+const FORM_SUBTITLE_STYLE: SlotStyle = { fontSize: 14, color: '#475569' };
 
 export function formDefaults(): FormProps {
   return {
@@ -39,6 +44,7 @@ const DEFAULT_FIELDS: FormFieldDef[] = [
 // markup but is inert (no network/localStorage side effects).
 export function FormRender({ block, ctx }: { block: Block; ctx: RenderContext }) {
   const p = block.props as unknown as FormProps;
+  const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
   const fields = p.fields && p.fields.length > 0 ? p.fields : DEFAULT_FIELDS;
   const primary = ctx.brandKit.colors.primary || '#0F172A';
   const [values, setValues] = useState<Record<string, string>>({});
@@ -59,8 +65,27 @@ export function FormRender({ block, ctx }: { block: Block; ctx: RenderContext })
   return (
     <section id="form" className="px-6 py-14 sm:px-12">
       <div className="mx-auto max-w-md rounded-lg border border-border/60 p-6">
-        {p.title && <h2 className="text-xl font-bold text-slate-900">{resolveTokens(p.title, ctx.ctx)}</h2>}
-        {p.subtitle && <p className="mt-1 text-sm text-slate-600">{resolveTokens(p.subtitle, ctx.ctx)}</p>}
+        {p.title && (
+          <SlotText
+            slotId="title"
+            as="h2"
+            value={p.title}
+            ctx={ctx}
+            defaultStyle={FORM_TITLE_STYLE}
+            styleOverride={styles.title}
+          />
+        )}
+        {p.subtitle && (
+          <SlotText
+            slotId="subtitle"
+            as="p"
+            className="mt-1"
+            value={p.subtitle}
+            ctx={ctx}
+            defaultStyle={FORM_SUBTITLE_STYLE}
+            styleOverride={styles.subtitle}
+          />
+        )}
         <form
           className="mt-4 space-y-3"
           onSubmit={(e) => {
