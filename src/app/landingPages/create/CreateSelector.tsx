@@ -1,7 +1,7 @@
 // Creation selector — /landing-pages/new. Three paths (AI / template / blank)
 // that all end by creating a draft LandingPage in the repo and navigating
 // into the editor.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Sparkles, LayoutTemplate, FileText, Loader2, ArrowRight } from 'lucide-react';
 import { TEMPLATES } from '../templates/catalog';
@@ -27,6 +27,16 @@ export function CreateSelector() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>('choose');
   const [generating, setGenerating] = useState(false);
+  const aiTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (aiTimerRef.current !== null) {
+        window.clearTimeout(aiTimerRef.current);
+        aiTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const goToEditor = (id: string) => navigate(`/landing-pages/${id}/edit`);
 
@@ -58,8 +68,9 @@ export function CreateSelector() {
     setGenerating(true);
     // Simulated "AI generation" delay — composePage itself is instantaneous
     // and deterministic; the spinner just sells the async feel.
-    window.setTimeout(() => {
-      const blocks = composePage(brief as AiBrief);
+    aiTimerRef.current = window.setTimeout(() => {
+      aiTimerRef.current = null;
+      const blocks = composePage(brief);
       const page = newLandingPage({
         name: pageName,
         templateOrigin: 'ai',
