@@ -1,0 +1,60 @@
+import type { Block } from '../blockTypes';
+import type { RenderContext } from '../registryTypes';
+import { resolveTokens } from '../../engine/resolveTokens';
+import { TextField, ItemListEditor } from './panelFields';
+
+interface FooterLink { label: string; href: string }
+
+export interface FooterProps {
+  companyText: string;
+  links: FooterLink[];
+}
+
+export function footerDefaults(): FooterProps {
+  return {
+    companyText: '© {{account.name}} · Todos os direitos reservados',
+    links: [
+      { label: 'Privacidade', href: '#' },
+      { label: 'Termos', href: '#' },
+    ],
+  };
+}
+
+export function FooterRender({ block, ctx }: { block: Block; ctx: RenderContext }) {
+  const p = block.props as unknown as FooterProps;
+  const links = p.links ?? [];
+  return (
+    <footer className="flex flex-col items-center justify-between gap-3 border-t border-border/60 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:px-12">
+      <span>{resolveTokens(p.companyText ?? '', ctx.ctx)}</span>
+      <div className="flex items-center gap-4">
+        {links.map((l, i) => (
+          <a key={i} href={l.href} className="hover:text-slate-700">
+            {resolveTokens(l.label ?? '', ctx.ctx)}
+          </a>
+        ))}
+      </div>
+    </footer>
+  );
+}
+
+export function FooterPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
+  const p = block.props as unknown as FooterProps;
+  const set = (patch: Partial<FooterProps>) => onChange({ props: { ...block.props, ...patch } });
+  return (
+    <div className="space-y-4">
+      <TextField label="Texto de rodapé" value={p.companyText} onChange={(v) => set({ companyText: v })} />
+      <ItemListEditor
+        label="Links"
+        items={p.links ?? []}
+        makeItem={() => ({ label: 'Novo link', href: '#' })}
+        onChange={(links) => set({ links: links as FooterLink[] })}
+        renderItem={(item, update) => (
+          <>
+            <TextField label="Texto" value={item.label as string} onChange={(v) => update({ label: v })} />
+            <TextField label="Link" value={item.href as string} onChange={(v) => update({ href: v })} />
+          </>
+        )}
+      />
+    </div>
+  );
+}
