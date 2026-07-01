@@ -966,14 +966,16 @@ git commit -m "feat(landing-pages): account adapter + localStorage seed"
 
 **Files:**
 - Create: `src/app/landingPages/overview/LandingPagesOverview.tsx`
-- Modify: `src/app/App.tsx` (add routes + nav entry)
+- Modify: `src/app/App.tsx` (add routes)
+- Modify: `src/app/components/Sidebar.tsx` (add "Landing Pages" nav item)
 
 **Interfaces:**
 - Consumes: `listPages`, `duplicatePage`, `deletePage`, `savePage` (Task 5); `listEvents` (Task 6); `ensureSeeded` (Task 11); `buildComparisonData`/`accountColor` for summary metrics.
 - Produces: route `/landing-pages` rendering the grid with status badges, summary metrics, filters (status/account/campaign/template), search, sort, and per-row actions (Edit → `/landing-pages/:id/edit`, Duplicate, Publish/Unpublish, Analytics, Archive, Copy URL). Primary CTA "Nova Landing Page" → `/landing-pages/new`.
 
-- [ ] **Step 1: Implement** the overview + wire routes in `App.tsx`:
-  `/landing-pages`, `/landing-pages/new`, `/landing-pages/:id/edit`, `/landing-pages/:id/analytics`, `/p/:slug`. Call `ensureSeeded()` on mount.
+**Sidebar nav entry (required):** `src/app/components/Sidebar.tsx` renders a `navItems` array of `{ icon, key }` (lucide icons; each button does `navigate("/" + key)` and highlights active with `#FF5F39`). Add an entry `{ icon: LayoutTemplate, key: "landing-pages" }` (import `LayoutTemplate` from `lucide-react`), placed alongside the existing items (e.g. after Plays). The existing `pageKey`/`isActive` logic already handles `/landing-pages` since the key maps 1:1 to the route — no special-case needed in the key→route mapping. Verify the icon highlights when on `/landing-pages`.
+
+- [ ] **Step 1: Implement** the overview, wire routes in `App.tsx` (`/landing-pages`, `/landing-pages/new`, `/landing-pages/:id/edit`, `/landing-pages/:id/analytics`, `/p/:slug`; call `ensureSeeded()` on mount), and add the sidebar nav item in `Sidebar.tsx` per the note above.
 - [ ] **Step 2: Build**
 
 Run: `npm run build`
@@ -981,13 +983,13 @@ Expected: no TS errors.
 
 - [ ] **Step 3: Manual check**
 
-Run: `npm run dev`; open `/landing-pages`; verify seeded pages render with status + a traffic metric (AC-5.1.1); duplicate produces a new draft (AC-5.1.3); filter by account narrows the list (AC-5.1.2).
+Run: `npm run dev`; verify the new "Landing Pages" icon appears in the sidebar and navigates to `/landing-pages` (highlighting when active); open `/landing-pages`; verify seeded pages render with status + a traffic metric (AC-5.1.1); duplicate produces a new draft (AC-5.1.3); filter by account narrows the list (AC-5.1.2).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/app/landingPages/overview/LandingPagesOverview.tsx src/app/App.tsx
-git commit -m "feat(landing-pages): overview screen + routes"
+git add src/app/landingPages/overview/LandingPagesOverview.tsx src/app/App.tsx src/app/components/Sidebar.tsx
+git commit -m "feat(landing-pages): overview screen + routes + sidebar nav item"
 ```
 
 ### Task 13: Creation selector (AI / template / blank)
