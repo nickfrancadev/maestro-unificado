@@ -5,7 +5,25 @@
 // the document as a quicker, drag-free path to the same result.
 import * as React from 'react';
 import { useDrag } from 'react-dnd';
-import { Plus } from 'lucide-react';
+import {
+  Plus,
+  Menu,
+  Megaphone,
+  Building2,
+  LayoutGrid,
+  Type,
+  Image,
+  Quote,
+  BarChart3,
+  MousePointerClick,
+  TextCursorInput,
+  HelpCircle,
+  PanelBottom,
+  MoveVertical,
+  Code2,
+  Square,
+  type LucideIcon,
+} from 'lucide-react';
 import { REGISTRY } from '../schema/registry';
 import type { BlockType } from '../schema/blockTypes';
 
@@ -24,8 +42,29 @@ const GROUP_LABEL: Record<string, string> = {
 
 const GROUP_ORDER = ['estrutura', 'conteudo', 'conversao', 'prova'];
 
+// Local-only icon mapping for the block library UI. Not part of the block
+// registry/schema — purely a visual affordance so each block button reads
+// like an icon-first builder (Framer-style) instead of plain text.
+const BLOCK_ICON: Record<BlockType, LucideIcon> = {
+  navbar: Menu,
+  hero: Megaphone,
+  logos: Building2,
+  features: LayoutGrid,
+  richtext: Type,
+  media: Image,
+  testimonial: Quote,
+  stats: BarChart3,
+  cta: MousePointerClick,
+  form: TextCursorInput,
+  faq: HelpCircle,
+  footer: PanelBottom,
+  spacer: MoveVertical,
+  embed: Code2,
+};
+
 function LibraryItem({ type, onAdd }: { type: BlockType; onAdd: (type: BlockType) => void }) {
   const def = REGISTRY[type];
+  const Icon = BLOCK_ICON[type] ?? Square;
   const [{ isDragging }, drag] = useDrag(() => ({
     type: NEW_BLOCK_DND_TYPE,
     item: { blockType: type } satisfies NewBlockDragItem,
@@ -41,7 +80,10 @@ function LibraryItem({ type, onAdd }: { type: BlockType; onAdd: (type: BlockType
       style={{ opacity: isDragging ? 0.4 : 1, cursor: 'grab' }}
       title={`Adicionar bloco ${def.label}`}
     >
-      <span>{def.label}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        <Icon className="size-4 shrink-0 text-slate-400" />
+        <span className="truncate">{def.label}</span>
+      </span>
       <Plus className="size-3.5 shrink-0 text-slate-400" />
     </button>
   );
