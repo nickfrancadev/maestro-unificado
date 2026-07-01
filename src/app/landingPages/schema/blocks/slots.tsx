@@ -28,30 +28,50 @@ export function SlotText({ slotId, ctx, styleOverride, defaultStyle, as = 'p', v
   const Tag = as as keyof React.JSX.IntrinsicElements;
   const style = slotStyleToCss('text', resolveSlotStyle(defaultStyle, styleOverride));
 
+  // Hooks must run unconditionally (rules-of-hooks), so declare them before the
+  // public/editor branch split even though only the editor's contentEditable
+  // path uses the ref.
+  const editRef = React.useRef<HTMLElement | null>(null);
+  const editing = ctx.editing;
+  const isEditingText = !!editing && editing.selectedSlot === slotId && editing.editingText;
+  React.useEffect(() => {
+    if (!isEditingText || !editRef.current) return;
+    const el = editRef.current;
+    el.focus();
+    // Place the caret at the end of the existing text.
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }, [isEditingText]);
+
   if (!ctx.editing) {
     return <Tag className={className} style={style}>{resolveTokens(value, ctx.ctx)}</Tag>;
   }
 
-  const { editing } = ctx;
-  const selected = editing.selectedSlot === slotId;
-  const isEditingText = selected && editing.editingText;
+  const selected = ctx.editing.selectedSlot === slotId;
   const finalStyle = selected ? { ...style, ...SELECTED_OUTLINE } : style;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    editing.onSelectSlot(slotId);
+    ctx.editing!.onSelectSlot(slotId);
   };
 
   if (isEditingText) {
     return (
       <Tag
+        ref={editRef as React.Ref<never>}
         data-slot={slotId}
         className={className}
         style={finalStyle}
         contentEditable
         suppressContentEditableWarning
         onClick={handleClick}
-        onBlur={(e: React.FocusEvent<HTMLElement>) => editing.onEditText(slotId, e.currentTarget.textContent ?? '')}
+        onBlur={(e: React.FocusEvent<HTMLElement>) => ctx.editing!.onEditText(slotId, e.currentTarget.textContent ?? '')}
       >
         {value}
       </Tag>

@@ -189,6 +189,13 @@ export function LandingPageEditor() {
   // same way every StylePanel edit already does.
   const handleEditText = (blockId: string, slotId: string, value: string) => {
     const block = page.blocks.find((b) => b.id === blockId);
+    // No-op guard: focus/blur with no actual edit (e.g. click to select, then
+    // click away without typing) would otherwise still push an undo-history
+    // entry and trigger an autosave. Only commit when the value changed.
+    if (block && block.props[slotId] === value) {
+      setEditingText(false);
+      return;
+    }
     if (block) {
       handleChangeBlock({ props: { ...block.props, [slotId]: value } }, block);
     }

@@ -32,14 +32,22 @@ export function TestimonialRender({ block, ctx }: { block: Block; ctx: RenderCon
     <section className="px-6 py-14 sm:px-12">
       <div className="mx-auto max-w-2xl text-center">
         <Quote className="mx-auto mb-4 size-8" style={{ color: primary }} />
-        <SlotText
-          slotId="quote"
-          as="p"
-          value={`“${p.quote ?? ''}”`}
-          ctx={ctx}
-          defaultStyle={TESTIMONIAL_QUOTE_STYLE}
-          styleOverride={styles.quote}
-        />
+        {/* Decorative curly quotes live OUTSIDE the SlotText value so the
+            editable content always equals `props.quote` exactly (no
+            accretion of quote marks on repeated inline edits — see
+            handleEditText round-trip invariant). */}
+        <p className="flex flex-wrap items-baseline justify-center gap-x-0.5">
+          <span aria-hidden="true">“</span>
+          <SlotText
+            slotId="quote"
+            as="span"
+            value={p.quote ?? ''}
+            ctx={ctx}
+            defaultStyle={TESTIMONIAL_QUOTE_STYLE}
+            styleOverride={styles.quote}
+          />
+          <span aria-hidden="true">”</span>
+        </p>
         <div className="mt-6 flex items-center justify-center gap-3">
           {p.avatarUrl ? (
             <img src={p.avatarUrl} alt="" className="size-10 rounded-full object-cover" />
