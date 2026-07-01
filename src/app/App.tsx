@@ -18,6 +18,7 @@ import { CampaignList } from "./campaigns/CampaignList";
 import { CampaignWizard } from "./campaigns/CampaignWizard";
 import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
 import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
+import { LandingPagesOverview } from "./landingPages/overview/LandingPagesOverview";
 
 function PlaysRoute() {
   const navigate = useNavigate();
@@ -74,6 +75,8 @@ export default function App() {
       <Routes>
         <Route path="/auth/linkedin/callback" element={<LinkedInOAuthCallback />} />
         <Route path="/docs/ads" element={<AdsPipelineDocs />} />
+        {/* TODO Task 14: replace with the real public landing page renderer (no app chrome). */}
+        <Route path="/p/:slug" element={<Placeholder title="Landing Page Pública" />} />
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="contas" element={<ContasRoute />} />
@@ -92,6 +95,13 @@ export default function App() {
           <Route path="campaigns/new/advanced" element={<AdvancedCampaignCreator />} />
           <Route path="campaigns/:id/edit" element={<CampaignWizard />} />
           <Route path="campaigns/:id" element={<CampaignAnalytics />} />
+          <Route path="landing-pages" element={<LandingPagesOverview />} />
+          {/* TODO Task 13: replace with the real builder/editor screen. */}
+          <Route path="landing-pages/new" element={<Placeholder title="Nova Landing Page" />} />
+          {/* TODO Task 13: replace with the real builder/editor screen. */}
+          <Route path="landing-pages/:id/edit" element={<Placeholder title="Editar Landing Page" />} />
+          {/* TODO Task 17: replace with the real per-page analytics screen. */}
+          <Route path="landing-pages/:id/analytics" element={<Placeholder title="Analytics da Landing Page" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
