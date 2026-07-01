@@ -19,7 +19,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ArrowLeft, Undo2, Redo2, Monitor, Smartphone, Rocket, Check, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
 import { getPage, savePage } from '../store/repo';
 import type { LandingPage } from '../store/model';
 import type { Block, BlockType } from '../schema/blockTypes';
@@ -30,6 +29,7 @@ import { useEditorHistory } from './useEditorHistory';
 import { BlockLibrary } from './BlockLibrary';
 import { EditorCanvas, type ViewportMode } from './EditorCanvas';
 import { PropsPanel } from './PropsPanel';
+import { PublishDialog } from '../publish/PublishDialog';
 
 const AUTOSAVE_DELAY_MS = 600;
 
@@ -66,6 +66,7 @@ export function LandingPageEditor() {
   const [previewAccountId, setPreviewAccountId] = useState<string>('');
   const [mode, setMode] = useState<PersonalizationMode>('base');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [publishOpen, setPublishOpen] = useState(false);
 
   useEffect(() => {
     setAccounts(listAccounts());
@@ -286,15 +287,15 @@ export function LandingPageEditor() {
               </button>
             </div>
 
-            {/* Publish — stub for now. Real publish dialog lands in Task 16. */}
+            {/* Publish */}
             <button
               type="button"
-              onClick={() => toast.info('Publicação avançada chega na próxima etapa. Use "Publicar" na lista de landing pages por enquanto.')}
+              onClick={() => setPublishOpen(true)}
               className="flex items-center gap-1.5 rounded-md bg-[#FF5F39] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#E54A26]"
-              title="Publicar (placeholder — Task 16 traz o fluxo completo)"
+              title={page.status === 'published' ? 'Gerenciar publicação' : 'Publicar'}
             >
               <Rocket className="size-3.5" />
-              Publicar
+              {page.status === 'published' ? 'Publicada' : 'Publicar'}
             </button>
           </div>
         </div>
@@ -325,6 +326,19 @@ export function LandingPageEditor() {
           </div>
         </div>
       </div>
+
+      <PublishDialog
+        page={page}
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        onChanged={(updated) => {
+          // PublishDialog already persists via savePage — mirror the change
+          // into the in-memory document without creating a new undo step
+          // (publish/unpublish is metadata, not a block edit) so the button
+          // label and status badge reflect it immediately.
+          history.replace(updated);
+        }}
+      />
     </DndProvider>
   );
 }
