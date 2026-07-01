@@ -32,7 +32,7 @@ export function HeroRender({ block, ctx }: { block: Block; ctx: RenderContext })
   const primary = ctx.brandKit.colors.primary || '#0F172A';
   const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
   const eyebrowStyle: SlotStyle = { fontSize: 14, fontWeight: 'semibold', color: primary };
-  const headlineStyle: SlotStyle = { fontSize: 32, fontWeight: 'bold', color: '#0F172A' };
+  const headlineStyle: SlotStyle = { fontSize: 30, fontWeight: 'bold', color: '#0F172A' };
   const ctaStyle: SlotStyle = { bgColor: primary, textColor: '#FFFFFF', radius: 6 };
   return (
     <section className="grid gap-8 px-6 py-16 sm:grid-cols-2 sm:items-center sm:px-12">
