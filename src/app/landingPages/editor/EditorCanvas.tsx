@@ -55,6 +55,7 @@ function BlockShell({
   onDuplicate: () => void;
   onMove: (delta: -1 | 1) => void;
   onReorderDrop: (fromIndex: number, toIndex: number) => void;
+  onInsertDrop: (type: string, index: number) => void;
 }) {
   const def = REGISTRY[block.type];
   const ref = React.useRef<HTMLDivElement>(null);
@@ -71,14 +72,25 @@ function BlockShell({
     drop: (item: ExistingBlockDragItem | NewBlockDragItem, monitor) => {
       if (monitor.didDrop()) return;
       if ('index' in item) {
+        // Existing-block reorder: dropped directly on this shell.
         if (item.index === index) return;
         onReorderDrop(item.index, index);
+        return;
       }
-      // NEW_BLOCK drops are handled by the parent's onDropNewBlock via a
-      // separate hook below (see NewBlockDropZone) — existing-block shell
-      // only needs to react to reorder drags landing directly on it.
+      // NEW_BLOCK dropped on the block's body (not the thin InsertZone
+      // strip). Insert it adjacent to this block, choosing before/after
+      // based on pointer position relative to the shell's vertical
+      // midpoint — same technique used for reorder drop targets.
+      const clientOffset = monitor.getClientOffset();
+      const bounds = ref.current?.getBoundingClientRect();
+      let targetIndex = index;
+      if (clientOffset && bounds) {
+        const midY = (bounds.top + bounds.bottom) / 2;
+        targetIndex = clientOffset.y > midY ? index + 1 : index;
+      }
+      onInsertDrop(item.blockType, targetIndex);
     },
-  }), [index, onReorderDrop]);
+  }), [index, onReorderDrop, onInsertDrop]);
 
   drag(drop(ref));
 
@@ -220,6 +232,7 @@ export function EditorCanvas({
                 onDuplicate={() => onDuplicate(block.id)}
                 onMove={(delta) => move(index, delta)}
                 onReorderDrop={onReorder}
+                onInsertDrop={onInsert}
               />
               <InsertZone index={index + 1} onDropNewBlock={onInsert} />
             </React.Fragment>
