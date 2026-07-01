@@ -2,7 +2,6 @@ import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
-import { TextField, TextAreaField, ItemListEditor } from './panelFields';
 import { SlotText } from './slots';
 import { CheckCircle2 } from 'lucide-react';
 
@@ -54,27 +53,5 @@ export function FeaturesRender({ block, ctx }: { block: Block; ctx: RenderContex
         ))}
       </div>
     </section>
-  );
-}
-
-export function FeaturesPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as FeaturesProps;
-  const set = (patch: Partial<FeaturesProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Título" value={p.title} onChange={(v) => set({ title: v })} />
-      <ItemListEditor
-        label="Diferenciais"
-        items={p.items ?? []}
-        makeItem={() => ({ title: 'Novo diferencial', description: '' })}
-        onChange={(items) => set({ items: items as FeatureItem[] })}
-        renderItem={(item, update) => (
-          <>
-            <TextField label="Título" value={item.title as string} onChange={(v) => update({ title: v })} />
-            <TextAreaField label="Descrição" value={item.description as string} onChange={(v) => update({ description: v })} />
-          </>
-        )}
-      />
-    </div>
   );
 }

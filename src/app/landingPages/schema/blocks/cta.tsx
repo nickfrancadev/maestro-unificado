@@ -1,7 +1,6 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
-import { TextField, TextAreaField } from './panelFields';
 import { SlotText, SlotButton } from './slots';
 
 export interface CtaProps {
@@ -61,18 +60,5 @@ export function CtaRender({ block, ctx }: { block: Block; ctx: RenderContext }) 
         styleOverride={styles.cta}
       />
     </section>
-  );
-}
-
-export function CtaPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as CtaProps;
-  const set = (patch: Partial<CtaProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Título" value={p.headline} onChange={(v) => set({ headline: v })} />
-      <TextAreaField label="Subtítulo" value={p.subheadline} onChange={(v) => set({ subheadline: v })} />
-      <TextField label="Texto do botão" value={p.buttonLabel} onChange={(v) => set({ buttonLabel: v })} />
-      <TextField label="Link do botão" value={p.buttonHref} onChange={(v) => set({ buttonHref: v })} />
-    </div>
   );
 }

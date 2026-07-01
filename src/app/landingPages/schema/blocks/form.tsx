@@ -3,7 +3,6 @@ import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
-import { TextField, TextAreaField, ItemListEditor } from './panelFields';
 import { SlotText } from './slots';
 
 interface FormFieldDef { name: string; label: string; type: 'text' | 'email' | 'phone' }
@@ -117,31 +116,5 @@ export function FormRender({ block, ctx }: { block: Block; ctx: RenderContext })
         </form>
       </div>
     </section>
-  );
-}
-
-export function FormPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as FormProps;
-  const set = (patch: Partial<FormProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Título" value={p.title} onChange={(v) => set({ title: v })} />
-      <TextAreaField label="Subtítulo" value={p.subtitle} onChange={(v) => set({ subtitle: v })} />
-      <ItemListEditor
-        label="Campos"
-        items={p.fields ?? []}
-        makeItem={() => ({ name: `campo_${(p.fields?.length ?? 0) + 1}`, label: 'Novo campo', type: 'text' })}
-        onChange={(fields) => set({ fields: fields as FormFieldDef[] })}
-        renderItem={(item, update) => (
-          <TextField label="Rótulo" value={item.label as string} onChange={(v) => update({ label: v })} />
-        )}
-      />
-      <TextField label="Texto do botão" value={p.submitLabel} onChange={(v) => set({ submitLabel: v })} />
-      <TextAreaField
-        label="Mensagem de sucesso"
-        value={p.successMessage ?? ''}
-        onChange={(v) => set({ successMessage: v })}
-      />
-    </div>
   );
 }

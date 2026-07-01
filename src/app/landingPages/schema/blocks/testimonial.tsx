@@ -1,7 +1,6 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
-import { TextField, TextAreaField } from './panelFields';
 import { Quote } from 'lucide-react';
 import { SlotText } from './slots';
 
@@ -68,18 +67,5 @@ export function TestimonialRender({ block, ctx }: { block: Block; ctx: RenderCon
         </div>
       </div>
     </section>
-  );
-}
-
-export function TestimonialPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as TestimonialProps;
-  const set = (patch: Partial<TestimonialProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextAreaField label="Depoimento" value={p.quote} onChange={(v) => set({ quote: v })} />
-      <TextField label="Nome" value={p.authorName} onChange={(v) => set({ authorName: v })} />
-      <TextField label="Cargo/Empresa" value={p.authorRole} onChange={(v) => set({ authorRole: v })} />
-      <TextField label="URL do avatar" value={p.avatarUrl} onChange={(v) => set({ avatarUrl: v })} />
-    </div>
   );
 }

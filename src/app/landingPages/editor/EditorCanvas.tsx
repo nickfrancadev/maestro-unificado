@@ -28,7 +28,8 @@ import { NEW_BLOCK_DND_TYPE, type NewBlockDragItem } from './BlockLibrary';
 /** Neutral/empty default for the block container style — `__block__` has no
  * built-in visual style of its own (unlike text/button/image slots, which
  * have per-block defaults defined alongside their Render). An override (set
- * via the container Panel, Task 8) is layered on top via `resolveSlotStyle`. */
+ * via the StylePanel's block controls, Task 8) is layered on top via
+ * `resolveSlotStyle`. */
 const BLOCK_DEFAULT_STYLE: SlotStyle = {};
 
 const EXISTING_BLOCK_DND_TYPE = 'EXISTING_BLOCK';

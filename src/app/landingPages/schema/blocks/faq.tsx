@@ -2,7 +2,6 @@ import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
-import { TextField, TextAreaField, ItemListEditor } from './panelFields';
 import { SlotText } from './slots';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../../../components/ui/accordion';
 
@@ -51,27 +50,5 @@ export function FaqRender({ block, ctx }: { block: Block; ctx: RenderContext }) 
         ))}
       </Accordion>
     </section>
-  );
-}
-
-export function FaqPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as FaqProps;
-  const set = (patch: Partial<FaqProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Título" value={p.title} onChange={(v) => set({ title: v })} />
-      <ItemListEditor
-        label="Perguntas"
-        items={p.items ?? []}
-        makeItem={() => ({ question: 'Nova pergunta', answer: '' })}
-        onChange={(items) => set({ items: items as FaqItem[] })}
-        renderItem={(item, update) => (
-          <>
-            <TextField label="Pergunta" value={item.question as string} onChange={(v) => update({ question: v })} />
-            <TextAreaField label="Resposta" value={item.answer as string} onChange={(v) => update({ answer: v })} />
-          </>
-        )}
-      />
-    </div>
   );
 }

@@ -2,7 +2,6 @@ import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
-import { TextField, ItemListEditor } from './panelFields';
 import { SlotText } from './slots';
 
 interface StatItem { value: string; label: string }
@@ -54,27 +53,5 @@ export function StatsRender({ block, ctx }: { block: Block; ctx: RenderContext }
         ))}
       </div>
     </section>
-  );
-}
-
-export function StatsPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as StatsProps;
-  const set = (patch: Partial<StatsProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Título (opcional)" value={p.title} onChange={(v) => set({ title: v })} />
-      <ItemListEditor
-        label="Métricas"
-        items={p.items ?? []}
-        makeItem={() => ({ value: '0%', label: 'Nova métrica' })}
-        onChange={(items) => set({ items: items as StatItem[] })}
-        renderItem={(item, update) => (
-          <>
-            <TextField label="Valor" value={item.value as string} onChange={(v) => update({ value: v })} />
-            <TextField label="Legenda" value={item.label as string} onChange={(v) => update({ label: v })} />
-          </>
-        )}
-      />
-    </div>
   );
 }

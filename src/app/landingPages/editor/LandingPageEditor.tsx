@@ -1,13 +1,13 @@
 // LandingPageEditor — route component for /landing-pages/:id/edit. Composes
 // the 3-panel DnD editor: BlockLibrary (left) + EditorCanvas (center) +
-// PropsPanel (right), plus a top bar with undo/redo, autosave, a
+// StylePanel (right), plus a top bar with undo/redo, autosave, a
 // desktop/mobile viewport toggle, a preview-account switcher, and an
 // "edit base vs personalize for {account}" mode toggle.
 //
 // Personalization write path (scope decision): when personalizing for an
 // account, prop edits are written to `page.accountOverrides[accountId][blockId]`
 // as a *shallow* `Partial<Block>` patch (only `props`/`showIf` as edited —
-// mirrors the same `{ props: {...} }` patch shape every block Panel already
+// mirrors the same `{ props: {...} }` patch shape every style/content edit
 // emits). This is exactly what `resolveBlock.mergeOverride` expects
 // (base block deep-merged with `override.props`), so no new merge logic was
 // needed on the read side — BlockRenderer already applies overrides via
@@ -28,7 +28,8 @@ import { listAccounts, toAccountContext, type LpAccount } from '../store/account
 import { useEditorHistory } from './useEditorHistory';
 import { BlockLibrary } from './BlockLibrary';
 import { EditorCanvas, type ViewportMode, type CanvasSelection } from './EditorCanvas';
-import { PropsPanel } from './PropsPanel';
+import { StylePanel } from './StylePanel';
+import type { SlotStyle } from './slotStyle';
 import { PublishDialog } from '../publish/PublishDialog';
 
 const AUTOSAVE_DELAY_MS = 600;
@@ -185,7 +186,7 @@ export function LandingPageEditor() {
   // migration, e.g. hero's 'headline' slot <-> `props.headline`), this is a
   // direct `{ props: { [slotId]: value } }` patch through the existing
   // `handleChangeBlock` path — so it respects base-vs-personalize mode the
-  // same way every Panel edit already does.
+  // same way every StylePanel edit already does.
   const handleEditText = (blockId: string, slotId: string, value: string) => {
     const block = page.blocks.find((b) => b.id === blockId);
     if (block) {
@@ -204,7 +205,7 @@ export function LandingPageEditor() {
 
   // Writes a props/showIf patch either to the base block (editing mode) or
   // into page.accountOverrides[accountId][blockId] (personalize mode).
-  // `target` defaults to the currently selected block (Panel edits), but
+  // `target` defaults to the currently selected block (StylePanel edits), but
   // callers that already resolved a specific block (e.g. inline text edit)
   // may pass it explicitly — both write through the same base-vs-personalize
   // branch below.
@@ -229,8 +230,8 @@ export function LandingPageEditor() {
     }
   };
 
-  // The Panel shown for a selected block should reflect what's actually on
-  // screen: base props merged with the active account's override (when
+  // The StylePanel shown for a selected block should reflect what's actually
+  // on screen: base props merged with the active account's override (when
   // personalizing), so authors edit "on top of" what they see rendered.
   const panelBlock: Block | null = (() => {
     if (!selectedBlock) return null;
@@ -239,6 +240,27 @@ export function LandingPageEditor() {
     if (!override) return selectedBlock;
     return { ...selectedBlock, ...override, props: { ...selectedBlock.props, ...(override.props ?? {}) } };
   })();
+
+  // Style edits: merge a SlotStyle patch into `props.styles[slotId]`,
+  // preserving any other slots' styles already set on this block.
+  const handleChangeStyle = (slotId: string, patch: Partial<SlotStyle>) => {
+    if (!panelBlock) return;
+    const styles = (panelBlock.props.styles ?? {}) as Record<string, SlotStyle>;
+    handleChangeBlock({
+      props: {
+        ...panelBlock.props,
+        styles: { ...styles, [slotId]: { ...(styles[slotId] ?? {}), ...patch } },
+      },
+    });
+  };
+
+  // Content edits from the StylePanel (button href, image url) — a plain
+  // content-prop patch, same shape every inline text edit / former Panel
+  // edit already used.
+  const handleChangeContent = (prop: string, value: string) => {
+    if (!panelBlock) return;
+    handleChangeBlock({ props: { ...panelBlock.props, [prop]: value } });
+  };
 
   const statusLabel = saveStatus === 'pending' ? 'Salvando…' : saveStatus === 'saved' ? 'Salvo' : '';
 
@@ -375,11 +397,13 @@ export function LandingPageEditor() {
             onInsert={(type, index) => handleAddBlock(type as BlockType, index)}
           />
           <div className="w-80 shrink-0">
-            <PropsPanel
+            <StylePanel
+              selection={selection}
+              block={panelBlock}
               page={page}
-              selectedBlock={panelBlock}
+              onChangeStyle={handleChangeStyle}
+              onChangeContent={handleChangeContent}
               onChangePage={updatePage}
-              onChangeBlock={handleChangeBlock}
             />
           </div>
         </div>

@@ -1,7 +1,6 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
-import { TextField, TextAreaField } from './panelFields';
 import { SlotText, SlotButton, SlotImage } from './slots';
 
 export interface HeroProps {
@@ -96,20 +95,5 @@ export function HeroRender({ block, ctx }: { block: Block; ctx: RenderContext })
         )}
       </div>
     </section>
-  );
-}
-
-export function HeroPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as HeroProps;
-  const set = (patch: Partial<HeroProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Chamada superior" value={p.eyebrow} onChange={(v) => set({ eyebrow: v })} />
-      <TextField label="Título" value={p.headline} onChange={(v) => set({ headline: v })} />
-      <TextAreaField label="Subtítulo" value={p.subheadline} onChange={(v) => set({ subheadline: v })} />
-      <TextField label="Texto do botão" value={p.ctaLabel} onChange={(v) => set({ ctaLabel: v })} />
-      <TextField label="Link do botão" value={p.ctaHref} onChange={(v) => set({ ctaHref: v })} />
-      <TextField label="URL da imagem" value={p.imageUrl} onChange={(v) => set({ imageUrl: v })} placeholder="https://..." />
-    </div>
   );
 }

@@ -2,7 +2,6 @@ import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
-import { TextField, SelectField } from './panelFields';
 import { ImageOff } from 'lucide-react';
 import { SlotText, SlotImage } from './slots';
 
@@ -59,25 +58,5 @@ export function MediaRender({ block, ctx }: { block: Block; ctx: RenderContext }
         )}
       </div>
     </section>
-  );
-}
-
-export function MediaPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as MediaProps;
-  const set = (patch: Partial<MediaProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <SelectField
-        label="Tipo"
-        value={p.kind ?? 'image'}
-        options={[
-          { value: 'image', label: 'Imagem' },
-          { value: 'video', label: 'Vídeo' },
-        ]}
-        onChange={(v) => set({ kind: v as MediaProps['kind'] })}
-      />
-      <TextField label="URL" value={p.url} onChange={(v) => set({ url: v })} placeholder="https://..." />
-      <TextField label="Legenda" value={p.caption} onChange={(v) => set({ caption: v })} />
-    </div>
   );
 }

@@ -2,7 +2,6 @@ import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
-import { TextField, ItemListEditor } from './panelFields';
 import { SlotText } from './slots';
 
 interface FooterLink { label: string; href: string }
@@ -46,27 +45,5 @@ export function FooterRender({ block, ctx }: { block: Block; ctx: RenderContext 
         ))}
       </div>
     </footer>
-  );
-}
-
-export function FooterPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as FooterProps;
-  const set = (patch: Partial<FooterProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Texto de rodapé" value={p.companyText} onChange={(v) => set({ companyText: v })} />
-      <ItemListEditor
-        label="Links"
-        items={p.links ?? []}
-        makeItem={() => ({ label: 'Novo link', href: '#' })}
-        onChange={(links) => set({ links: links as FooterLink[] })}
-        renderItem={(item, update) => (
-          <>
-            <TextField label="Texto" value={item.label as string} onChange={(v) => update({ label: v })} />
-            <TextField label="Link" value={item.href as string} onChange={(v) => update({ href: v })} />
-          </>
-        )}
-      />
-    </div>
   );
 }

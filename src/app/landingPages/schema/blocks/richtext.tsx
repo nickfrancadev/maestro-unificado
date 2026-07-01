@@ -1,7 +1,6 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
-import { TextField, TextAreaField } from './panelFields';
 import { SlotText } from './slots';
 
 export interface RichTextProps {
@@ -55,17 +54,5 @@ export function RichTextRender({ block, ctx }: { block: Block; ctx: RenderContex
         )}
       </div>
     </section>
-  );
-}
-
-export function RichTextPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as RichTextProps;
-  const set = (patch: Partial<RichTextProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Título" value={p.title} onChange={(v) => set({ title: v })} />
-      <TextAreaField label="Texto" value={p.body} onChange={(v) => set({ body: v })} rows={8} />
-      <p className="text-xs text-muted-foreground">Apenas texto simples é suportado (sem HTML).</p>
-    </div>
   );
 }

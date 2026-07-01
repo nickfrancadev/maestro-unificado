@@ -1,7 +1,6 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
-import { TextField, ItemListEditor } from './panelFields';
 import { SlotText } from './slots';
 
 interface LogoItem { name: string; imageUrl: string }
@@ -53,27 +52,5 @@ export function LogosRender({ block, ctx }: { block: Block; ctx: RenderContext }
         )}
       </div>
     </section>
-  );
-}
-
-export function LogosPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as LogosProps;
-  const set = (patch: Partial<LogosProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Título" value={p.title} onChange={(v) => set({ title: v })} />
-      <ItemListEditor
-        label="Logos"
-        items={p.items ?? []}
-        makeItem={() => ({ name: 'Nova empresa', imageUrl: '' })}
-        onChange={(items) => set({ items: items as LogoItem[] })}
-        renderItem={(item, update) => (
-          <>
-            <TextField label="Nome" value={item.name as string} onChange={(v) => update({ name: v })} />
-            <TextField label="URL da imagem" value={item.imageUrl as string} onChange={(v) => update({ imageUrl: v })} />
-          </>
-        )}
-      />
-    </div>
   );
 }

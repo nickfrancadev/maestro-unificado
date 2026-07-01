@@ -1,6 +1,5 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
-import { TextField } from './panelFields';
 import { Ban } from 'lucide-react';
 
 export interface EmbedProps {
@@ -67,16 +66,5 @@ export function EmbedRender({ block }: { block: Block; ctx: RenderContext }) {
         )}
       </div>
     </section>
-  );
-}
-
-export function EmbedPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as EmbedProps;
-  const set = (patch: Partial<EmbedProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="URL do vídeo" value={p.url} onChange={(v) => set({ url: v })} placeholder="https://youtube.com/watch?v=..." />
-      <p className="text-xs text-muted-foreground">Suporta apenas links do YouTube e Vimeo.</p>
-    </div>
   );
 }

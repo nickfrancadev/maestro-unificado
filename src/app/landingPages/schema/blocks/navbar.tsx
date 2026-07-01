@@ -2,7 +2,6 @@ import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
 import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
-import { TextField, ItemListEditor } from './panelFields';
 import { SlotText, SlotButton } from './slots';
 
 interface NavLink { label: string; href: string }
@@ -61,29 +60,5 @@ export function NavbarRender({ block, ctx }: { block: Block; ctx: RenderContext 
         styleOverride={styles.cta}
       />
     </nav>
-  );
-}
-
-export function NavbarPanel({ block, onChange }: { block: Block; onChange: (patch: Partial<Block>) => void }) {
-  const p = block.props as unknown as NavbarProps;
-  const set = (patch: Partial<NavbarProps>) => onChange({ props: { ...block.props, ...patch } });
-  return (
-    <div className="space-y-4">
-      <TextField label="Texto do logo" value={p.logoText} onChange={(v) => set({ logoText: v })} />
-      <ItemListEditor
-        label="Links de navegação"
-        items={p.links ?? []}
-        makeItem={() => ({ label: 'Novo link', href: '#' })}
-        onChange={(links) => set({ links: links as NavLink[] })}
-        renderItem={(item, update) => (
-          <>
-            <TextField label="Texto" value={item.label as string} onChange={(v) => update({ label: v })} />
-            <TextField label="Link" value={item.href as string} onChange={(v) => update({ href: v })} />
-          </>
-        )}
-      />
-      <TextField label="Texto do botão" value={p.ctaLabel} onChange={(v) => set({ ctaLabel: v })} />
-      <TextField label="Link do botão" value={p.ctaHref} onChange={(v) => set({ ctaHref: v })} />
-    </div>
   );
 }
