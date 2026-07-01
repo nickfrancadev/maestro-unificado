@@ -22,6 +22,7 @@ import { LandingPagesOverview } from "./landingPages/overview/LandingPagesOvervi
 import { CreateSelector } from "./landingPages/create/CreateSelector";
 import { LandingPageEditor } from "./landingPages/editor/LandingPageEditor";
 import { PublicPage } from "./landingPages/public/PublicPage";
+import { LandingPageAnalytics } from "./landingPages/analytics/LandingPageAnalytics";
 
 function PlaysRoute() {
   const navigate = useNavigate();
@@ -100,8 +101,7 @@ export default function App() {
           <Route path="landing-pages" element={<LandingPagesOverview />} />
           <Route path="landing-pages/new" element={<CreateSelector />} />
           <Route path="landing-pages/:id/edit" element={<LandingPageEditor />} />
-          {/* TODO Task 17: replace with the real per-page analytics screen. */}
-          <Route path="landing-pages/:id/analytics" element={<Placeholder title="Analytics da Landing Page" />} />
+          <Route path="landing-pages/:id/analytics" element={<LandingPageAnalytics />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
