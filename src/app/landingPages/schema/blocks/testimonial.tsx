@@ -1,8 +1,9 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
-import { resolveTokens } from '../../engine/resolveTokens';
+import type { SlotStyle } from '../../editor/slotStyle';
 import { TextField, TextAreaField } from './panelFields';
 import { Quote } from 'lucide-react';
+import { SlotText } from './slots';
 
 export interface TestimonialProps {
   quote: string;
@@ -10,6 +11,10 @@ export interface TestimonialProps {
   authorRole: string;
   avatarUrl: string;
 }
+
+const TESTIMONIAL_QUOTE_STYLE: SlotStyle = { fontSize: 20, fontWeight: 'medium', color: '#1E293B' };
+const TESTIMONIAL_AUTHOR_NAME_STYLE: SlotStyle = { fontSize: 14, fontWeight: 'semibold', color: '#0F172A' };
+const TESTIMONIAL_AUTHOR_ROLE_STYLE: SlotStyle = { fontSize: 12, color: '#64748B' };
 
 export function testimonialDefaults(): TestimonialProps {
   return {
@@ -23,11 +28,19 @@ export function testimonialDefaults(): TestimonialProps {
 export function TestimonialRender({ block, ctx }: { block: Block; ctx: RenderContext }) {
   const p = block.props as unknown as TestimonialProps;
   const primary = ctx.brandKit.colors.primary || '#0F172A';
+  const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
   return (
     <section className="px-6 py-14 sm:px-12">
       <div className="mx-auto max-w-2xl text-center">
         <Quote className="mx-auto mb-4 size-8" style={{ color: primary }} />
-        <p className="text-xl font-medium text-slate-800">“{resolveTokens(p.quote ?? '', ctx.ctx)}”</p>
+        <SlotText
+          slotId="quote"
+          as="p"
+          value={`“${p.quote ?? ''}”`}
+          ctx={ctx}
+          defaultStyle={TESTIMONIAL_QUOTE_STYLE}
+          styleOverride={styles.quote}
+        />
         <div className="mt-6 flex items-center justify-center gap-3">
           {p.avatarUrl ? (
             <img src={p.avatarUrl} alt="" className="size-10 rounded-full object-cover" />
@@ -35,8 +48,22 @@ export function TestimonialRender({ block, ctx }: { block: Block; ctx: RenderCon
             <div className="size-10 rounded-full bg-slate-200" />
           )}
           <div className="text-left">
-            <p className="text-sm font-semibold text-slate-900">{resolveTokens(p.authorName ?? '', ctx.ctx)}</p>
-            <p className="text-xs text-slate-500">{resolveTokens(p.authorRole ?? '', ctx.ctx)}</p>
+            <SlotText
+              slotId="authorName"
+              as="p"
+              value={p.authorName ?? ''}
+              ctx={ctx}
+              defaultStyle={TESTIMONIAL_AUTHOR_NAME_STYLE}
+              styleOverride={styles.authorName}
+            />
+            <SlotText
+              slotId="authorRole"
+              as="p"
+              value={p.authorRole ?? ''}
+              ctx={ctx}
+              defaultStyle={TESTIMONIAL_AUTHOR_ROLE_STYLE}
+              styleOverride={styles.authorRole}
+            />
           </div>
         </div>
       </div>

@@ -125,7 +125,7 @@ describe('overview renders without throwing', () => {
 });
 
 describe('each block renders (public) without throwing', () => {
-  for (const type of ['hero', 'cta', 'footer', 'navbar'] as const) {
+  for (const type of ['hero', 'cta', 'footer', 'navbar', 'richtext', 'media', 'testimonial', 'stats'] as const) {
     it(type, () => {
       const page = pageWith(newBlock(type));
       expect(() => render(<BlockRenderer page={page} accountId={null} ctx={null} />)).not.toThrow();

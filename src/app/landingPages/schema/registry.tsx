@@ -77,6 +77,10 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: RichTextRender,
     Panel: RichTextPanel,
+    slots: [
+      { id: 'title', kind: 'text', label: 'Título' },
+      { id: 'body', kind: 'text', label: 'Texto' },
+    ],
   },
   media: {
     type: 'media',
@@ -86,6 +90,10 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: MediaRender,
     Panel: MediaPanel,
+    slots: [
+      { id: 'image', kind: 'image', label: 'Imagem' },
+      { id: 'caption', kind: 'text', label: 'Legenda' },
+    ],
   },
   testimonial: {
     type: 'testimonial',
@@ -95,6 +103,11 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: ['account.name'],
     Render: TestimonialRender,
     Panel: TestimonialPanel,
+    slots: [
+      { id: 'quote', kind: 'text', label: 'Depoimento' },
+      { id: 'authorName', kind: 'text', label: 'Nome' },
+      { id: 'authorRole', kind: 'text', label: 'Cargo/Empresa' },
+    ],
   },
   stats: {
     type: 'stats',
@@ -104,6 +117,9 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: StatsRender,
     Panel: StatsPanel,
+    slots: [
+      { id: 'title', kind: 'text', label: 'Título' },
+    ],
   },
   cta: {
     type: 'cta',
