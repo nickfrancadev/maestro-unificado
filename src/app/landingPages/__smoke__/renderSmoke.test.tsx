@@ -16,13 +16,13 @@ import { getTemplate } from '../templates/catalog';
 import { newLandingPage, type LandingPage } from '../store/model';
 import { savePage } from '../store/repo';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE, type BrandKit } from '../../campaigns/wizard/brandKit';
-import { newBlock } from '../schema/registry';
+import { newBlock, REGISTRY } from '../schema/registry';
 import { LandingPageEditor } from '../editor/LandingPageEditor';
 import { PublicPage } from '../public/PublicPage';
 import { LandingPagesOverview } from '../overview/LandingPagesOverview';
 import { LpThumbnail } from '../components/LpThumbnail';
 import { BlockRenderer } from '../engine/BlockRenderer';
-import type { Block } from '../schema/blockTypes';
+import type { Block, BlockType } from '../schema/blockTypes';
 
 function mem(): Storage {
   const m = new Map<string, string>();
@@ -125,7 +125,7 @@ describe('overview renders without throwing', () => {
 });
 
 describe('each block renders (public) without throwing', () => {
-  for (const type of ['hero', 'cta', 'footer', 'navbar', 'richtext', 'media', 'testimonial', 'stats'] as const) {
+  for (const type of Object.keys(REGISTRY) as BlockType[]) {
     it(type, () => {
       const page = pageWith(newBlock(type));
       expect(() => render(<BlockRenderer page={page} accountId={null} ctx={null} />)).not.toThrow();

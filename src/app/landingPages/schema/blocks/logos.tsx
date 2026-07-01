@@ -1,7 +1,8 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
-import { resolveTokens } from '../../engine/resolveTokens';
+import type { SlotStyle } from '../../editor/slotStyle';
 import { TextField, ItemListEditor } from './panelFields';
+import { SlotText } from './slots';
 
 interface LogoItem { name: string; imageUrl: string }
 
@@ -9,6 +10,8 @@ export interface LogosProps {
   title: string;
   items: LogoItem[];
 }
+
+const LOGOS_TITLE_STYLE: SlotStyle = { fontSize: 14, fontWeight: 'medium', color: '#64748B' };
 
 export function logosDefaults(): LogosProps {
   return {
@@ -24,9 +27,20 @@ export function logosDefaults(): LogosProps {
 export function LogosRender({ block, ctx }: { block: Block; ctx: RenderContext }) {
   const p = block.props as unknown as LogosProps;
   const items = p.items ?? [];
+  const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
   return (
     <section className="px-6 py-12 text-center sm:px-12">
-      {p.title && <p className="mb-6 text-sm font-medium uppercase tracking-wide text-slate-500">{resolveTokens(p.title, ctx.ctx)}</p>}
+      {p.title && (
+        <SlotText
+          slotId="title"
+          as="p"
+          className="mb-6 uppercase tracking-wide"
+          value={p.title}
+          ctx={ctx}
+          defaultStyle={LOGOS_TITLE_STYLE}
+          styleOverride={styles.title}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-center gap-8">
         {items.map((item, i) =>
           item.imageUrl ? (

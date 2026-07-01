@@ -31,5 +31,5 @@ export interface BlockDef {
   tokens: string[];
   Render: React.FC<{ block: Block; ctx: RenderContext }>;
   Panel: React.FC<{ block: Block; onChange: (patch: Partial<Block>) => void }>;
-  slots?: SlotDef[];
+  slots: SlotDef[];
 }

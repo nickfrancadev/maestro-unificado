@@ -59,6 +59,9 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: LogosRender,
     Panel: LogosPanel,
+    slots: [
+      { id: 'title', kind: 'text', label: 'Título' },
+    ],
   },
   features: {
     type: 'features',
@@ -68,6 +71,9 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: ['account.industry'],
     Render: FeaturesRender,
     Panel: FeaturesPanel,
+    slots: [
+      { id: 'title', kind: 'text', label: 'Título' },
+    ],
   },
   richtext: {
     type: 'richtext',
@@ -143,6 +149,7 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: FormRender,
     Panel: FormPanel,
+    slots: [],
   },
   faq: {
     type: 'faq',
@@ -152,6 +159,9 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: FaqRender,
     Panel: FaqPanel,
+    slots: [
+      { id: 'title', kind: 'text', label: 'Título' },
+    ],
   },
   footer: {
     type: 'footer',
@@ -173,6 +183,7 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: SpacerRender,
     Panel: SpacerPanel,
+    slots: [],
   },
   embed: {
     type: 'embed',
@@ -182,6 +193,7 @@ export const REGISTRY: Record<BlockType, BlockDef> = {
     tokens: [],
     Render: EmbedRender,
     Panel: EmbedPanel,
+    slots: [],
   },
 };
 

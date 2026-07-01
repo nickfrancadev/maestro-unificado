@@ -1,7 +1,9 @@
 import type { Block } from '../blockTypes';
 import type { RenderContext } from '../registryTypes';
+import type { SlotStyle } from '../../editor/slotStyle';
 import { resolveTokens } from '../../engine/resolveTokens';
 import { TextField, TextAreaField, ItemListEditor } from './panelFields';
+import { SlotText } from './slots';
 import { CheckCircle2 } from 'lucide-react';
 
 interface FeatureItem { title: string; description: string }
@@ -10,6 +12,8 @@ export interface FeaturesProps {
   title: string;
   items: FeatureItem[];
 }
+
+const FEATURES_TITLE_STYLE: SlotStyle = { fontSize: 24, fontWeight: 'bold', color: '#0F172A' };
 
 export function featuresDefaults(): FeaturesProps {
   return {
@@ -26,9 +30,20 @@ export function FeaturesRender({ block, ctx }: { block: Block; ctx: RenderContex
   const p = block.props as unknown as FeaturesProps;
   const items = p.items ?? [];
   const primary = ctx.brandKit.colors.primary || '#0F172A';
+  const styles = (block.props.styles ?? {}) as Record<string, SlotStyle>;
   return (
     <section className="px-6 py-14 sm:px-12">
-      {p.title && <h2 className="mb-8 text-center text-2xl font-bold text-slate-900">{resolveTokens(p.title, ctx.ctx)}</h2>}
+      {p.title && (
+        <SlotText
+          slotId="title"
+          as="h2"
+          className="mb-8 text-center"
+          value={p.title}
+          ctx={ctx}
+          defaultStyle={FEATURES_TITLE_STYLE}
+          styleOverride={styles.title}
+        />
+      )}
       <div className="grid gap-6 sm:grid-cols-3">
         {items.map((item, i) => (
           <div key={i} className="rounded-lg border border-border/60 p-5">
