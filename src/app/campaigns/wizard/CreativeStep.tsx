@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Smartphone,
   Monitor,
@@ -27,6 +28,9 @@ import {
   Camera,
   Palette,
   LayoutGrid,
+  Link2,
+  PencilLine,
+  Plus,
 } from 'lucide-react';
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } from './types';
@@ -45,6 +49,10 @@ import {
   fetchClientVoice,
   saveClientVoice,
 } from '@/lib/ai';
+import { LandingPagePicker } from '@/app/landingPages/ads/LandingPagePicker';
+import { buildAdLink } from '@/app/landingPages/ads/utm';
+import { listPages, savePage } from '@/app/landingPages/store/repo';
+import type { LandingPage } from '@/app/landingPages/store/model';
 
 const CTA_OPTIONS = [
   { value: 'LEARN_MORE', label: 'Learn More' },
@@ -64,6 +72,14 @@ interface CreativeStepProps {
   targetingData?: TargetingData;
   creativeData?: CreativeData;
   onCreativeChange?: (data: CreativeData) => void;
+  /**
+   * Id of the campaign being edited, when known (only populated today for
+   * `campaigns/:id/edit`; brand-new campaigns have no id until a campaign
+   * repo exists). Used to record a best-effort reverse link
+   * (`page.links.campaignIds`) when a landing page is selected here — if
+   * absent, the LP is still selected but the reverse link is skipped.
+   */
+  campaignId?: string;
 }
 
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
@@ -88,12 +104,20 @@ function getAccountColor(name: string) {
   return colors[name] || '#6366f1';
 }
 
-export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange }: CreativeStepProps) {
+export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId }: CreativeStepProps) {
+  const navigate = useNavigate();
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const companies: FacetItem[] = targetingData?.companies?.included || [];
   const [editingTarget, setEditingTarget] = useState<string>(TEMPLATE_TARGET);
   const [briefDrawerOpen, setBriefDrawerOpen] = useState(false);
   const [voiceModalOpen, setVoiceModalOpen] = useState(false);
+
+  // ----------------- Landing page picker (URL de destino) -----------------
+  // 'manual' keeps the historical free-text URL input available (nothing
+  // else in the wizard breaks); 'picker' binds landingPageUrl to an LP
+  // created in the Landing Pages product via its /p/{slug} public path.
+  const [urlMode, setUrlMode] = useState<'picker' | 'manual'>('manual');
+  const [linkedPageId, setLinkedPageId] = useState<string | undefined>(undefined);
 
   const isTemplate = editingTarget === TEMPLATE_TARGET;
   const editingCompany = !isTemplate ? companies.find((c) => c.id === editingTarget) || null : null;
@@ -139,6 +163,49 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     const next = { ...current, ...partial };
     creativeDataRef.current = next;
     onCreativeChange(next);
+  };
+
+  // On mount (and whenever the URL is changed elsewhere), detect whether the
+  // current landingPageUrl already points at a page created in the Landing
+  // Pages product (path /p/{slug}) so the picker opens pre-selected instead
+  // of defaulting users back into "manual" every time they revisit this step.
+  useEffect(() => {
+    const match = landingPageUrl.match(/\/p\/([^/?#]+)/);
+    if (!match) return;
+    const slug = match[1];
+    const page = listPages().find((p) => p.slug === slug);
+    if (page) {
+      setLinkedPageId(page.id);
+      setUrlMode('picker');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSelectLandingPage = (page: LandingPage) => {
+    setLinkedPageId(page.id);
+    updateCreative({ landingPageUrl: `/p/${page.slug}` });
+    // Best-effort bidirectional link: only recorded when we actually know
+    // the campaign id (brand-new campaigns have none yet — there's no
+    // campaign repo to persist into in this prototype). The LP selection
+    // itself always applies regardless.
+    if (campaignId && !page.links.campaignIds.includes(campaignId)) {
+      savePage({
+        ...page,
+        links: { ...page.links, campaignIds: [...page.links.campaignIds, campaignId] },
+      });
+    }
+  };
+
+  const handleCreateLpFromCampaign = () => {
+    navigate('/landing-pages/new', {
+      state: {
+        // Not yet consumed by CreateSelector/AiBriefForm (out of scope for
+        // this task — see report). Passed here so wiring up prefill later
+        // is a small follow-up instead of a new integration.
+        campaignName: creativeData?.headline || undefined,
+        campaignMessage: creativeData?.bodyText || undefined,
+      },
+    });
   };
 
   const updateOverride = (companyId: string, partial: Partial<CompanyCreativeOverride>) => {
@@ -1082,13 +1149,54 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             {isTemplate && (
               <>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">URL de destino</label>
-                  <input
-                    type="text"
-                    value={landingPageUrl}
-                    onChange={(e) => updateCreative({ landingPageUrl: e.target.value })}
-                    className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                  />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-600 uppercase">URL de destino</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setUrlMode((m) => (m === 'picker' ? 'manual' : 'picker'))}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26]"
+                      >
+                        {urlMode === 'picker' ? (
+                          <><PencilLine className="w-3 h-3" /> Usar URL manual</>
+                        ) : (
+                          <><Link2 className="w-3 h-3" /> Escolher landing page</>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreateLpFromCampaign}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-[#E54A26] border border-slate-200 hover:border-[#FFD0C2] rounded-full px-2 py-0.5"
+                        title="Abre o fluxo de criação de landing page com IA"
+                      >
+                        <Plus className="w-3 h-3" /> Criar LP a partir desta campanha
+                      </button>
+                    </div>
+                  </div>
+
+                  {urlMode === 'picker' ? (
+                    <LandingPagePicker value={linkedPageId} onSelect={handleSelectLandingPage} />
+                  ) : (
+                    <input
+                      type="text"
+                      value={landingPageUrl}
+                      onChange={(e) => { setLinkedPageId(undefined); updateCreative({ landingPageUrl: e.target.value }); }}
+                      className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
+                    />
+                  )}
+
+                  <div className="mt-1.5 px-2.5 py-2 bg-slate-50 border border-slate-100 rounded-lg">
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">
+                      Link efetivo do anúncio (com conta + UTMs)
+                    </p>
+                    <p className="text-[11px] font-mono text-slate-600 break-all">
+                      {buildAdLink(landingPageUrl || '/p/{{account.slug}}', '{{account.id}}', {
+                        utm_source: 'linkedin',
+                        utm_medium: 'paid-social',
+                        utm_campaign: '{{campaign.id}}',
+                      })}
+                    </p>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">CTA</label>

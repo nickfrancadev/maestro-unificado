@@ -18,6 +18,11 @@ import { CampaignList } from "./campaigns/CampaignList";
 import { CampaignWizard } from "./campaigns/CampaignWizard";
 import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
 import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
+import { LandingPagesOverview } from "./landingPages/overview/LandingPagesOverview";
+import { CreateSelector } from "./landingPages/create/CreateSelector";
+import { LandingPageEditor } from "./landingPages/editor/LandingPageEditor";
+import { PublicPage } from "./landingPages/public/PublicPage";
+import { LandingPageAnalytics } from "./landingPages/analytics/LandingPageAnalytics";
 
 function PlaysRoute() {
   const navigate = useNavigate();
@@ -74,6 +79,7 @@ export default function App() {
       <Routes>
         <Route path="/auth/linkedin/callback" element={<LinkedInOAuthCallback />} />
         <Route path="/docs/ads" element={<AdsPipelineDocs />} />
+        <Route path="/p/:slug" element={<PublicPage />} />
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="contas" element={<ContasRoute />} />
@@ -92,6 +98,10 @@ export default function App() {
           <Route path="campaigns/new/advanced" element={<AdvancedCampaignCreator />} />
           <Route path="campaigns/:id/edit" element={<CampaignWizard />} />
           <Route path="campaigns/:id" element={<CampaignAnalytics />} />
+          <Route path="landing-pages" element={<LandingPagesOverview />} />
+          <Route path="landing-pages/new" element={<CreateSelector />} />
+          <Route path="landing-pages/:id/edit" element={<LandingPageEditor />} />
+          <Route path="landing-pages/:id/analytics" element={<LandingPageAnalytics />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
