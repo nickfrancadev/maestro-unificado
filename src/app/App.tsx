@@ -18,6 +18,8 @@ import { CampaignList } from "./campaigns/CampaignList";
 import { CampaignWizard } from "./campaigns/CampaignWizard";
 import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
 import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
+import { UsagePortfolio } from "./pages/usage/UsagePortfolio";
+import { UsageCompanyDetail } from "./pages/usage/UsageCompanyDetail";
 
 function PlaysRoute() {
   const navigate = useNavigate();
@@ -92,6 +94,8 @@ export default function App() {
           <Route path="campaigns/new/advanced" element={<AdvancedCampaignCreator />} />
           <Route path="campaigns/:id/edit" element={<CampaignWizard />} />
           <Route path="campaigns/:id" element={<CampaignAnalytics />} />
+          <Route path="uso-clientes" element={<UsagePortfolio />} />
+          <Route path="uso-clientes/:companyId" element={<UsageCompanyDetail />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Megaphone,
   Target,
+  HeartPulse,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -33,6 +34,7 @@ const navItems = [
   { icon: BarChart2, key: "analytics" },
   { icon: Rocket, key: "marketplace" },
   { icon: Target, key: "campaigns" },
+  { icon: HeartPulse, key: "uso-clientes" },
   { icon: Settings, key: "integrations" },
 ];
 
@@ -47,7 +49,10 @@ export function Sidebar(_props: SidebarProps = {}) {
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const currentPage = location.pathname === "/" ? "home" : location.pathname.slice(1);
+  // Primeiro segmento do path: uma rota aninhada (`/uso-clientes/:id`) precisa
+  // manter aceso o ícone do seu pai. `pathname.slice(1)` devolvia
+  // "uso-clientes/abc", que não casa com chave nenhuma, e a sidebar apagava.
+  const currentPage = location.pathname.split("/")[1] || "home";
 
   return (
     <div className="flex h-full" style={{ minHeight: "100vh" }}>
