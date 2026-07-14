@@ -26,7 +26,7 @@ function parse(iso: string | null): Date | null {
 }
 
 /** Serializa um `Period` nos search params que este hook lê. */
-export function periodParams(period: Period): { from: string; to: string } {
+function periodParams(period: Period): { from: string; to: string } {
   return { from: toISODate(period.start), to: toISODate(period.end) };
 }
 

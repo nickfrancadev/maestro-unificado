@@ -108,6 +108,22 @@ export function computeHealth(company: Company, period: Period, today: Date = TO
       : (access ?? activity);
   const idleDays = daysAgo(lastTouch, today);
 
+  /**
+   * Dias desde a última ATIVIDADE — grandeza distinta de `idleDays`.
+   *
+   * `idleDays` é o mais RECENTE entre acesso e atividade: é a dimensão de
+   * recência do score, e está correta assim. Mas ela não é "dias sem acesso"
+   * nem "dias sem atividade" — é o mínimo dos dois. Rotular esse número como
+   * "Sem acesso há Nd" fazia o chip e o painel "Conta" (que mostra o acesso de
+   * verdade) exibirem DUAS respostas para a mesma pergunta na mesma tela:
+   * valeverde saía como "Sem acesso há 46d" ao lado de "Último acesso: 58d".
+   *
+   * O chip agora mede o que o seu rótulo diz, e mede a grandeza DERIVÁVEL do
+   * backend real (atividade), não a fabricada (login não é rastreado) — por
+   * isso ele não carrega `PendingMarker`.
+   */
+  const inactiveDays = daysAgo(activity, today);
+
   const currVol = activityVolume(company, period);
   const prevVol = activityVolume(company, prev);
 
@@ -135,7 +151,7 @@ export function computeHealth(company: Company, period: Period, today: Date = TO
     bucket,
     breakdown,
     signals: buildSignals(company, {
-      idleDays,
+      inactiveDays,
       currVol,
       prevVol,
       metrics: m,
@@ -150,7 +166,8 @@ const SEVERITY_ORDER: Record<Signal['severity'], number> = { high: 0, medium: 1,
 function buildSignals(
   company: Company,
   ctx: {
-    idleDays: number | null;
+    /** Dias desde a última ATIVIDADE (não desde o último acesso — ver `computeHealth`). */
+    inactiveDays: number | null;
     currVol: number;
     prevVol: number;
     metrics: ReturnType<typeof computeMetrics>;
@@ -158,16 +175,18 @@ function buildSignals(
     bucket: RiskBucket;
   },
 ): Signal[] {
-  const { idleDays, currVol, prevVol, metrics: m, shares, bucket } = ctx;
+  const { inactiveDays, currVol, prevVol, metrics: m, shares, bucket } = ctx;
   const out: Signal[] = [];
 
-  if (idleDays === null) {
-    out.push({ id: 'never-accessed', label: 'Nunca acessou', severity: 'high' });
-  } else if (idleDays > 7) {
+  // Cada chip nomeia a grandeza que de fato mede: este conta dias sem
+  // ATIVIDADE registrada, e é assim que ele se apresenta.
+  if (inactiveDays === null) {
+    out.push({ id: 'never-active', label: 'Nunca teve atividade', severity: 'high' });
+  } else if (inactiveDays > 7) {
     out.push({
-      id: 'stale-access',
-      label: `Sem acesso há ${idleDays}d`,
-      severity: idleDays > 21 ? 'high' : 'medium',
+      id: 'stale-activity',
+      label: `Sem atividade há ${inactiveDays}d`,
+      severity: inactiveDays > 21 ? 'high' : 'medium',
     });
   }
 

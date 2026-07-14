@@ -36,7 +36,7 @@ const LEVEL_COLORS = [EMPTY_CELL, '#C6CBD6', '#949BAF', '#5B6480', NAVY];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-export interface ActivityHeatmapProps {
+interface ActivityHeatmapProps {
   cells: { week: number; day: number; count: number }[];
   weeks: number;
   /** Âncora "hoje" — só para derivar a data de cada célula. */
@@ -56,7 +56,7 @@ export function thresholds(max: number): [number, number, number, number] {
   return [t1, t2, t3, t4];
 }
 
-export function levelOf(count: number, ts: [number, number, number, number]): number {
+function levelOf(count: number, ts: [number, number, number, number]): number {
   if (count <= 0) return 0;
   if (count < ts[1]) return 1;
   if (count < ts[2]) return 2;
@@ -68,7 +68,7 @@ export function levelOf(count: number, ts: [number, number, number, number]): nu
  * Inverte o mapeamento do seletor: a coluna `weeks - 1` é a semana atual e
  * `day` é o dia da semana em UTC (0 = domingo).
  */
-export function dateOfCell(week: number, day: number, weeks: number, today: Date): Date {
+function dateOfCell(week: number, day: number, weeks: number, today: Date): Date {
   const weekBack = weeks - 1 - week;
   const offsetInWeek = (today.getUTCDay() - day + 7) % 7;
   return new Date(today.getTime() - (weekBack * 7 + offsetInWeek) * MS_PER_DAY);

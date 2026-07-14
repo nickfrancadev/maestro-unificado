@@ -1,15 +1,28 @@
 /**
- * Funil de adoção: barras horizontais (uma por estágio) com a % de conversão
- * entre estágios consecutivos renderizada COMO TEXTO — a largura da barra
- * sozinha não é um canal legível o bastante para ler uma taxa.
+ * Funil de adoção: barras horizontais (uma por estágio), com a relação entre
+ * estágios renderizada COMO TEXTO — a largura da barra sozinha não é um canal
+ * legível o bastante para ler uma taxa.
  *
- * A maior queda do funil é calculada e destacada (fundo âmbar + rótulo textual
- * "maior queda"): cor nunca é o único sinal.
+ * DUAS RELAÇÕES DIFERENTES, e o componente não as confunde:
+ *
+ *  1. CONVERSÃO (%) — só entre estágios que genuinamente ANINHAM (o estágio é um
+ *     subconjunto do outro: `Plays fechadas ⊂ Plays`). Aí "72%" quer dizer algo:
+ *     de cada 100 plays criadas, 72 fecharam. Só uma conversão pode ser "queda".
+ *
+ *  2. RAZÃO POR UNIDADE — entre estágios de unidades que NÃO se encaixam
+ *     (touchpoint não é "play convertida"; interação não é "touchpoint
+ *     convertido"). "3,7 interações por touchpoint" é informativo; "374% de
+ *     conversão" é ruído — e era ruído em cima justamente dos clientes
+ *     saudáveis, que são os que mais expandem.
+ *
+ * A maior queda é procurada SÓ entre as conversões reais (1), e destacada com
+ * fundo âmbar + rótulo textual "maior queda": cor nunca é o único sinal.
  *
  * Sem Recharts de propósito: `div`s são mais simples, mais acessíveis e
  * permitem colocar o valor absoluto ao lado do nome do estágio.
  */
 import { TrendingDown } from 'lucide-react';
+import type { FunnelStage } from '../lib/selectors';
 import { formatNumber } from '../lib/format';
 import { TREND_FLAT } from './colors';
 
@@ -19,8 +32,8 @@ const AMBER = '#F59E0B';
 const AMBER_BG = '#FFFBEB';
 const MUTED = '#64748B';
 
-export interface AdoptionFunnelProps {
-  stages: { stage: string; value: number }[];
+interface AdoptionFunnelProps {
+  stages: FunnelStage[];
 }
 
 /** Interpola do navy cheio (topo do funil) até um navy claro (base). */
@@ -33,52 +46,94 @@ function shadeFor(index: number, total: number): string {
   return `rgb(${ch[0]}, ${ch[1]}, ${ch[2]})`;
 }
 
+/** A relação entre um estágio e o seu antecessor — ou a sua base de aninhamento. */
+type Relation =
+  | {
+      kind: 'conversion';
+      /** 0–1+. Fração da base que chegou até aqui. */
+      rate: number;
+      /** Variação em pontos percentuais (negativa numa contração). */
+      deltaPP: number;
+      isContraction: boolean;
+      isExpansion: boolean;
+      base: string;
+    }
+  | {
+      kind: 'ratio';
+      /** Ex.: 3,7 — "3,7 interações por touchpoint". */
+      perUnit: number;
+      label: string;
+    };
+
 export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
-  const hasData = stages.length > 0 && stages.some((s) => s.value > 0);
+  /**
+   * "Tem dado?" é uma pergunta sobre o PERÍODO.
+   *
+   * Antes: `stages.some(s => s.value > 0)` — mas os três primeiros estágios
+   * (Contas/Contatos/Dossiês) são contagens estáticas do cadastro, nunca zero e
+   * nunca recortadas pelo período. O estado vazio era, portanto, INALCANÇÁVEL: o
+   * cliente-fantasma, que não fez absolutamente nada, ainda ganhava um funil de
+   * aparência confiante ("Dossiês 15 → Plays 0, maior queda") e o componente
+   * diagnosticava um gargalo de conversão para quem simplesmente parou de
+   * logar. Só os estágios do período testemunham sobre o período.
+   */
+  const scoped = stages.filter((s) => s.periodScoped);
+  const hasData = scoped.length > 0 && scoped.some((s) => s.value > 0);
+
   const max = stages.reduce((m, s) => Math.max(m, s.value), 0);
+  const valueOf = (name: string) => stages.find((s) => s.stage === name)?.value;
 
   /**
-   * Conversão de cada estágio para o anterior.
+   * A relação que precede cada estágio.
    *
-   * Este funil NÃO é monotonicamente decrescente: os estágios têm unidades
-   * diferentes (contas → contatos → dossiês → plays → touchpoints → interações
-   * → plays fechadas). Um cliente saudável tem MAIS contatos que contas — a
-   * razão `próximo/anterior` legitimamente passa de 1. Isso é EXPANSÃO, não
-   * queda, e chamá-la de "↓ 400%" faria o componente mentir em todo cliente.
+   *  - `subsetOf` → CONVERSÃO (%). O estágio aninha na base: a razão é uma taxa
+   *    de verdade, e só ela pode ser chamada de queda/expansão.
+   *      rate > 1  → expansão   (impossível num aninhamento correto, mas o
+   *                              componente não mente se acontecer)
+   *      rate < 1  → contração  (só ela concorre a "maior queda")
+   *      rate = 1  → estável    (nem seta, nem palavra)
    *
-   *   rate > 1  → expansão   (normal, saudável)
-   *   rate < 1  → contração  (só ela é candidata a "maior queda")
-   *   rate = 1  → estável    (nem seta, nem palavra)
+   *  - senão → RAZÃO POR UNIDADE. As unidades não se encaixam; a porcentagem
+   *    seria ruído. "3,7 interações por touchpoint" diz o que há para dizer, e
+   *    nunca é descrita como queda nem como expansão.
    *
-   * Denominador zero é INDEFINIDO — não é 0%, não é Infinity: sem estágio
-   * anterior não existe taxa de conversão. A linha simplesmente não é
-   * renderizada (é o caso dos clientes-fantasma, que zeram tudo após o topo).
-   *
-   * `deltaPP` é a variação em pontos percentuais (negativa numa contração).
+   * Denominador zero é INDEFINIDO em ambos os casos — não é 0%, não é Infinity:
+   * sem base não existe razão. A linha simplesmente não é renderizada.
    */
-  const conversions = stages.map((s, i) => {
+  const relations: (Relation | null)[] = stages.map((s, i) => {
+    if (s.subsetOf) {
+      const base = valueOf(s.subsetOf);
+      if (base === undefined || base <= 0) return null; // indefinido, não zero
+      const rate = s.value / base;
+      return {
+        kind: 'conversion',
+        rate,
+        deltaPP: (rate - 1) * 100,
+        isContraction: rate < 1,
+        isExpansion: rate > 1,
+        base: s.subsetOf,
+      };
+    }
+
     if (i === 0) return null;
     const prev = stages[i - 1].value;
-    if (prev <= 0) return null; // indefinido, não zero
-    const rate = s.value / prev;
-    return {
-      rate,
-      deltaPP: (rate - 1) * 100,
-      isContraction: rate < 1,
-      isExpansion: rate > 1,
-    };
+    if (prev <= 0 || !s.perUnitLabel) return null; // indefinido, não zero
+    return { kind: 'ratio', perUnit: s.value / prev, label: s.perUnitLabel };
   });
 
   /**
-   * A "maior queda" é a PIOR CONTRAÇÃO — a menor razão abaixo de 1. Uma
-   * expansão nunca concorre, nem quando é a menor de todas: se o funil só
-   * expande, nenhum estágio é marcado (não existe gargalo a apontar).
+   * A "maior queda" é a PIOR CONTRAÇÃO, e só uma CONVERSÃO pode ser uma queda.
+   *
+   * Uma razão por unidade nunca concorre: "0,3 dossiês por contato" não é um
+   * gargalo de 70%, é só a forma do negócio. Apontar a "maior queda" no meio de
+   * razões incomensuráveis era inventar um gargalo — e era exatamente o que o
+   * fantasma exibia. Se não há conversão contraindo, nenhum estágio é marcado.
    */
   let worstIndex = -1;
   let worstRate = Infinity;
-  conversions.forEach((c, i) => {
-    if (c && c.isContraction && c.rate < worstRate) {
-      worstRate = c.rate;
+  relations.forEach((r, i) => {
+    if (r && r.kind === 'conversion' && r.isContraction && r.rate < worstRate) {
+      worstRate = r.rate;
       worstIndex = i;
     }
   });
@@ -92,8 +147,10 @@ export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
         <h3 className="text-sm font-semibold" style={{ color: NAVY }}>
           Funil de adoção
         </h3>
+        {/* O subtítulo não promete "conversão entre etapas": só uma das
+            transições é uma conversão. As outras são razões por unidade. */}
         <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-          Conversão entre etapas no período
+          Etapas do período · % só onde uma etapa é subconjunto da outra
         </p>
       </div>
 
@@ -104,27 +161,30 @@ export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
       ) : (
         <ol className="flex flex-col gap-1">
           {stages.map((s, i) => {
-            const conv = conversions[i];
+            const rel = relations[i];
             const isWorst = i === worstIndex;
             const width = max > 0 ? Math.max((s.value / max) * 100, s.value > 0 ? 1.5 : 0) : 0;
 
             return (
               <li key={s.stage}>
-                {conv && (
+                {rel?.kind === 'conversion' && (
                   <div
                     className="flex items-center gap-1.5 pl-1 py-0.5 text-xs tabular-nums"
                     style={{ color: isWorst ? AMBER : MUTED }}
                   >
                     {/* Seta, sinal e palavra têm que concordar: uma expansão
                         jamais é descrita como queda. Estável não ganha seta. */}
-                    {conv.isExpansion && <span aria-hidden="true">↑</span>}
-                    {conv.isContraction && <span aria-hidden="true">↓</span>}
-                    <span>{Math.round(conv.rate * 100)}%</span>
+                    {rel.isExpansion && <span aria-hidden="true">↑</span>}
+                    {rel.isContraction && <span aria-hidden="true">↓</span>}
+                    <span>{Math.round(rel.rate * 100)}%</span>
                     <span style={{ color: isWorst ? AMBER : TREND_FLAT }}>
-                      {conv.isExpansion && `expansão (+${Math.round(conv.deltaPP)} pp)`}
-                      {conv.isContraction && `queda (${Math.round(conv.deltaPP)} pp)`}
-                      {!conv.isExpansion && !conv.isContraction && 'estável'}
+                      {rel.isExpansion && `expansão (+${Math.round(rel.deltaPP)} pp)`}
+                      {rel.isContraction && `queda (${Math.round(rel.deltaPP)} pp)`}
+                      {!rel.isExpansion && !rel.isContraction && 'estável'}
                     </span>
+                    {/* A conversão diz de QUE base ela fala: "de Plays" — sem
+                        isso, uma taxa que salta dois estágios é inescrutável. */}
+                    <span style={{ color: MUTED }}>de {rel.base}</span>
                     {isWorst && (
                       <span
                         className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium"
@@ -134,6 +194,20 @@ export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
                         maior queda
                       </span>
                     )}
+                  </div>
+                )}
+
+                {/* Razão por unidade: sem %, sem seta, sem "queda"/"expansão" —
+                    não há conversão aqui para afirmar. */}
+                {rel?.kind === 'ratio' && (
+                  <div
+                    className="flex items-center gap-1.5 pl-1 py-0.5 text-xs tabular-nums"
+                    style={{ color: MUTED }}
+                  >
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {formatNumber(rel.perUnit)} {rel.label}
+                    </span>
                   </div>
                 )}
 

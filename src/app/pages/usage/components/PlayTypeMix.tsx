@@ -13,7 +13,7 @@ import type { PlayType } from '../data/types';
 const NAVY = '#212A46';
 const MUTED = '#64748B';
 
-export interface PlayTypeMixProps {
+interface PlayTypeMixProps {
   mix: { type: PlayType; count: number }[];
 }
 
@@ -22,8 +22,7 @@ type Annotation = {
   text: string;
 };
 
-/** Exportada para o teste — a regra é a razão de ser do componente. */
-export function annotate(mix: { type: PlayType; count: number }[]): Annotation | null {
+function annotate(mix: { type: PlayType; count: number }[]): Annotation | null {
   const total = mix.reduce((s, m) => s + m.count, 0);
   if (total === 0) return null;
 

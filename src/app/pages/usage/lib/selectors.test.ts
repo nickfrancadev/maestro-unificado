@@ -353,6 +353,52 @@ describe('playTypeMix / adoptionFunnel', () => {
       'Plays fechadas',
     ]);
   });
+
+  /**
+   * I3 — só os estágios recortados pelo período podem responder "houve
+   * atividade?". Contas/Contatos/Dossiês são cadastro estático: se o funil
+   * gateia o estado vazio neles, o estado vazio nunca acontece.
+   */
+  it('só Plays em diante são periodScoped (o topo é cadastro estático)', () => {
+    const byName = new Map(
+      adoptionFunnel(company(), PERIOD).map((s) => [s.stage, s.periodScoped]),
+    );
+    for (const stage of ['Contas', 'Contatos', 'Dossiês']) {
+      expect(byName.get(stage), `${stage} não varia com o período`).toBe(false);
+    }
+    for (const stage of ['Plays', 'Touchpoints', 'Interações', 'Plays fechadas']) {
+      expect(byName.get(stage), `${stage} é recortado pelo período`).toBe(true);
+    }
+  });
+
+  /**
+   * I4 — a % só é uma CONVERSÃO onde um estágio é subconjunto do outro. Em
+   * qualquer outra transição as unidades não se encaixam.
+   */
+  it('a única transição aninhada é Plays fechadas ⊂ Plays', () => {
+    const stages = adoptionFunnel(company(), PERIOD);
+    const nested = stages.filter((s) => s.subsetOf);
+    expect(nested.map((s) => [s.stage, s.subsetOf])).toEqual([
+      ['Plays fechadas', 'Plays'],
+    ]);
+  });
+
+  /**
+   * A coorte do último estágio TEM que aninhar de verdade, senão a única
+   * conversão do funil pode passar de 100%. `playsClosed` (fechadas DENTRO do
+   * período, nascidas quando for) não é subconjunto de `playsCreated`;
+   * `playsCreatedThatClosed` é.
+   */
+  it('"Plays fechadas" nunca excede "Plays" — em nenhuma company do mock', () => {
+    for (const c of COMPANIES) {
+      const stages = adoptionFunnel(c, DEFAULT_PERIOD);
+      const plays = stages.find((s) => s.stage === 'Plays')!.value;
+      const closed = stages.find((s) => s.stage === 'Plays fechadas')!.value;
+      expect(closed, `${c.id}: ${closed} fechadas > ${plays} criadas`).toBeLessThanOrEqual(
+        plays,
+      );
+    }
+  });
 });
 
 describe('userStats', () => {

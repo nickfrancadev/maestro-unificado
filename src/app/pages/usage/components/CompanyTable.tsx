@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import * as Popover from '@radix-ui/react-popover';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Info,
+  Minus,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import type { Company, Health } from '../data/types';
 import type { UsageMetrics } from '../lib/selectors';
 import { BUCKET_META } from '../lib/health';
@@ -11,6 +20,7 @@ import {
 } from '../lib/format';
 import { lastAccessAt, lastActivityAt } from '../lib/selectors';
 import { BUCKET_ICON } from './icons';
+import { PendingMarker } from './PendingMarker';
 import { TREND_BAD, TREND_FLAT, TREND_GOOD } from './colors';
 
 export interface CompanyRow {
@@ -34,7 +44,31 @@ interface Column {
   numeric?: boolean;
   /** valor de ordenação; `null` ordena por último em ambos os sentidos */
   sortValue: (row: CompanyRow) => number | string | null;
+  /** Explicação da COORTE que a coluna mede (popover no cabeçalho). */
+  hint?: string;
+  /** Dado fabricado — o produto ainda não instrumenta isto. */
+  pending?: boolean;
 }
+
+/**
+ * COORTES DIFERENTES, lado a lado.
+ *
+ * "Fechadas" e "% fechadas" NÃO dividem uma pela outra, e é por construção:
+ *  - `playsClosed`    = plays fechadas DENTRO do período, tenham nascido quando
+ *                       tiverem nascido;
+ *  - `playsCloseRate` = das plays CRIADAS no período, a fração que já fechou.
+ *
+ * A conta está certa (é a coorte única da Fase 1); o que faltava era o rótulo
+ * dizer de QUEM cada célula fala. Sem isso, "criadas 7 · fechadas 10 · 86%" lia
+ * como aritmética impossível — mais fechadas que criadas, e uma porcentagem que
+ * não bate com nenhuma das duas — e a tabela inteira perdia a credibilidade.
+ */
+const CLOSED_IN_PERIOD_HINT =
+  'Fechadas DENTRO do período, independente de quando foram criadas. Coorte diferente de "% da coorte criada" — os dois números não se dividem.';
+const CLOSE_RATE_HINT =
+  'Das plays CRIADAS no período, a fração que já fechou. Coorte diferente de "Fechadas no período" — os dois números não se dividem.';
+const TP_CLOSED_HINT =
+  'Touchpoints finalizados DENTRO do período, independente de quando foram criados. Coorte diferente de "Criados no período".';
 
 /**
  * Δ de atividade = plays + touchpoints criados, período atual vs. anterior.
@@ -59,6 +93,13 @@ const COLUMNS: Column[] = [
     label: 'Último acesso',
     numeric: true,
     sortValue: (r) => lastAccessAt(r.company)?.getTime() ?? null,
+    // Login NÃO é rastreado pelo produto (ver spec, §"⚠️ Login não é rastreado").
+    // Esta é a única superfície onde a coluna fabricada fica ao lado da coluna
+    // derivável ("Última atividade") e AMBAS são ordenáveis: ordenar por
+    // "Último acesso" é o gesto mais natural de churn que existe, e sem o
+    // marcador o CS lead recebe um ranking construído sobre dado inventado sem
+    // nada na tela dizendo isso.
+    pending: true,
   },
   {
     id: 'lastActivity',
@@ -67,10 +108,28 @@ const COLUMNS: Column[] = [
     sortValue: (r) => lastActivityAt(r.company)?.getTime() ?? null,
   },
   { id: 'playsCreated', label: 'Plays criadas', numeric: true, sortValue: (r) => r.metrics.playsCreated },
-  { id: 'playsClosed', label: 'Fechadas', numeric: true, sortValue: (r) => r.metrics.playsClosed },
-  { id: 'playsCloseRate', label: '% fechadas', numeric: true, sortValue: (r) => r.metrics.playsCloseRate },
+  {
+    id: 'playsClosed',
+    label: 'Fechadas no período',
+    numeric: true,
+    sortValue: (r) => r.metrics.playsClosed,
+    hint: CLOSED_IN_PERIOD_HINT,
+  },
+  {
+    id: 'playsCloseRate',
+    label: '% da coorte criada',
+    numeric: true,
+    sortValue: (r) => r.metrics.playsCloseRate,
+    hint: CLOSE_RATE_HINT,
+  },
   { id: 'tpCreated', label: 'Touch criados', numeric: true, sortValue: (r) => r.metrics.touchpointsCreated },
-  { id: 'tpClosed', label: 'Finalizados', numeric: true, sortValue: (r) => r.metrics.touchpointsClosed },
+  {
+    id: 'tpClosed',
+    label: 'Finalizados no período',
+    numeric: true,
+    sortValue: (r) => r.metrics.touchpointsClosed,
+    hint: TP_CLOSED_HINT,
+  },
   { id: 'tpLate', label: 'Atrasados', numeric: true, sortValue: (r) => r.metrics.touchpointsLate },
   { id: 'avgTpPerPlay', label: 'Média touch/play', numeric: true, sortValue: (r) => r.metrics.avgTouchpointsPerPlay },
   { id: 'avgContacts', label: 'Contatos/play', numeric: true, sortValue: (r) => r.metrics.avgContactsPerPlay },
@@ -131,6 +190,45 @@ const TH_BASE =
   "sticky top-0 z-10 bg-[#F8FAFC] border-b border-[#E2E8F0] px-3 py-2 font-['Euclid_Circular_A',sans-serif] whitespace-nowrap";
 const TD_BASE = 'px-3 py-2.5 border-b border-[#E2E8F0] whitespace-nowrap';
 
+/**
+ * Explicação da coorte de uma coluna. Abre por clique (mouse e teclado), como o
+ * `PendingMarker` — hover-only excluiria teclado e toque. O `<th>` já tem o
+ * botão de ordenação, então este é um segundo alvo, irmão dele, nunca aninhado.
+ */
+function ColumnHint({ label, text }: { label: string; text: string }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          aria-label={`O que "${label}" mede: ${text}`}
+          className="inline-flex items-center justify-center rounded-full p-0.5 align-middle transition-colors hover:bg-[#E2E8F0] focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39]"
+          style={{ color: '#64748B' }}
+        >
+          <Info size={12} aria-hidden="true" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="top"
+          sideOffset={6}
+          className="z-50 max-w-[280px] rounded-lg border border-[#d8d8d8] bg-white p-2.5 font-['Euclid_Circular_A',sans-serif] normal-case"
+          style={{
+            color: '#212A46',
+            fontSize: 12,
+            fontWeight: 400,
+            letterSpacing: 0,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          }}
+        >
+          {text}
+          <Popover.Arrow style={{ fill: '#ffffff' }} />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 export function CompanyTable({ rows, onRowClick }: CompanyTableProps) {
   const [sortId, setSortId] = useState<string>('score');
   const [dir, setDir] = useState<SortDir>('asc');
@@ -184,24 +282,34 @@ export function CompanyTable({ rows, onRowClick }: CompanyTableProps) {
                     className={`${TH_BASE} ${col.numeric ? 'text-right' : 'text-left'}`}
                     style={{ fontWeight: 600, color: '#212A46' }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(col.id)}
-                      className={`inline-flex items-center gap-1 cursor-pointer rounded focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39] ${
+                    {/* Marcadores são IRMÃOS do botão de ordenar, nunca filhos:
+                        um botão dentro de outro é HTML inválido e rouba o clique. */}
+                    <span
+                      className={`inline-flex items-center gap-1 ${
                         col.numeric ? 'flex-row-reverse' : ''
                       }`}
-                      style={{ color: active ? '#212A46' : '#64748B' }}
                     >
-                      {col.label}
-                      <SortIcon size={12} aria-hidden="true" className="shrink-0" />
-                      <span className="sr-only">
-                        {active
-                          ? dir === 'asc'
-                            ? '(ordenado crescente — clique para inverter)'
-                            : '(ordenado decrescente — clique para inverter)'
-                          : '(clique para ordenar)'}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(col.id)}
+                        className={`inline-flex items-center gap-1 cursor-pointer rounded focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39] ${
+                          col.numeric ? 'flex-row-reverse' : ''
+                        }`}
+                        style={{ color: active ? '#212A46' : '#64748B' }}
+                      >
+                        {col.label}
+                        <SortIcon size={12} aria-hidden="true" className="shrink-0" />
+                        <span className="sr-only">
+                          {active
+                            ? dir === 'asc'
+                              ? '(ordenado crescente — clique para inverter)'
+                              : '(ordenado decrescente — clique para inverter)'
+                            : '(clique para ordenar)'}
+                        </span>
+                      </button>
+                      {col.pending && <PendingMarker />}
+                      {col.hint && <ColumnHint label={col.label} text={col.hint} />}
+                    </span>
                   </th>
                 );
               })}

@@ -435,9 +435,9 @@ describe('signals', () => {
     expect(h.signals.some((s) => /^0 de \d+ plays fechadas$/.test(s.label))).toBe(true);
   });
 
-  it('fantasma emite "Sem acesso há Nd" com severidade alta', () => {
+  it('fantasma emite "Sem atividade há Nd" com severidade alta', () => {
     const h = computeHealth(getCompany('valeverde')!, DEFAULT_PERIOD);
-    const chip = h.signals.find((s) => s.label.startsWith('Sem acesso há'));
+    const chip = h.signals.find((s) => s.label.startsWith('Sem atividade há'));
     expect(chip).toBeDefined();
     expect(chip!.severity).toBe('high');
   });

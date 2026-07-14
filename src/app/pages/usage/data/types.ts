@@ -82,7 +82,7 @@ export type Dimension = 'recency' | 'trend' | 'depth' | 'concentration';
 
 export interface Signal {
   id: string;
-  /** ex: "Sem acesso há 24d" */
+  /** ex: "Sem atividade há 24d" — o rótulo nomeia a grandeza que de fato mede. */
   label: string;
   severity: 'high' | 'medium' | 'low';
 }

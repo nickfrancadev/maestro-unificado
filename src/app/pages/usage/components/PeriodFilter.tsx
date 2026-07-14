@@ -76,7 +76,7 @@ function sameDayUTC(a: Date, b: Date): boolean {
 }
 
 /** Qual preset (se algum) corresponde exatamente ao período atual. */
-export function matchPreset(period: Period, today: Date = TODAY): Preset | null {
+function matchPreset(period: Period, today: Date = TODAY): Preset | null {
   return (
     PRESETS.find((p) => {
       const candidate = p.build(today);

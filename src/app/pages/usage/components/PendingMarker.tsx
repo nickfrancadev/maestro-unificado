@@ -6,7 +6,7 @@ const AMBER = '#F59E0B';
 const AMBER_BG = '#FFFBEB';
 const AMBER_TEXT = '#92400E';
 
-export const PENDING_HINT =
+const PENDING_HINT =
   'Pendente de instrumentação — dado ainda não rastreado pelo produto';
 
 interface PendingMarkerProps {

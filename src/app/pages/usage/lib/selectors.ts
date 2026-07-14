@@ -297,22 +297,106 @@ export function playTypeMix(
   }));
 }
 
-/** Contas → Contatos → Dossiês → Plays → Touchpoints → Interações → Plays fechadas. */
-export function adoptionFunnel(
-  company: Company,
-  period: Period,
-): { stage: string; value: number }[] {
+export interface FunnelStage {
+  stage: string;
+  value: number;
+  /**
+   * O valor varia com o período selecionado?
+   *
+   * Contas/Contatos/Dossiês são contagens ESTÁTICAS do cadastro da company:
+   * não são recortadas pelo período e praticamente nunca são zero. Um funil que
+   * decide "tem dado?" olhando para elas NUNCA vê o estado vazio — o cliente
+   * fantasma, que não fez absolutamente nada no período, ainda exibia
+   * "Contas 41 → Contatos 164 → Dossiês 15 → Plays 0" e o componente narrava um
+   * gargalo de conversão dossiê→play para quem, na verdade, só parou de usar o
+   * produto. Só os estágios com esta flag testemunham sobre o PERÍODO.
+   */
+  periodScoped: boolean;
+  /**
+   * Nome do estágio do qual ESTE é um subconjunto genuíno, se houver.
+   *
+   * Só aí a razão `valor / base` é uma taxa de CONVERSÃO. Nas demais transições
+   * as unidades não se encaixam (um touchpoint não é um "play convertido"; uma
+   * interação não é um "touchpoint convertido") e a porcentagem entre elas é
+   * ruído: um cliente saudável com 50 touchpoints e 187 interações exibia
+   * "↑340% expansão" — não existe conversão de 374% de touchpoint para
+   * interação; existe uma RAZÃO de 3,7 interações por touchpoint, que é outra
+   * coisa e se lê de outro jeito.
+   *
+   * É um NOME, não "o anterior": `Plays fechadas` aninha em `Plays`, mas não é
+   * adjacente a ela (Touchpoints e Interações vêm no meio). A única transição
+   * genuinamente aninhada deste funil.
+   */
+  subsetOf?: string;
+  /**
+   * Rótulo da unidade, para a razão por-unidade das transições NÃO aninhadas
+   * (ex.: "3,7 interações por touchpoint"). Ausente onde a razão não ajuda.
+   */
+  perUnitLabel?: string;
+}
+
+/**
+ * Contas → Contatos → Dossiês → Plays → Touchpoints → Interações → Plays fechadas.
+ *
+ * Não é um funil estrito: os estágios têm UNIDADES diferentes e só o último
+ * aninha de verdade no seu antecessor. Cada estágio declara o que ele é
+ * (`periodScoped`, `nestsInPrevious`) em vez de deixar o componente adivinhar —
+ * adivinhar foi exatamente o que produziu conversões inventadas e um estado
+ * vazio inalcançável.
+ */
+export function adoptionFunnel(company: Company, period: Period): FunnelStage[] {
   const m = computeMetrics(company, period);
   const tps = touchpointsIn(company, period);
   const interactions = tps.reduce((s, tp) => s + tp.interactions, 0);
   return [
-    { stage: 'Contas', value: company.accountsCount },
-    { stage: 'Contatos', value: company.contactsCount },
-    { stage: 'Dossiês', value: company.dossiersCount },
-    { stage: 'Plays', value: m.playsCreated },
-    { stage: 'Touchpoints', value: m.touchpointsCreated },
-    { stage: 'Interações', value: interactions },
-    { stage: 'Plays fechadas', value: m.playsClosed },
+    // Estáticos: cadastro da company, não recortados pelo período.
+    { stage: 'Contas', value: company.accountsCount, periodScoped: false },
+    {
+      stage: 'Contatos',
+      value: company.contactsCount,
+      periodScoped: false,
+      perUnitLabel: 'contatos por conta',
+    },
+    {
+      stage: 'Dossiês',
+      value: company.dossiersCount,
+      periodScoped: false,
+      perUnitLabel: 'dossiês por contato',
+    },
+    // Daqui para baixo tudo é recortado pelo período: é o que testemunha sobre o
+    // uso do produto na janela escolhida.
+    {
+      stage: 'Plays',
+      value: m.playsCreated,
+      periodScoped: true,
+      perUnitLabel: 'plays por dossiê',
+    },
+    {
+      stage: 'Touchpoints',
+      value: m.touchpointsCreated,
+      periodScoped: true,
+      perUnitLabel: 'touchpoints por play',
+    },
+    {
+      stage: 'Interações',
+      value: interactions,
+      periodScoped: true,
+      perUnitLabel: 'interações por touchpoint',
+    },
+    /**
+     * A ÚNICA conversão de verdade do funil: subconjunto das plays CRIADAS no
+     * período (mesma unidade, mesma coorte) — daí `playsCreatedThatClosed`, e
+     * não `playsClosed`. `playsClosed` conta as fechadas DENTRO do período,
+     * tenham nascido quando tiverem nascido: é outra coorte, pode passar de
+     * `playsCreated` (é o mesmo defeito da tabela, ver C2), e como último
+     * estágio faria a única razão "aninhada" do funil imprimir mais de 100%.
+     */
+    {
+      stage: 'Plays fechadas',
+      value: m.playsCreatedThatClosed,
+      periodScoped: true,
+      subsetOf: 'Plays',
+    },
   ];
 }
 
