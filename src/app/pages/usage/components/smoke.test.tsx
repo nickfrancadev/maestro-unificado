@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { HealthScoreRing } from './HealthScoreRing';
@@ -7,21 +6,9 @@ import { StatTile } from './StatTile';
 import { BUCKET_ICON } from './icons';
 import type { Signal } from '../data/types';
 
-// jsdom não implementa matchMedia; `useCountUp` e `motion` dependem dele.
-// Devolvemos `matches: true` (prefers-reduced-motion) para que os valores
-// pulem direto ao alvo final e o teste possa assertar o número renderizado.
-if (!window.matchMedia) {
-  window.matchMedia = ((query: string) => ({
-    matches: query.includes('prefers-reduced-motion'),
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  })) as unknown as typeof window.matchMedia;
-}
+// Shims de matchMedia/ResizeObserver vivem em `vitest.setup.ts` (setupFiles).
+// `matchMedia` devolve `matches: true` para prefers-reduced-motion, então
+// `useCountUp` pula direto ao valor final e dá pra assertar o número.
 
 afterEach(cleanup);
 
@@ -125,18 +112,16 @@ describe('StatTile', () => {
     expect(screen.getByText('24d atrás')).toBeTruthy();
   });
 
-  it('pending expõe botão acessível por teclado', () => {
+  // Mesmo componente `PendingMarker` (Radix popover) que a `UsersTable` usa —
+  // mecanismo único, um só comportamento.
+  it('pending expõe botão acessível por teclado que abre o popover no clique', () => {
     render(<StatTile label="Sessões" value={0} pending hint="mock" />);
-    const btn = screen.getByRole('button');
-    expect(btn.getAttribute('aria-label')).toContain(
-      'Pendente de instrumentação',
-    );
-    // foco por teclado revela o tooltip (não é hover-only)
-    fireEvent.focus(btn);
-    expect(screen.getByRole('tooltip').textContent).toContain(
-      'Pendente de instrumentação',
-    );
-    fireEvent.blur(btn);
-    expect(screen.queryByRole('tooltip')).toBeNull();
+    const btn = screen.getByRole('button', { name: /Pendente de instrumentação/ });
+    expect(btn.tagName).toBe('BUTTON'); // foco por teclado, não hover-only
+
+    fireEvent.click(btn);
+    expect(
+      screen.getByText(/dado ainda não rastreado pelo produto/),
+    ).toBeTruthy();
   });
 });

@@ -179,3 +179,24 @@
     line-height: 1.5;
   }
 }
+
+/*
+ * prefers-reduced-motion — regra global, fora de qualquer @layer.
+ *
+ * A spec exige que TODA animação a respeite. Impor isso componente a componente
+ * não escala (com 4 agentes em paralelo, 3 de 4 esqueceram); esta regra cobre
+ * transitions/animations de qualquer origem — inclusive Tailwind
+ * (`transition-colors`), estilos inline e bibliotecas de terceiros — e protege
+ * o resto do app. Componentes que precisam de mais do que "não animar"
+ * (ex.: `HealthScoreRing`) seguem checando `useReducedMotion()` por conta.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

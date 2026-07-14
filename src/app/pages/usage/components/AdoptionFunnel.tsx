@@ -10,6 +10,7 @@
  * permitem colocar o valor absoluto ao lado do nome do estágio.
  */
 import { TrendingDown } from 'lucide-react';
+import { formatNumber } from '../lib/format';
 
 const NAVY = '#212A46';
 const NAVY_LIGHT = '#8A93AD';
@@ -121,7 +122,7 @@ export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
                       className="text-xs font-semibold tabular-nums"
                       style={{ color: NAVY }}
                     >
-                      {s.value.toLocaleString('pt-BR')}
+                      {formatNumber(s.value)}
                     </span>
                   </div>
                   <div

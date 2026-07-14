@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { ArrowUpRight, ArrowDownRight, Minus, Info } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 import { useCountUp } from '../../dashboard/useCountUp';
 import { formatNumber, formatPct } from '../lib/format';
+import { TREND_BAD, TREND_FLAT, TREND_GOOD } from './colors';
+import { PendingMarker } from './PendingMarker';
 
 type Delta = { pct: number; dir: 'up' | 'down' | 'flat' };
 
@@ -19,12 +20,6 @@ interface StatTileProps {
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
-/** Cores de tendência — deliberadamente FORA da rampa de risco. */
-const GOOD = '#16A34A';
-const BAD = '#EF4444';
-
-const PENDING_HINT =
-  'Pendente de instrumentação — dado ainda não rastreado pelo produto';
 
 const DELTA_ICON = {
   up: ArrowUpRight,
@@ -40,9 +35,9 @@ const DELTA_DIR_LABEL = {
 } as const;
 
 function deltaColor(dir: Delta['dir'], invert: boolean): string {
-  if (dir === 'flat') return MUTED;
+  if (dir === 'flat') return TREND_FLAT;
   const isGood = invert ? dir === 'down' : dir === 'up';
-  return isGood ? GOOD : BAD;
+  return isGood ? TREND_GOOD : TREND_BAD;
 }
 
 /**
@@ -81,8 +76,6 @@ export function StatTile({
   invertDelta = false,
   pending = false,
 }: StatTileProps) {
-  const [tipOpen, setTipOpen] = useState(false);
-
   const isNumber = typeof value === 'number';
   const raw = isNumber ? (value as number) : 0;
   // Hook precisa ser chamado incondicionalmente.
@@ -107,33 +100,8 @@ export function StatTile({
           {label}
         </p>
 
-        {pending && (
-          <span className="relative inline-flex">
-            <button
-              type="button"
-              aria-label={PENDING_HINT}
-              // acessível por teclado — não é hover-only
-              onMouseEnter={() => setTipOpen(true)}
-              onMouseLeave={() => setTipOpen(false)}
-              onFocus={() => setTipOpen(true)}
-              onBlur={() => setTipOpen(false)}
-              onClick={() => setTipOpen((v) => !v)}
-              className="inline-flex items-center justify-center rounded-full text-[#94A3B8] hover:text-[#64748B] focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39] focus-visible:ring-offset-1"
-            >
-              <Info size={13} aria-hidden="true" />
-            </button>
-
-            {tipOpen && (
-              <span
-                role="tooltip"
-                className="absolute left-1/2 top-full z-20 mt-1.5 w-52 -translate-x-1/2 rounded-lg px-2.5 py-1.5 font-['Euclid_Circular_A',sans-serif] text-[11px] leading-snug text-white"
-                style={{ backgroundColor: NAVY }}
-              >
-                {PENDING_HINT}
-              </span>
-            )}
-          </span>
-        )}
+        {/* mesmo mecanismo (Radix popover) que a `UsersTable` — ver PendingMarker */}
+        {pending && <PendingMarker />}
       </div>
 
       <p

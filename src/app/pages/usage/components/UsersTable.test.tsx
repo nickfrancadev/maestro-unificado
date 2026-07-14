@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { UsersTable, type UserRow } from './UsersTable';
@@ -6,12 +5,7 @@ import type { User } from '../data/types';
 
 afterEach(cleanup);
 
-// jsdom não implementa ResizeObserver; o Popover.Arrow do Radix o exige.
-globalThis.ResizeObserver ??= class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-} as unknown as typeof ResizeObserver;
+// Shims de ResizeObserver/matchMedia vivem em `vitest.setup.ts` (setupFiles).
 
 function u(over: Partial<User> & Pick<User, 'id' | 'name'>): User {
   return {

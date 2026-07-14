@@ -14,6 +14,7 @@
  */
 import { useState } from 'react';
 import { TODAY } from '../data/types';
+import { formatNumber } from '../lib/format';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
@@ -73,6 +74,11 @@ export function dateOfCell(week: number, day: number, weeks: number, today: Date
   return new Date(today.getTime() - (weekBack * 7 + offsetInWeek) * MS_PER_DAY);
 }
 
+/**
+ * Data absoluta `dd/mm/aaaa` em UTC. `lib/format.ts` só expõe formatação
+ * RELATIVA (`formatDaysAgo`: "24d atrás") — o tooltip da célula precisa da data
+ * literal, então não há formatador da fundação que sirva aqui.
+ */
 function formatDate(d: Date): string {
   const dd = String(d.getUTCDate()).padStart(2, '0');
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -107,7 +113,7 @@ export function ActivityHeatmap({ cells, weeks, today = TODAY }: ActivityHeatmap
           Atividade por dia
         </h3>
         <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-          Últimas {weeks} semanas · {total.toLocaleString('pt-BR')} eventos
+          Últimas {weeks} semanas · {formatNumber(total)} eventos
         </p>
       </div>
 

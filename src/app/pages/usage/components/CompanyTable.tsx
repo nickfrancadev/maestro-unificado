@@ -11,6 +11,7 @@ import {
 } from '../lib/format';
 import { lastAccessAt, lastActivityAt } from '../lib/selectors';
 import { BUCKET_ICON } from './icons';
+import { TREND_BAD, TREND_FLAT, TREND_GOOD } from './colors';
 
 export interface CompanyRow {
   company: Company;
@@ -35,7 +36,17 @@ interface Column {
   sortValue: (row: CompanyRow) => number | string | null;
 }
 
-/** Δ de atividade = plays + touchpoints criados, período atual vs. anterior. */
+/**
+ * Δ de atividade = plays + touchpoints criados, período atual vs. anterior.
+ *
+ * É a MESMA grandeza que `activityVolume(company, period)` de `lib/selectors`:
+ * lá, `playsIn().length + touchpointsIn().length`; aqui, os mesmos dois valores
+ * já materializados em `UsageMetrics.playsCreated` / `.touchpointsCreated`
+ * (`computeMetrics` os deriva exatamente desses dois seletores). Não chamamos
+ * `activityVolume` diretamente porque `CompanyRow` carrega as métricas já
+ * computadas, não o `Period` — e a prop é congelada pela Fase 3.
+ * `CompanyCard.test.tsx` guarda essa equivalência nas 24 companies do mock.
+ */
 function activityOf(m: UsageMetrics): number {
   return m.playsCreated + m.touchpointsCreated;
 }
@@ -99,7 +110,8 @@ function BucketBadge({ bucket }: { bucket: Health['bucket'] }) {
 }
 
 const DELTA_ICON = { up: TrendingUp, down: TrendingDown, flat: Minus } as const;
-const DELTA_COLOR = { up: '#059669', down: '#DC2626', flat: '#64748B' } as const;
+/** Δ de atividade é tendência, NÃO risco — cores fora da rampa (ver colors.ts). */
+const DELTA_COLOR = { up: TREND_GOOD, down: TREND_BAD, flat: TREND_FLAT } as const;
 
 function DeltaCell({ curr, prev }: { curr: number; prev: number }) {
   const delta = formatDelta(curr, prev);

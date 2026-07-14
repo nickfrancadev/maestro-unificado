@@ -141,7 +141,7 @@ export function PeriodFilter({ period, onChange }: PeriodFilterProps) {
         <button
           type="button"
           aria-label={`Período: ${label}. Alterar período`}
-          className="flex items-center gap-2 bg-white rounded-xl border border-[#d8d8d8] px-3 py-2 font-['Euclid_Circular_A',sans-serif] transition-colors hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+          className="flex items-center gap-2 bg-white rounded-xl border border-[#d8d8d8] px-3 py-2 font-['Euclid_Circular_A',sans-serif] transition-colors hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39] focus-visible:ring-offset-2"
           style={{
             fontSize: 13,
             fontWeight: 600,

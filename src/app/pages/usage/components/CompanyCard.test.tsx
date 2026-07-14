@@ -1,25 +1,20 @@
-// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { CompanyCard } from './CompanyCard';
 import { CompanyTable } from './CompanyTable';
 import { COMPANIES, DEFAULT_PERIOD } from '../data/mockData';
-import { computeMetrics, previousPeriod, activityByWeek } from '../lib/selectors';
-import { computeHealth } from '../lib/health';
+import {
+  activityByWeek,
+  activityVolume,
+  computeMetrics,
+  previousPeriod,
+} from '../lib/selectors';
+import { BUCKET_META, computeHealth } from '../lib/health';
 import type { Company, Health } from '../data/types';
 
 afterEach(cleanup);
 
-/**
- * jsdom não implementa ResizeObserver, e o <ResponsiveContainer> do Recharts
- * depende dele. Shim mínimo — o card usa ResponsiveContainer de verdade.
- */
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-(globalThis as any).ResizeObserver ??= ResizeObserverStub;
+// Shims de ResizeObserver/matchMedia vivem em `vitest.setup.ts` (setupFiles).
 
 const real = COMPANIES[2];
 const realHealth = computeHealth(real, DEFAULT_PERIOD);
@@ -119,6 +114,23 @@ describe('CompanyCard', () => {
 });
 
 describe('CompanyTable', () => {
+  /**
+   * A coluna "Δ atividade" deriva o volume das métricas já computadas
+   * (`playsCreated + touchpointsCreated`) porque `CompanyRow` não carrega o
+   * `Period`. Este teste amarra essa derivação ao seletor da fundação — se
+   * `activityVolume` mudar de definição, a coluna não pode divergir em silêncio.
+   */
+  it('Δ atividade = activityVolume da fundação, em TODAS as companies do mock', () => {
+    for (const c of COMPANIES) {
+      for (const period of [DEFAULT_PERIOD, previousPeriod(DEFAULT_PERIOD)]) {
+        const m = computeMetrics(c, period);
+        expect(m.playsCreated + m.touchpointsCreated).toBe(
+          activityVolume(c, period),
+        );
+      }
+    }
+  });
+
   const rows = COMPANIES.slice(0, 5).map((c) => ({
     company: c,
     health: computeHealth(c, DEFAULT_PERIOD),
@@ -132,11 +144,28 @@ describe('CompanyTable', () => {
     expect(screen.getByText(rows[0].company.name)).toBeTruthy();
   });
 
-  it('badge de bucket carrega rótulo textual (cor nunca sozinha)', () => {
+  it('badge de bucket carrega o rótulo textual EXATO de cada linha (cor nunca sozinha)', () => {
     render(<CompanyTable rows={rows} onRowClick={() => {}} />);
-    const labels = ['Crítico', 'Em risco', 'Atenção', 'Saudável'];
-    const found = labels.some((l) => screen.queryAllByText(l).length > 0);
-    expect(found).toBe(true);
+
+    // Cada linha exibe exatamente o rótulo do SEU bucket — não basta que
+    // "algum dos 4 rótulos" apareça em algum lugar da tabela.
+    const expected = new Map<string, number>();
+    for (const r of rows) {
+      const label = BUCKET_META[r.health.bucket].label;
+      expected.set(label, (expected.get(label) ?? 0) + 1);
+    }
+    expect(expected.size).toBeGreaterThan(0);
+
+    for (const [label, count] of expected) {
+      expect(screen.getAllByText(label)).toHaveLength(count);
+    }
+
+    // e nenhum rótulo de bucket que ninguém tem vaza pra tela
+    for (const label of Object.values(BUCKET_META).map((m) => m.label)) {
+      if (!expected.has(label)) {
+        expect(screen.queryAllByText(label)).toHaveLength(0);
+      }
+    }
   });
 
   it('aria-sort reflete a coluna ativa e inverte ao clicar', () => {

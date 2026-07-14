@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { AdoptionFunnel } from './AdoptionFunnel';
@@ -6,6 +5,7 @@ import { PlayTypeMix } from './PlayTypeMix';
 import { ActivityHeatmap } from './ActivityHeatmap';
 import { COMPANIES, DEFAULT_PERIOD } from '../data/mockData';
 import { adoptionFunnel, playTypeMix, activityHeatmap } from '../lib/selectors';
+import { formatNumber } from '../lib/format';
 import { TODAY } from '../data/types';
 
 afterEach(cleanup);
@@ -17,10 +17,26 @@ const ghost = COMPANIES[0];
 
 describe('AdoptionFunnel', () => {
   it('renderiza dados reais com % de conversão em texto e a maior queda sinalizada', () => {
-    render(<AdoptionFunnel stages={adoptionFunnel(company, DEFAULT_PERIOD)} />);
+    const stages = adoptionFunnel(company, DEFAULT_PERIOD);
+    render(<AdoptionFunnel stages={stages} />);
     expect(screen.getByText('Contas')).toBeTruthy();
     expect(screen.getByText('maior queda')).toBeTruthy();
-    expect(document.body.textContent).toMatch(/\d+%/);
+
+    // valor absoluto do 1º estágio, formatado pela fundação (`formatNumber`)
+    expect(screen.getByText(formatNumber(stages[0].value))).toBeTruthy();
+
+    // a taxa de conversão de CADA par consecutivo aparece como texto exato —
+    // não basta "algum % em algum lugar da página". (Estágio anterior zerado
+    // não rende conversão: divisão por zero não vira "0%", vira nada.)
+    let asserted = 0;
+    for (let i = 1; i < stages.length; i++) {
+      const prev = stages[i - 1].value;
+      if (prev <= 0) continue;
+      const label = `${Math.round((stages[i].value / prev) * 100)}%`;
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+      asserted++;
+    }
+    expect(asserted).toBeGreaterThan(0);
   });
 
   it('empty state com todos os estágios zerados', () => {

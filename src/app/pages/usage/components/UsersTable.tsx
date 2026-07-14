@@ -1,15 +1,14 @@
 import { useMemo, useState } from 'react';
-import * as Popover from '@radix-ui/react-popover';
-import { ArrowUp, ArrowDown, ChevronsUpDown, Info } from 'lucide-react';
+import { ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import type { Profile, User } from '../data/types';
 import { formatDaysAgo, formatNumber, formatPct } from '../lib/format';
+import { PendingMarker } from './PendingMarker';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
 const GRID = '#E2E8F0';
 
 /** Âmbar — exceção permitida à rampa de risco: assento pago sem uso. */
-const AMBER = '#F59E0B';
 const AMBER_BG = '#FFFBEB';
 const AMBER_TEXT = '#92400E';
 
@@ -96,42 +95,6 @@ function compare(a: UserRow, b: UserRow, key: SortKey, dir: SortDir): number {
   }
 }
 
-function PendingMarker({ text }: { text: string }) {
-  return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label={`Pendente de instrumentação. ${text}`}
-          className="inline-flex items-center justify-center rounded-full p-0.5 align-middle transition-colors hover:bg-[#FEF3C7] focus:outline-none focus-visible:ring-2"
-          style={{ color: AMBER }}
-        >
-          <Info size={13} aria-hidden="true" />
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="top"
-          sideOffset={6}
-          className="z-50 max-w-[260px] rounded-lg border p-2.5 font-['Euclid_Circular_A',sans-serif] normal-case"
-          style={{
-            background: AMBER_BG,
-            borderColor: '#FDE68A',
-            color: AMBER_TEXT,
-            fontSize: 12,
-            fontWeight: 400,
-            letterSpacing: 0,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-          }}
-        >
-          {text}
-          <Popover.Arrow style={{ fill: AMBER_BG }} />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
 function ShareBar({ share }: { share: number }) {
   const pct = Math.max(0, Math.min(1, Number.isFinite(share) ? share : 0));
   return (
@@ -212,7 +175,7 @@ export function UsersTable({ rows }: UsersTableProps) {
                         type="button"
                         onClick={() => toggle(col.key)}
                         aria-label={`Ordenar por ${col.label}`}
-                        className="inline-flex items-center gap-1 rounded px-1 -mx-1 py-0.5 transition-colors hover:bg-[#F1F5F9] focus:outline-none focus-visible:ring-2"
+                        className="inline-flex items-center gap-1 rounded px-1 -mx-1 py-0.5 transition-colors hover:bg-[#F1F5F9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39]"
                         style={{
                           fontSize: 11,
                           fontWeight: 600,
