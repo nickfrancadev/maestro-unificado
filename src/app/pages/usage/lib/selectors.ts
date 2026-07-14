@@ -32,6 +32,14 @@ export interface UsageMetrics {
   interactionRate: number;
   /** Denominador de `interactionRate`: contatos envolvidos nos touchpoints do período. */
   contactsInvolved: number;
+  /**
+   * Numerador de `interactionRate`: interações registradas nos touchpoints do
+   * período. Exposto porque uma taxa agregada do portfólio precisa somar
+   * numeradores e denominadores separadamente (taxa POOLED) — reconstruir o
+   * numerador a partir de `interactionRate * contactsInvolved` perderia o
+   * excedente descartado pelo clamp `Math.min(1, …)`.
+   */
+  interactions: number;
   /** null se nenhuma play fechada no período */
   avgDaysToClose: number | null;
   /** usuários com atividade no período */
@@ -123,12 +131,60 @@ export function computeMetrics(company: Company, period: Period): UsageMetrics {
     ),
     interactionRate: Math.min(1, safeDiv(interactions, contactsInvolved)),
     contactsInvolved,
+    interactions,
     avgDaysToClose:
       daysToClose.length === 0
         ? null
         : daysToClose.reduce((s, d) => s + d, 0) / daysToClose.length,
     activeUsers: active.length,
   };
+}
+
+/**
+ * Taxa POOLED (Σ numeradores ÷ Σ denominadores) de uma lista de métricas.
+ *
+ * NÃO é a média das taxas por company. A média das taxas trata `safeDiv(0, 0) = 0`
+ * — "não criou nenhuma play" — como "fechou 0% das suas plays", e quem não fez
+ * NADA passa a puxar o agregado para baixo como se tivesse falhado. O efeito é
+ * inversor: estreitando o período de 30d para 7d, o número de companies com zero
+ * plays sobe de 2 para 13 e a "média" DESPENCA (46,9% → 24,7%) enquanto a taxa
+ * real entre quem de fato rodou plays MELHORA (46,4% → 53,8%). O KPI andava para
+ * o lado errado no gesto mais comum do dashboard.
+ *
+ * Na taxa pooled, uma company sem denominador contribui 0 dos dois lados e
+ * simplesmente não participa — sem distorcer nem ganhar peso. E uma company
+ * minúscula com 1 play fechada (100%) não pesa igual a uma grande com 200 plays
+ * e 40 fechadas.
+ *
+ * `basis` = quantas companies têm denominador > 0, isto é, sobre quantas a taxa
+ * foi de fato calculada. A UI mostra esse número: uma taxa agregada sem a sua
+ * base é uma taxa que não se pode auditar.
+ */
+export interface PooledRate {
+  /** 0–1. Σ numeradores ÷ Σ denominadores. Sem denominador algum → 0. */
+  rate: number;
+  numerator: number;
+  denominator: number;
+  /** Companies que contribuíram (denominador > 0). */
+  basis: number;
+}
+
+export function pooledRate<T>(
+  items: T[],
+  numerator: (item: T) => number,
+  denominator: (item: T) => number,
+): PooledRate {
+  let num = 0;
+  let den = 0;
+  let basis = 0;
+  for (const item of items) {
+    const d = denominator(item);
+    if (d <= 0) continue; // sem denominador = ausência de evidência, não um zero
+    num += numerator(item);
+    den += d;
+    basis += 1;
+  }
+  return { rate: Math.min(1, safeDiv(num, den)), numerator: num, denominator: den, basis };
 }
 
 /** Janela de mesmo tamanho, imediatamente anterior, sem sobrepor. */

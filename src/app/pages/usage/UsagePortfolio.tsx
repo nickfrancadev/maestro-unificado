@@ -16,6 +16,7 @@ import {
   activityByWeek,
   computeMetrics,
   lastAccessAt,
+  pooledRate,
   previousPeriod,
 } from './lib/selectors';
 import { daysAgo, formatDelta } from './lib/format';
@@ -184,24 +185,37 @@ export function UsagePortfolio() {
 
   const rows = useMemo(
     () =>
-      COMPANIES.map((company) => ({
-        company,
-        health: computeHealth(company, period),
-        metrics: computeMetrics(company, period),
-        prevMetrics: computeMetrics(company, previousPeriod(period)),
-        sparkline: activityByWeek(company, SPARK_WEEKS),
-      })),
+      COMPANIES.map((company) => {
+        const prev = previousPeriod(period);
+        return {
+          company,
+          health: computeHealth(company, period),
+          // Saúde no período ANTERIOR — base do Δ de "MRR em risco".
+          prevHealth: computeHealth(company, prev),
+          metrics: computeMetrics(company, period),
+          prevMetrics: computeMetrics(company, prev),
+          sparkline: activityByWeek(company, SPARK_WEEKS),
+        };
+      }),
     [period],
   );
 
   const kpis = useMemo(() => {
     const total = rows.length;
 
+    // MRR em risco: SOMA (não média) — imune ao problema do denominador zero.
+    // O Δ existe porque este é o KPI que mais se mexe ao trocar o período, e um
+    // número que se mexe muito sem referência é um número que ninguém interpreta.
+    const atRisk = (h: { bucket: string }) => h.bucket === 'critical' || h.bucket === 'at_risk';
     const mrrAtRisk = rows
-      .filter((r) => r.health.bucket === 'critical' || r.health.bucket === 'at_risk')
+      .filter((r) => atRisk(r.health))
+      .reduce((s, r) => s + r.company.mrr, 0);
+    const mrrAtRiskPrev = rows
+      .filter((r) => atRisk(r.prevHealth))
       .reduce((s, r) => s + r.company.mrr, 0);
 
     // "Ativo" = teve alguma atividade no período (plays ou touchpoints criados).
+    // Contagem, não taxa: nenhum denominador para zerar.
     const isActive = (m: { playsCreated: number; touchpointsCreated: number }) =>
       m.playsCreated + m.touchpointsCreated > 0;
     const active = rows.filter((r) => isActive(r.metrics)).length;
@@ -213,17 +227,34 @@ export function UsagePortfolio() {
       return d === null || d >= STALE_DAYS;
     }).length;
 
-    const mean = (xs: number[]) =>
-      xs.length === 0 ? 0 : xs.reduce((s, x) => s + x, 0) / xs.length;
-
-    const closeRate = mean(rows.map((r) => r.metrics.playsCloseRate));
-    const closeRatePrev = mean(rows.map((r) => r.prevMetrics.playsCloseRate));
-    const interactionRate = mean(rows.map((r) => r.metrics.interactionRate));
-    const interactionRatePrev = mean(rows.map((r) => r.prevMetrics.interactionRate));
+    // Taxas POOLED (Σ numeradores ÷ Σ denominadores). Ver `pooledRate`: a média
+    // das taxas por company contava "não criou nenhuma play" como "fechou 0% das
+    // suas plays" e fazia o KPI andar para o lado errado ao estreitar o período.
+    const closeRate = pooledRate(
+      rows,
+      (r) => r.metrics.playsCreatedThatClosed,
+      (r) => r.metrics.playsCreated,
+    );
+    const closeRatePrev = pooledRate(
+      rows,
+      (r) => r.prevMetrics.playsCreatedThatClosed,
+      (r) => r.prevMetrics.playsCreated,
+    );
+    const interactionRate = pooledRate(
+      rows,
+      (r) => r.metrics.interactions,
+      (r) => r.metrics.contactsInvolved,
+    );
+    const interactionRatePrev = pooledRate(
+      rows,
+      (r) => r.prevMetrics.interactions,
+      (r) => r.prevMetrics.contactsInvolved,
+    );
 
     return {
       total,
       mrrAtRisk,
+      mrrAtRiskPrev,
       active,
       activePrev,
       stale,
@@ -267,10 +298,13 @@ export function UsagePortfolio() {
 
         {/* 5 KPIs agregados */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          {/* MRR em risco SOBE = piora → invertDelta. */}
           <StatTile
             label="MRR em risco"
             value={BRL.format(kpis.mrrAtRisk)}
-            hint="Soma do MRR de clientes em Crítico + Em risco"
+            delta={formatDelta(kpis.mrrAtRisk, kpis.mrrAtRiskPrev)}
+            invertDelta
+            hint="Soma do MRR de clientes em Crítico + Em risco · Δ vs. período anterior"
           />
           <StatTile
             label="Clientes ativos"
@@ -284,19 +318,32 @@ export function UsagePortfolio() {
             hint="Inclui quem nunca acessou"
             pending
           />
+          {/*
+           * Taxa POOLED, não média das taxas por cliente: rótulo, hint e conta
+           * descrevem UMA estatística só. `basis` diz sobre quantos clientes ela
+           * foi calculada — quem não criou play nenhuma não entra (não é 0%, é
+           * ausência de denominador).
+           */}
           <StatTile
-            label="Taxa média de plays fechadas"
-            value={kpis.closeRate}
+            label="Taxa de plays fechadas (carteira)"
+            value={kpis.closeRate.rate}
             format="pct"
-            delta={formatDelta(kpis.closeRate, kpis.closeRatePrev)}
-            hint="Média entre clientes"
+            delta={formatDelta(kpis.closeRate.rate, kpis.closeRatePrev.rate)}
+            hint={`Plays fechadas ÷ plays criadas, somando toda a carteira · base: ${
+              kpis.closeRate.basis
+            } clientes criaram plays no período (de ${kpis.total})`}
           />
           <StatTile
-            label="Taxa média de interação"
-            value={kpis.interactionRate}
+            label="Taxa de interação (carteira)"
+            value={kpis.interactionRate.rate}
             format="pct"
-            delta={formatDelta(kpis.interactionRate, kpis.interactionRatePrev)}
-            hint="Contatos que responderam ÷ envolvidos"
+            delta={formatDelta(
+              kpis.interactionRate.rate,
+              kpis.interactionRatePrev.rate,
+            )}
+            hint={`Interações ÷ contatos envolvidos, somando toda a carteira · base: ${
+              kpis.interactionRate.basis
+            } clientes envolveram contatos no período (de ${kpis.total})`}
           />
         </div>
 

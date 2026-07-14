@@ -67,7 +67,11 @@ describe('UsagePortfolio', () => {
   it('monta com título, contagem e os 4 buckets', () => {
     mount();
     expect(screen.getByRole('heading', { name: 'Uso de Clientes' })).toBeTruthy();
-    expect(screen.getByText(new RegExp(`${COMPANIES.length} clientes`))).toBeTruthy();
+    // ancorado no início: o hint dos KPIs de taxa também declara a base em
+    // "N clientes …", e um regex solto casaria com os dois.
+    expect(
+      screen.getByText(new RegExp(`^${COMPANIES.length} clientes ·`)),
+    ).toBeTruthy();
     for (const label of ['Crítico', 'Em risco', 'Atenção', 'Saudável']) {
       expect(
         screen.getByRole('region', { name: new RegExp(`^${label} —`) }),
@@ -81,10 +85,32 @@ describe('UsagePortfolio', () => {
       'MRR em risco',
       'Clientes ativos',
       'Sem acesso há 7d+',
-      'Taxa média de plays fechadas',
-      'Taxa média de interação',
+      'Taxa de plays fechadas (carteira)',
+      'Taxa de interação (carteira)',
     ]) {
       expect(screen.getByText(label)).toBeTruthy();
+    }
+  });
+
+  /**
+   * O rótulo dizia "Taxa MÉDIA" (média das taxas por cliente) enquanto o hint
+   * prometia "Contatos que responderam ÷ envolvidos" (uma taxa POOLED): o card
+   * afirmava ser duas estatísticas ao mesmo tempo, e a conta era a pior das duas.
+   * Agora os três — rótulo, hint e conta — dizem a mesma coisa.
+   *
+   * O valor exato do pooled é assertado em `UsagePortfolio.aggregate.test.tsx`,
+   * contra uma carteira construída. Aqui guardamos só a coerência do texto.
+   */
+  it('os KPIs de taxa não prometem "média" — a conta é pooled (carteira)', () => {
+    mount();
+    for (const label of [
+      'Taxa de plays fechadas (carteira)',
+      'Taxa de interação (carteira)',
+    ]) {
+      const text = statTile(label).textContent ?? '';
+      expect(text).not.toMatch(/média/i);
+      // o hint declara a BASE: uma taxa agregada sem a sua base não se audita
+      expect(text).toMatch(new RegExp(`base: \\d+ clientes .*\\(de ${COMPANIES.length}\\)`));
     }
   });
 
@@ -147,7 +173,19 @@ describe('UsageCompanyDetail', () => {
     }
   });
 
-  it('mostra o Δ invertido em touchpoints atrasados', () => {
+  /**
+   * Este teste só afirma que os dois tiles EXISTEM — e é tudo o que ele deve
+   * afirmar. Ele NÃO guarda o `invertDelta`: com o mock real não há como garantir
+   * que estas companies tenham touchpoints atrasados em ALTA, e uma asserção de
+   * cor sobre um Δ que calha de ser "estável" passaria vazia.
+   *
+   * A semântica renderizada (Δ de alta em touchpoints atrasados pinta TREND_BAD,
+   * Δ de alta em plays criadas pinta TREND_GOOD) é guardada, contra uma carteira
+   * construída para isso, em `UsageCompanyDetail.semantics.test.tsx`. Remover
+   * `invertDelta` da produção deixa AQUELE arquivo vermelho — este continuaria
+   * verde, e foi exatamente esse o buraco que a mutação encontrou.
+   */
+  it('os dois tiles de touchpoints atrasados existem', () => {
     renderDetail(COMPANIES[2].id);
     expect(screen.getByText('Touchpoints atrasados')).toBeTruthy();
     expect(screen.getByText('% de touchpoints atrasados')).toBeTruthy();

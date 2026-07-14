@@ -10,6 +10,7 @@ import {
   lastAccessAt,
   lastActivityAt,
   playTypeMix,
+  pooledRate,
   previousPeriod,
   userStats,
 } from './selectors';
@@ -498,5 +499,107 @@ describe('userStats', () => {
     // A contagem inteira daria a=5, b=2, total 7 → 0.714 / 0.286.
     expect(a.share).toBeCloseTo(0.8);
     expect(b.share).toBeCloseTo(0.2);
+  });
+});
+
+/**
+ * O defeito que este bloco guarda: o portfólio agregava as taxas com uma MÉDIA
+ * DAS TAXAS por company. `computeMetrics` devolve `playsCloseRate = 0` para quem
+ * criou ZERO plays (via `safeDiv`), então "não fez nada" entrava na média como
+ * "fechou 0% das suas plays". Quem não jogou puxava a média como se tivesse
+ * perdido.
+ *
+ * O efeito era INVERSOR — o pior tipo de bug de dashboard. Estreitando o período
+ * de 30d para 7d no mock, as companies com zero plays vão de 2 para 13: a "média"
+ * DESPENCA (46,9% → 24,7%) enquanto a taxa real entre quem de fato rodou plays
+ * MELHORA (46,4% → 53,8%). O KPI andava para o lado errado no gesto mais comum
+ * do dashboard (trocar o período).
+ */
+describe('pooledRate — a company sem denominador não pode puxar o agregado', () => {
+  it('10 plays / 5 fechadas + uma company com ZERO plays → 50%, não 25%', () => {
+    const rows = [
+      { num: 5, den: 10 }, // fechou metade das 10 que criou
+      { num: 0, den: 0 }, // não criou play nenhuma — ausência de evidência
+    ];
+    const pooled = pooledRate(rows, (r) => r.num, (r) => r.den);
+
+    expect(pooled.rate).toBeCloseTo(0.5);
+    // a média das taxas (o bug) daria 0.25:
+    const meanOfRates = rows.reduce((s, r) => s + (r.den === 0 ? 0 : r.num / r.den), 0) / rows.length;
+    expect(meanOfRates).toBeCloseTo(0.25);
+    expect(pooled.rate).not.toBeCloseTo(meanOfRates);
+
+    // e a taxa diz sobre QUANTOS clientes foi calculada
+    expect(pooled.basis).toBe(1);
+  });
+
+  it('a company sem denominador não entra nem no numerador nem no denominador', () => {
+    const withGhosts = pooledRate(
+      [{ n: 5, d: 10 }, { n: 0, d: 0 }, { n: 0, d: 0 }, { n: 0, d: 0 }],
+      (r) => r.n,
+      (r) => r.d,
+    );
+    const withoutGhosts = pooledRate([{ n: 5, d: 10 }], (r) => r.n, (r) => r.d);
+    expect(withGhosts.rate).toBeCloseTo(withoutGhosts.rate);
+    expect(withGhosts.denominator).toBe(10);
+    expect(withGhosts.basis).toBe(1);
+  });
+
+  it('pondera pelo tamanho: 1 play fechada de 1 não vale o mesmo que 40 de 200', () => {
+    // pequeno: 100%; grande: 20%. Pooled = 41/201 ≈ 20,4% (perto do grande).
+    // A média das taxas daria 60% — a company minúscula dominando a carteira.
+    const pooled = pooledRate(
+      [{ n: 1, d: 1 }, { n: 40, d: 200 }],
+      (r) => r.n,
+      (r) => r.d,
+    );
+    expect(pooled.rate).toBeCloseTo(41 / 201, 4);
+    expect(pooled.rate).toBeLessThan(0.25);
+  });
+
+  it('sem nenhum denominador na carteira → 0 e basis 0 (não NaN)', () => {
+    const pooled = pooledRate([{ n: 0, d: 0 }], (r) => r.n, (r) => r.d);
+    expect(pooled.rate).toBe(0);
+    expect(pooled.basis).toBe(0);
+    expect(Number.isNaN(pooled.rate)).toBe(false);
+  });
+
+  it('regressão de sinal no MOCK: estreitar o período NÃO pode inverter o KPI', () => {
+    // O sintoma exato reportado. Com a média das taxas, 30d→7d fazia o número
+    // CAIR pela metade enquanto a taxa real SUBIA.
+    const win = (days: number): Period => ({
+      start: new Date(TODAY.getTime() - (days - 1) * DAY),
+      end: TODAY,
+    });
+    const rateAt = (days: number) => {
+      const ms = COMPANIES.map((c) => computeMetrics(c, win(days)));
+      return pooledRate(ms, (m) => m.playsCreatedThatClosed, (m) => m.playsCreated).rate;
+    };
+    const meanAt = (days: number) => {
+      const ms = COMPANIES.map((c) => computeMetrics(c, win(days)));
+      return ms.reduce((s, m) => s + m.playsCloseRate, 0) / ms.length;
+    };
+
+    // o pooled sobe de 30d para 7d (a verdade); a média das taxas DESPENCA (o bug)
+    expect(rateAt(7)).toBeGreaterThan(rateAt(30));
+    expect(meanAt(7)).toBeLessThan(meanAt(30) / 1.5);
+  });
+
+  it('interactionRate pooled usa `interactions` cru, não a taxa clampada', () => {
+    // `computeMetrics.interactionRate` é clampado em 1. Se o agregado
+    // reconstruísse o numerador como `rate * contactsInvolved`, perderia o
+    // excedente. `interactions` é exposto justamente para isso.
+    const c = company({
+      plays: [
+        play({
+          createdAt: d(5),
+          touchpoints: [tp({ createdAt: d(4), contactsInvolved: 2, interactions: 9 })],
+        }),
+      ],
+    });
+    const m = computeMetrics(c, PERIOD);
+    expect(m.interactionRate).toBe(1); // clampado
+    expect(m.interactions).toBe(9); // cru
+    expect(m.contactsInvolved).toBe(2);
   });
 });
