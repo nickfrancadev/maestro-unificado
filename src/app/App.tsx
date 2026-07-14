@@ -18,6 +18,8 @@ import { CampaignList } from "./campaigns/CampaignList";
 import { CampaignWizard } from "./campaigns/CampaignWizard";
 import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
 import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
+import { UsagePortfolio } from "./pages/usage/UsagePortfolio";
+import { UsageCompanyDetail } from "./pages/usage/UsageCompanyDetail";
 import { LandingPagesOverview } from "./landingPages/overview/LandingPagesOverview";
 import { CreateSelector } from "./landingPages/create/CreateSelector";
 import { LandingPageEditor } from "./landingPages/editor/LandingPageEditor";
@@ -102,6 +104,8 @@ export default function App() {
           <Route path="landing-pages/new" element={<CreateSelector />} />
           <Route path="landing-pages/:id/edit" element={<LandingPageEditor />} />
           <Route path="landing-pages/:id/analytics" element={<LandingPageAnalytics />} />
+          <Route path="uso-clientes" element={<UsagePortfolio />} />
+          <Route path="uso-clientes/:companyId" element={<UsageCompanyDetail />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
