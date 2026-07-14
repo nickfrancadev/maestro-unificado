@@ -1,43 +1,69 @@
-# Simple workflow for deploying static content to GitHub Pages
+# Builda o app Vite e publica no GitHub Pages
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
+  # Roda em push na branch padrão
   push:
     branches: ["main"]
 
-  # Allows you to run this workflow manually from the Actions tab
+  # Permite rodar manualmente na aba Actions
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+# Permissões do GITHUB_TOKEN para deploy no Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+# Um deploy por vez; não cancela um em andamento
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          # Faz o Vite emitir os assets com base '/maestro-unificado/'
+          GITHUB_PAGES: "true"
+        run: npm run build
+
+      - name: SPA fallback (deep-links não dão 404)
+        # O app usa BrowserRouter; o Pages não sabe reescrever /uso-clientes para
+        # o index.html. Copiar index.html -> 404.html faz o Pages servir a SPA
+        # em qualquer rota, e o React Router assume a partir daí.
+        run: cp dist/index.html dist/404.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Publica só o resultado do build, não o repositório inteiro
+          path: 'dist'
+
   deploy:
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

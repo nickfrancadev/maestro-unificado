@@ -75,8 +75,13 @@ function Placeholder({ title }: { title: string }) {
 }
 
 export default function App() {
+  // No GitHub Pages o app é servido de um subdiretório; o Vite injeta esse
+  // caminho em BASE_URL. O BrowserRouter espera o basename sem a barra final
+  // ('/maestro-unificado'), e sem basename nenhum quando servido da raiz.
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/auth/linkedin/callback" element={<LinkedInOAuthCallback />} />

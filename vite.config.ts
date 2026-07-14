@@ -17,7 +17,13 @@ function figmaAssetResolver() {
   }
 }
 
+// Em GitHub Pages o app mora num subdiretório (nickfrancadev.github.io/maestro-unificado/),
+// então os assets precisam ser referenciados a partir dele. O workflow do Pages seta
+// GITHUB_PAGES=true; localmente e na Vercel (que serve na raiz) o base fica '/'.
+const base = process.env.GITHUB_PAGES === 'true' ? '/maestro-unificado/' : '/'
+
 export default defineConfig({
+  base,
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if
