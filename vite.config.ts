@@ -35,17 +35,6 @@ export default defineConfig({
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 
-  test: {
-    // Testes de componente (`.test.tsx`) rodam em jsdom — antes cada arquivo
-    // trazia o próprio pragma `// @vitest-environment jsdom`.
-    //
-    // Os testes puros de `lib/` (`.test.ts`) ficam em `node` de propósito: um
-    // deles lê o próprio fonte via `new URL('.', import.meta.url).pathname`, e
-    // sob jsdom `import.meta.url` deixa de ser um `file://` — o teste quebra.
-    // `lib/` é a fundação congelada; a config se adapta a ela, não o contrário.
-    environment: 'node',
-    environmentMatchGlobs: [['**/*.test.tsx', 'jsdom']],
-    // shims de matchMedia/ResizeObserver, antes duplicados em cada test file
-    setupFiles: ['./vitest.setup.ts'],
-  },
+  // Config do Vitest vive em `vitest.config.ts` — quando os dois arquivos
+  // existem, o Vitest usa o `vitest.config.ts` e IGNORA este bloco.
 })

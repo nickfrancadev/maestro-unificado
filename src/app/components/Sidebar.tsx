@@ -16,6 +16,7 @@ import {
   Megaphone,
   Target,
   HeartPulse,
+  LayoutTemplate,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -31,6 +32,7 @@ const navItems = [
   { icon: User, key: "person", active: true },
   { icon: Megaphone, key: "gtm" },
   { icon: Play, key: "plays" },
+  { icon: LayoutTemplate, key: "landing-pages" },
   { icon: BarChart2, key: "analytics" },
   { icon: Rocket, key: "marketplace" },
   { icon: Target, key: "campaigns" },
