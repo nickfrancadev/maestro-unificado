@@ -100,3 +100,10 @@ export interface Period {
   start: Date;
   end: Date;
 }
+
+/**
+ * "Agora" do dashboard. Vive aqui (e não em `mockData`) para que `lib/` seja
+ * puro: importar um seletor não pode arrastar o gerador do mock junto.
+ * `mockData.ts` re-exporta este símbolo por compatibilidade.
+ */
+export const TODAY = new Date('2026-07-13T12:00:00Z');

@@ -1,7 +1,7 @@
 /**
  * Formatação pura (datas, percentuais, números). Não importa React.
  */
-import { TODAY } from '../data/mockData';
+import { TODAY } from '../data/types';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -16,11 +16,17 @@ export function daysAgo(date: Date | null, today: Date = TODAY): number | null {
   return Math.round((startOfUTCDay(today) - startOfUTCDay(date)) / MS_PER_DAY);
 }
 
-/** "Nunca" | "Hoje" | "1d atrás" | "24d atrás" */
+/**
+ * "Nunca" | "em 3d" (futuro) | "Hoje" | "1d atrás" | "24d atrás".
+ *
+ * `daysAgo` é negativo para datas futuras (ex.: `dueDate` a vencer) — chamar
+ * isso de "Hoje" seria mentira. O futuro ganha rótulo próprio.
+ */
 export function formatDaysAgo(date: Date | null, today: Date = TODAY): string {
   const d = daysAgo(date, today);
   if (d === null) return 'Nunca';
-  if (d <= 0) return 'Hoje';
+  if (d < 0) return `em ${-d}d`;
+  if (d === 0) return 'Hoje';
   return `${d}d atrás`;
 }
 

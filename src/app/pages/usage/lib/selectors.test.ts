@@ -4,6 +4,7 @@ import type { Company, Period, Play, Touchpoint, User } from '../data/types';
 import {
   activityByWeek,
   activityHeatmap,
+  activityVolume,
   adoptionFunnel,
   computeMetrics,
   lastAccessAt,
@@ -83,19 +84,32 @@ function company(over: Partial<Company> = {}): Company {
 const PERIOD: Period = { start: d(29), end: TODAY };
 
 describe('previousPeriod', () => {
-  it('devolve uma janela de mesmo tamanho, imediatamente anterior, sem sobrepor', () => {
+  const contains = (p: Period, t: Date) =>
+    t.getTime() >= p.start.getTime() && t.getTime() <= p.end.getTime();
+
+  it('nenhum evento pode cair nas duas janelas ao mesmo tempo', () => {
+    // A propriedade que importa: `trend` compara volumes de janelas DISJUNTAS.
+    // Se um único evento fosse contado dos dois lados, a razão mentiria.
     const prev = previousPeriod(PERIOD);
-    expect(prev.end.getTime()).toBe(PERIOD.start.getTime() - 1);
-    expect(prev.end.getTime() - prev.start.getTime()).toBe(
-      PERIOD.end.getTime() - PERIOD.start.getTime(),
-    );
+    for (let ms = prev.start.getTime() - DAY; ms <= PERIOD.end.getTime() + DAY; ms += 3600_000) {
+      const t = new Date(ms);
+      expect(contains(prev, t) && contains(PERIOD, t)).toBe(false);
+    }
+  });
+
+  it('as duas janelas têm a mesma duração — senão a comparação de volume é injusta', () => {
+    const prev = previousPeriod(PERIOD);
+    const spanOf = (p: Period) => p.end.getTime() - p.start.getTime();
+    expect(spanOf(prev)).toBe(spanOf(PERIOD));
     expect(prev.end.getTime()).toBeLessThan(PERIOD.start.getTime());
   });
 
-  it('não deixa buraco nem sobreposição em janelas encadeadas', () => {
+  it('janelas encadeadas cobrem o passado sem buraco: fim de p2 encosta no início de p1', () => {
     const p1 = previousPeriod(PERIOD);
     const p2 = previousPeriod(p1);
-    expect(p2.end.getTime()).toBe(p1.start.getTime() - 1);
+    const gap = p1.start.getTime() - p2.end.getTime();
+    expect(gap).toBeLessThanOrEqual(1);
+    expect(gap).toBeGreaterThan(0);
   });
 });
 
@@ -139,6 +153,67 @@ describe('computeMetrics', () => {
     expect(m.playsClosed).toBe(1);
     expect(m.playsOpen).toBe(3);
     expect(m.playsCloseRate).toBeCloseTo(0.25);
+  });
+
+  describe('playsCloseRate usa uma coorte só (as plays CRIADAS no período)', () => {
+    it('cliente que parou de criar plays e deixou uma antiga fechar NÃO tem taxa perfeita', () => {
+      // Este é o cliente que o dashboard existe para pegar: zero plays novas,
+      // uma play velha fechando por inércia. Com numerador e denominador de
+      // coortes diferentes, isso rendia `playsCloseRate === 1` — nota máxima
+      // por não fazer absolutamente nada.
+      const c = company({
+        plays: [play({ id: 'velha', createdAt: d(120), endDate: d(3) })],
+      });
+      const m = computeMetrics(c, PERIOD);
+      expect(m.playsCreated).toBe(0);
+      expect(m.playsClosed).toBe(1); // segue sendo verdade, e útil no display
+      expect(m.playsCloseRate).toBe(0); // mas NÃO vira crédito
+    });
+
+    it('play criada antes do período e fechada dentro dele não entra no numerador', () => {
+      const c = company({
+        plays: [
+          play({ id: 'velha', createdAt: d(120), endDate: d(3) }),
+          play({ id: 'nova1', createdAt: d(10), endDate: null }),
+          play({ id: 'nova2', createdAt: d(10), endDate: null }),
+        ],
+      });
+      const m = computeMetrics(c, PERIOD);
+      expect(m.playsCreated).toBe(2);
+      expect(m.playsClosed).toBe(1); // a velha
+      expect(m.playsCreatedThatClosed).toBe(0); // nenhuma das duas novas fechou
+      expect(m.playsCloseRate).toBe(0);
+    });
+
+    it('a taxa nunca precisa de clamp: não existe entrada que a faça passar de 1', () => {
+      // 3 plays velhas fechando no período + 1 nova criada e fechada.
+      // A fórmula antiga fazia 4/1 → 4, clampado a 1. A coorte única dá 1/1.
+      const c = company({
+        plays: [
+          play({ id: 'v1', createdAt: d(100), endDate: d(2) }),
+          play({ id: 'v2', createdAt: d(100), endDate: d(2) }),
+          play({ id: 'v3', createdAt: d(100), endDate: d(2) }),
+          play({ id: 'nova', createdAt: d(10), endDate: d(1) }),
+        ],
+      });
+      const m = computeMetrics(c, PERIOD);
+      expect(m.playsClosed).toBe(4);
+      expect(m.playsCreated).toBe(1);
+      expect(m.playsCreatedThatClosed).toBe(1);
+      expect(m.playsCloseRate).toBe(1);
+    });
+
+    it('em todas as companies do mock a taxa é exatamente a razão da coorte', () => {
+      for (const c of COMPANIES) {
+        const m = computeMetrics(c, DEFAULT_PERIOD);
+        expect(m.playsCreatedThatClosed).toBeLessThanOrEqual(m.playsCreated);
+        expect(m.playsCloseRate).toBeCloseTo(
+          m.playsCreated === 0 ? 0 : m.playsCreatedThatClosed / m.playsCreated,
+          6,
+        );
+        expect(m.playsCloseRate).toBeLessThanOrEqual(1);
+      }
+    });
   });
 
   it('marca como atrasado o touchpoint vencido e não finalizado', () => {
@@ -298,7 +373,7 @@ describe('userStats', () => {
     }
   });
 
-  it('atividade = plays criadas (ownerEmail) + touchpoints responsáveis', () => {
+  it('atividade = plays criadas (ownerEmail) + touchpoints responsáveis (crédito fracionário)', () => {
     const c = company({
       users: [user('a@x.com.br'), user('b@x.com.br')],
       plays: [
@@ -317,9 +392,111 @@ describe('userStats', () => {
     const a = stats.find((s) => s.user.email === 'a@x.com.br')!;
     const b = stats.find((s) => s.user.email === 'b@x.com.br')!;
     expect(a.plays).toBe(1);
-    expect(a.touchpoints).toBe(1);
+    expect(a.touchpoints).toBeCloseTo(0.5); // t2 dividido com b
     expect(b.plays).toBe(0);
-    expect(b.touchpoints).toBe(2);
+    expect(b.touchpoints).toBeCloseTo(1.5); // t1 inteiro + metade de t2
+    // 2 touchpoints existem; o crédito distribuído soma exatamente 2, não 3.
+    expect(a.touchpoints + b.touchpoints).toBeCloseTo(2);
     expect(a.share + b.share).toBeCloseTo(1);
+  });
+
+  it('INVARIANTE: a soma da atividade por usuário é exatamente o activityVolume', () => {
+    // Contar 1 inteiro por responsável inflava o total: um touchpoint com 2
+    // donos virava 2 unidades de atividade. Os shares continuavam somando 1
+    // (o denominador estava inflado igual), então o teste de shares era cego.
+    // Este aqui não é: ele confere contra o volume REAL.
+    for (const c of COMPANIES) {
+      const rows = userStats(c, DEFAULT_PERIOD);
+      const total = rows.reduce((s, r) => s + r.plays + r.touchpoints, 0);
+      expect(total).toBeCloseTo(activityVolume(c, DEFAULT_PERIOD), 6);
+    }
+  });
+
+  it('INVARIANTE: vale também num caso sintético com multi-responsáveis', () => {
+    const c = company({
+      users: [user('a@x.com.br'), user('b@x.com.br'), user('c@x.com.br')],
+      plays: [
+        play({
+          id: 'p1',
+          createdAt: d(5),
+          ownerEmail: 'a@x.com.br',
+          touchpoints: [
+            tp({ id: 't1', createdAt: d(4), responsibles: ['a@x.com.br', 'b@x.com.br', 'c@x.com.br'] }),
+            tp({ id: 't2', createdAt: d(4), responsibles: ['a@x.com.br', 'b@x.com.br'] }),
+            tp({ id: 't3', createdAt: d(4), responsibles: ['c@x.com.br'] }),
+          ],
+        }),
+      ],
+    });
+    const total = userStats(c, PERIOD).reduce((s, r) => s + r.plays + r.touchpoints, 0);
+    expect(total).toBeCloseTo(activityVolume(c, PERIOD), 6); // 1 play + 3 tps = 4
+    expect(total).toBeCloseTo(4);
+  });
+
+  it('acrescentar um nome ao `responsibles` não cria atividade do nada', () => {
+    // O exploit da contagem inteira: pôr um colega junto no touchpoint fazia o
+    // total da company subir (o mesmo trabalho passava a valer 2 unidades) e,
+    // como o `share` do ajudante subia, a concentração melhorava de graça.
+    const users = [user('a@x.com.br'), user('b@x.com.br')];
+    const mk = (responsibles: string[][]) =>
+      company({
+        users,
+        plays: [
+          play({
+            id: 'p1',
+            createdAt: d(5),
+            ownerEmail: 'a@x.com.br',
+            touchpoints: responsibles.map((r, i) =>
+              tp({ id: `t${i}`, createdAt: d(4), responsibles: r }),
+            ),
+          }),
+        ],
+      });
+
+    const A = ['a@x.com.br'];
+    const AB = ['a@x.com.br', 'b@x.com.br'];
+    const solo = mk([A, A, A, A]);
+    const withHelper = mk([AB, AB, AB, AB]); // MESMO trabalho, mais um nome
+
+    const totalOf = (c: Company) =>
+      userStats(c, PERIOD).reduce((s, r) => s + r.plays + r.touchpoints, 0);
+
+    // Antes: 5 → 9. Agora o volume não se mexe: os mesmos 1 play + 4 tps.
+    expect(totalOf(solo)).toBeCloseTo(5);
+    expect(totalOf(withHelper)).toBeCloseTo(5);
+    expect(totalOf(withHelper)).toBeCloseTo(activityVolume(withHelper, PERIOD));
+  });
+
+  it('quem divide touchpoints tem share menor do que quem os assina sozinho', () => {
+    // `a` faz 2 touchpoints sozinha e divide outros 2 com `b`. O crédito de `a`
+    // é 2 + 0.5 + 0.5 = 3 (não 4), e o de `b` é 1 (não 2) — os shares e, por
+    // consequência, a concentração, mudam. Com contagem inteira, `b` levava
+    // crédito cheio por trabalho que só co-assinou.
+    const c = company({
+      users: [user('a@x.com.br'), user('b@x.com.br')],
+      plays: [
+        play({
+          id: 'p1',
+          createdAt: d(5),
+          ownerEmail: 'a@x.com.br',
+          endDate: null,
+          touchpoints: [
+            tp({ id: 't1', createdAt: d(4), responsibles: ['a@x.com.br'] }),
+            tp({ id: 't2', createdAt: d(4), responsibles: ['a@x.com.br'] }),
+            tp({ id: 't3', createdAt: d(4), responsibles: ['a@x.com.br', 'b@x.com.br'] }),
+            tp({ id: 't4', createdAt: d(4), responsibles: ['a@x.com.br', 'b@x.com.br'] }),
+          ],
+        }),
+      ],
+    });
+    const stats = userStats(c, PERIOD);
+    const a = stats.find((s) => s.user.email === 'a@x.com.br')!;
+    const b = stats.find((s) => s.user.email === 'b@x.com.br')!;
+    expect(a.touchpoints).toBeCloseTo(3);
+    expect(b.touchpoints).toBeCloseTo(1);
+    // total = 1 play + 4 tps = 5; a leva 4/5, b leva 1/5.
+    // A contagem inteira daria a=5, b=2, total 7 → 0.714 / 0.286.
+    expect(a.share).toBeCloseTo(0.8);
+    expect(b.share).toBeCloseTo(0.2);
   });
 });

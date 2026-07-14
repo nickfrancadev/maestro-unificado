@@ -4,7 +4,7 @@
  * O score ordena; os sinais explicam. A UI nunca mostra o número sem os chips.
  */
 import type { Company, Dimension, Health, Period, RiskBucket, Signal } from '../data/types';
-import { TODAY } from '../data/mockData';
+import { TODAY } from '../data/types';
 import {
   activityVolume,
   computeMetrics,
@@ -78,6 +78,24 @@ function concentrationScore(shares: number[]): number {
   return clamp(normalized * 100);
 }
 
+/**
+ * Média SÓ dos termos que têm denominador.
+ *
+ * Um termo sem denominador (0 plays criadas, 0 touchpoints, 0 contatos
+ * envolvidos) não é "nota zero" nem "nota cheia": é ausência de evidência.
+ * Antes, `touchpointsLateRate = 0` com zero touchpoints entrava como
+ * `(1 - 0) = 1.0` na média — a company fantasma, que não fez NADA no período,
+ * colhia `depth = 33`. Sem nenhum denominador, não há profundidade a medir: 0.
+ */
+function depthScore(m: ReturnType<typeof computeMetrics>): number {
+  const terms: number[] = [];
+  if (m.playsCreated > 0) terms.push(m.playsCloseRate);
+  if (m.touchpointsCreated > 0) terms.push(1 - m.touchpointsLateRate);
+  if (m.contactsInvolved > 0) terms.push(m.interactionRate);
+  if (terms.length === 0) return 0;
+  return clamp((terms.reduce((s, t) => s + t, 0) / terms.length) * 100);
+}
+
 export function computeHealth(company: Company, period: Period, today: Date = TODAY): Health {
   const m = computeMetrics(company, period);
   const prev = previousPeriod(period);
@@ -99,11 +117,7 @@ export function computeHealth(company: Company, period: Period, today: Date = TO
   const breakdown: Record<Dimension, number> = {
     recency: Math.round(recencyScore(idleDays)),
     trend: Math.round(trendScore(currVol, prevVol)),
-    depth: Math.round(
-      clamp(
-        ((m.playsCloseRate + (1 - m.touchpointsLateRate) + m.interactionRate) / 3) * 100,
-      ),
-    ),
+    depth: Math.round(depthScore(m)),
     concentration: Math.round(concentrationScore(shares)),
   };
 
@@ -120,7 +134,7 @@ export function computeHealth(company: Company, period: Period, today: Date = TO
     score,
     bucket,
     breakdown,
-    signals: buildSignals(company, period, today, {
+    signals: buildSignals(company, {
       idleDays,
       currVol,
       prevVol,
@@ -135,8 +149,6 @@ const SEVERITY_ORDER: Record<Signal['severity'], number> = { high: 0, medium: 1,
 
 function buildSignals(
   company: Company,
-  _period: Period,
-  _today: Date,
   ctx: {
     idleDays: number | null;
     currVol: number;
@@ -159,7 +171,8 @@ function buildSignals(
     });
   }
 
-  if (m.playsCreated >= 5 && m.playsClosed === 0) {
+  // Mesma coorte do rótulo: "das N que abriu, 0 fecharam".
+  if (m.playsCreated >= 5 && m.playsCreatedThatClosed === 0) {
     out.push({
       id: 'no-closed-plays',
       label: `0 de ${m.playsCreated} plays fechadas`,
@@ -212,14 +225,15 @@ function buildSignals(
     });
   }
 
-  if (out.length === 0 && bucket === 'healthy') {
-    out.push({ id: 'healthy', label: 'Uso saudável', severity: 'low' });
+  if (out.length === 0) {
+    out.push(
+      bucket === 'healthy'
+        ? { id: 'healthy', label: 'Uso saudável', severity: 'low' }
+        : { id: 'no-signal', label: 'Sem sinais relevantes', severity: 'low' },
+    );
   }
 
   // Garante 1..3 chips, priorizando severidade.
   out.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-  if (out.length === 0) {
-    out.push({ id: 'no-signal', label: 'Sem sinais relevantes', severity: 'low' });
-  }
   return out.slice(0, 3);
 }

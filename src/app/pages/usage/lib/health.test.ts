@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { COMPANIES, DEFAULT_PERIOD, TODAY, getCompany } from '../data/mockData';
 import type { Company, Period, Play, Touchpoint, User } from '../data/types';
 import { BUCKET_META, BUCKET_THRESHOLDS, WEIGHTS, bucketOf, computeHealth } from './health';
+import { computeMetrics, userStats } from './selectors';
 
 const DAY = 86_400_000;
 
@@ -248,6 +249,58 @@ describe('dimensão: profundidade (25%)', () => {
     // (0 + 1 + 1) / 3 = 0.667
     expect(computeHealth(c, PERIOD).breakdown.depth).toBe(67);
   });
+
+  describe('sem denominador não há nota — nem zero, nem de graça', () => {
+    it('zero plays E zero touchpoints no período → depth 0 (e não 33)', () => {
+      // `touchpointsLateRate` de 0 touchpoints valia 0, e `(1 - 0) = 1.0`
+      // entrava cheio na média: quem não fez NADA no período colhia depth 33.
+      const c = company({ plays: [] });
+      expect(computeHealth(c, PERIOD).breakdown.depth).toBe(0);
+    });
+
+    it('plays antigas fora do período não geram profundidade', () => {
+      const c = company({
+        plays: [play({ id: 'velha', createdAt: d(120), endDate: d(100), touchpoints: [] })],
+      });
+      const h = computeHealth(c, PERIOD);
+      expect(h.breakdown.depth).toBe(0);
+    });
+
+    it('uma play velha fechando dentro da janela não vale depth 67', () => {
+      // Zero plays criadas, zero touchpoints, mas uma play antiga fecha na
+      // janela: antes, `playsCloseRate` virava 1 (C2) e o late-rate vazio virava
+      // 1 → depth 67 para uma company que não fez nada.
+      const c = company({
+        plays: [play({ id: 'velha', createdAt: d(120), endDate: d(3), touchpoints: [] })],
+      });
+      expect(computeHealth(c, PERIOD).breakdown.depth).toBe(0);
+    });
+
+    it('só touchpoints (nenhuma play criada no período) → média só do termo que existe', () => {
+      // A play nasceu antes da janela; os touchpoints dela, dentro. Sem plays
+      // criadas, o termo de close-rate não tem denominador e sai da média.
+      const c = company({
+        plays: [
+          play({
+            id: 'velha',
+            createdAt: d(60),
+            endDate: null,
+            touchpoints: [
+              tp({ id: 't1', createdAt: d(5), dueDate: d(-5), endDate: d(3), contactsInvolved: 4, interactions: 4 }),
+            ],
+          }),
+        ],
+      });
+      // (1 - 0 atrasados) e interactionRate 1 → média dos 2 termos = 100.
+      expect(computeHealth(c, PERIOD).breakdown.depth).toBe(100);
+    });
+
+    it('as companies fantasma do mock têm depth 0', () => {
+      for (const id of ['valeverde', 'bonsaude']) {
+        expect(computeHealth(getCompany(id)!, DEFAULT_PERIOD).breakdown.depth).toBe(0);
+      }
+    });
+  });
 });
 
 describe('dimensão: concentração (15%)', () => {
@@ -291,6 +344,53 @@ describe('dimensão: concentração (15%)', () => {
 
   it('sem atividade nenhuma → 0', () => {
     expect(computeHealth(company(), PERIOD).breakdown.concentration).toBe(0);
+  });
+
+  it('pôr um colega junto no touchpoint NÃO melhora a concentração de graça', () => {
+    // O modelo não pode recompensar quem apenas acrescenta nomes ao
+    // `responsibles`. Com contagem inteira por responsável, o ajudante que
+    // co-assinava tudo ganhava crédito CHEIO e a concentração disparava.
+    // Com crédito fracionário, `b` só leva a fatia que de fato lhe cabe.
+    const mk = (helper: boolean) =>
+      company({
+        users: [
+          user('a@x.com.br', { lastAccessAt: d(1) }),
+          user('b@x.com.br', { lastAccessAt: d(1) }),
+        ],
+        plays: [
+          play({
+            id: 'p1',
+            createdAt: d(5),
+            ownerEmail: 'a@x.com.br',
+            endDate: null,
+            touchpoints: [0, 1, 2, 3].map((i) =>
+              tp({
+                id: `t${i}`,
+                createdAt: d(4),
+                // `a` faz sozinha as 2 primeiras; nas 2 últimas, `b` entra junto
+                // — ou não, dependendo do cenário.
+                responsibles:
+                  i < 2 || !helper ? ['a@x.com.br'] : ['a@x.com.br', 'b@x.com.br'],
+              }),
+            ),
+          }),
+        ],
+      });
+
+    const alone = computeHealth(mk(false), PERIOD).breakdown.concentration;
+    const shared = computeHealth(mk(true), PERIOD).breakdown.concentration;
+
+    // Sozinha: `a` responde por 100% → concentração 0 (um só usuário ativo).
+    expect(alone).toBe(0);
+    // Com `b` co-assinando 2 de 4: crédito de `a` = 1 play + 2 + 0.5 + 0.5 = 4
+    // de 5; `b` = 1 de 5. Longe do 50/50 que a contagem inteira produziria.
+    const stats = userStats(mk(true), PERIOD);
+    expect(stats.find((s) => s.user.email === 'b@x.com.br')!.share).toBeCloseTo(0.2);
+    expect(shared).toBeGreaterThan(0);
+    // A contagem inteira daria b = 2/7 ≈ 0.286 → HHI menor → concentração MAIOR.
+    // Confere-se contra o valor exato do modelo fracionário:
+    const hhi = 0.8 * 0.8 + 0.2 * 0.2;
+    expect(shared).toBe(Math.round(((1 - hhi) / (1 - 1 / 2)) * 100));
   });
 });
 
@@ -356,11 +456,15 @@ describe('perfis plantados no mock', () => {
     }
   });
 
-  it('os acumuladores não têm nenhuma play fechada e não são healthy', () => {
+  it('os acumuladores abrem 15-30 plays NO PERÍODO, não fecham nenhuma e não são healthy', () => {
     for (const id of ['aurora', 'ipiranga']) {
       const c = getCompany(id)!;
-      expect(c.plays.length).toBeGreaterThanOrEqual(15);
-      expect(c.plays.length).toBeLessThanOrEqual(30);
+      const m = computeMetrics(c, DEFAULT_PERIOD);
+      // O brief fala de plays CRIADAS NO PERÍODO. Medir `c.plays.length` somava
+      // as duas janelas e "passava" mesmo com o período atual sub-semeado.
+      expect(m.playsCreated).toBeGreaterThanOrEqual(15);
+      expect(m.playsCreated).toBeLessThanOrEqual(30);
+      expect(m.playsCreatedThatClosed).toBe(0);
       expect(c.plays.every((p) => p.endDate === null)).toBe(true);
       expect(computeHealth(c, DEFAULT_PERIOD).bucket).toBe('at_risk');
     }

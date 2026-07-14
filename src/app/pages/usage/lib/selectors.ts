@@ -7,14 +7,17 @@
  * - idem para touchpoints.
  */
 import type { Company, Period, Play, PlayType, Touchpoint, User } from '../data/types';
-import { TODAY } from '../data/mockData';
+import { TODAY } from '../data/types';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export interface UsageMetrics {
   playsCreated: number;
+  /** Plays fechadas DENTRO do período, independente de quando nasceram. Métrica de display. */
   playsClosed: number;
-  /** 0-1 */
+  /** Das plays CRIADAS no período, quantas já estão fechadas (coorte fechada). */
+  playsCreatedThatClosed: number;
+  /** `playsCreatedThatClosed / playsCreated`, 0-1. Zero criadas → 0. */
   playsCloseRate: number;
   playsOpen: number;
   touchpointsCreated: number;
@@ -27,6 +30,8 @@ export interface UsageMetrics {
   avgInteractionsPerPlay: number;
   /** interações / contatos envolvidos, 0-1 */
   interactionRate: number;
+  /** Denominador de `interactionRate`: contatos envolvidos nos touchpoints do período. */
+  contactsInvolved: number;
   /** null se nenhuma play fechada no período */
   avgDaysToClose: number | null;
   /** usuários com atividade no período */
@@ -89,20 +94,19 @@ export function computeMetrics(company: Company, period: Period): UsageMetrics {
 
   const active = userStats(company, period).filter((u) => u.plays + u.touchpoints > 0);
 
-  // Denominador de close-rate = plays criadas no período (leitura do produto:
-  // "das plays que abri nesse período, quantas fechei?"). Se nenhuma foi criada
-  // mas alguma fechou, a taxa é 1 (só há upside).
-  const closeRateDenom = playsCreated;
+  // Close-rate com COORTE ÚNICA: numerador e denominador falam das MESMAS plays
+  // — as criadas no período. Misturar "fechadas no período" (que podem ter
+  // nascido antes) com "criadas no período" produzia taxas > 1 (mascaradas por
+  // um clamp) e dava 1.0 de graça a quem parou de criar plays e deixou uma
+  // antiga fechar. Zero criadas → 0 (não se ganha crédito por não fazer nada);
+  // `health.ts` trata esse caso como "sem denominador" e o exclui de `depth`.
+  const playsCreatedThatClosed = plays.filter((p) => p.endDate !== null).length;
 
   return {
     playsCreated,
     playsClosed,
-    playsCloseRate:
-      closeRateDenom === 0
-        ? playsClosed > 0
-          ? 1
-          : 0
-        : Math.min(1, playsClosed / closeRateDenom),
+    playsCreatedThatClosed,
+    playsCloseRate: safeDiv(playsCreatedThatClosed, playsCreated),
     playsOpen: plays.filter((p) => p.endDate === null).length,
     touchpointsCreated,
     touchpointsClosed,
@@ -118,6 +122,7 @@ export function computeMetrics(company: Company, period: Period): UsageMetrics {
       playsCreated,
     ),
     interactionRate: Math.min(1, safeDiv(interactions, contactsInvolved)),
+    contactsInvolved,
     avgDaysToClose:
       daysToClose.length === 0
         ? null
@@ -257,8 +262,18 @@ export function adoptionFunnel(
 
 /**
  * Atividade por usuário no período: plays que ele criou (`ownerEmail`) +
- * touchpoints em que é responsável (`responsibles`). `share` = fração da
- * atividade total da company (soma ~1 quando há atividade).
+ * touchpoints em que é responsável (`responsibles`).
+ *
+ * CRÉDITO FRACIONÁRIO: um touchpoint com N responsáveis dá `1/N` a cada um.
+ * Contar 1 inteiro por responsável inflava o total da company (um touchpoint
+ * co-owned virava 2 unidades de atividade) e, pior, FAZIA A COLABORAÇÃO SUBIR
+ * o score de concentração — adicionar nomes ao `responsibles` era um exploit.
+ * Com a fração, vale a invariante:
+ *
+ *     Σ(plays + touchpoints) === activityVolume(company, period)
+ *
+ * `share` = fração da atividade total da company (soma ~1 quando há atividade).
+ * `touchpoints` é fracionário (ex.: 2.5); `plays` é inteiro (um dono só).
  */
 export function userStats(
   company: Company,
@@ -269,7 +284,10 @@ export function userStats(
 
   const rows = company.users.map((user) => {
     const p = plays.filter((pl) => pl.ownerEmail === user.email).length;
-    const t = tps.filter((tp) => tp.responsibles.includes(user.email)).length;
+    const t = tps.reduce((s, tp) => {
+      if (tp.responsibles.length === 0) return s;
+      return tp.responsibles.includes(user.email) ? s + 1 / tp.responsibles.length : s;
+    }, 0);
     return { user, plays: p, touchpoints: t, share: 0 };
   });
 

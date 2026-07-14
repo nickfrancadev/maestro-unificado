@@ -14,8 +14,11 @@ import type {
   TouchpointType,
   User,
 } from './types';
+import { TODAY } from './types';
 
-export const TODAY = new Date('2026-07-13T12:00:00Z');
+// Re-export por compatibilidade: a constante vive em `types.ts` para que `lib/`
+// não precise importar este módulo (e executar o gerador) só para saber "hoje".
+export { TODAY };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -238,8 +241,11 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
   // recente existe, mas nada converte — e o ritmo já está caindo.
   hoarder: {
     users: 4,
-    playsCurrent: [8, 10],
-    playsPrevious: [15, 18],
+    // O brief pede "15-30 plays criadas" no período — antes o mock semeava 8-10
+    // e o teste "provava" o perfil olhando `plays.length` (TODAS as plays, das
+    // duas janelas), o que mascarava o sub-seeding.
+    playsCurrent: [16, 20],
+    playsPrevious: [24, 28],
     tpsPerPlay: [3, 5],
     closeRate: 0, // ZERO plays fechadas — endDate: null em todas
     tpCloseRate: 0.05,
@@ -284,15 +290,20 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
     topShare: 0.55,
     neverAccessed: 1,
   },
+  // "Atenção": ainda mexe, mas a execução é morna — fecha pouco, atrasa muito e
+  // as pessoas do outro lado quase não respondem. Antes o mock configurava um
+  // closeRate de 0.3 que na prática nunca se materializava (o lag de
+  // fechamento caía no futuro e a play ficava aberta); com o mock corrigido, os
+  // números precisam ser explicitamente mornos, e não acidentalmente ruins.
   watch: {
     users: 4,
     playsCurrent: [5, 7],
-    playsPrevious: [7, 9],
+    playsPrevious: [9, 11],
     tpsPerPlay: [4, 6],
-    closeRate: 0.3,
-    tpCloseRate: 0.4,
-    lateRate: 0.5,
-    interactionRate: 0.4,
+    closeRate: 0.22,
+    tpCloseRate: 0.3,
+    lateRate: 0.6,
+    interactionRate: 0.32,
     accessDays: [5, 8],
     currentWindow: [5, 28],
     previousWindow: [31, 58],
@@ -450,9 +461,17 @@ function makePlays(
     const startDate = new Date(createdAt.getTime() + MS_PER_DAY);
     const expectedEndDate = new Date(createdAt.getTime() + randInt(rng, 14, 40) * MS_PER_DAY);
 
-    // Fecha entre 5 e 25 dias após a criação, nunca no futuro.
-    const closeAt = createdAt.getTime() + randInt(rng, 5, 25) * MS_PER_DAY;
-    const endDate = closed && closeAt <= TODAY.getTime() ? new Date(closeAt) : null;
+    // Fecha entre 2 e 25 dias após a criação, nunca no futuro. O teto é o tempo
+    // que de fato passou: sortear um lag maior que a idade da play a deixaria
+    // silenciosamente aberta, e o `closeRate` efetivo despencaria para bem
+    // abaixo do configurado justamente nas plays recentes (as dos clientes
+    // saudáveis). Aqui o lag é sorteado dentro do que é fisicamente possível.
+    const ageDays = Math.floor((TODAY.getTime() - createdAt.getTime()) / MS_PER_DAY);
+    const maxLag = Math.min(25, ageDays);
+    const endDate =
+      closed && maxLag >= 2
+        ? new Date(createdAt.getTime() + randInt(rng, 2, maxLag) * MS_PER_DAY)
+        : null;
 
     const id = `${seed.slug}-p${startIndex + i + 1}`;
     const type = pick(rng, PLAY_TYPES);
