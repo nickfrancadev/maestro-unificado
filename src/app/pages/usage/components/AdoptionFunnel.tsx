@@ -11,6 +11,7 @@
  */
 import { TrendingDown } from 'lucide-react';
 import { formatNumber } from '../lib/format';
+import { TREND_FLAT } from './colors';
 
 const NAVY = '#212A46';
 const NAVY_LIGHT = '#8A93AD';
@@ -37,28 +38,50 @@ export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
   const max = stages.reduce((m, s) => Math.max(m, s.value), 0);
 
   /**
-   * Conversão de cada estágio para o anterior. `dropPct` é a queda em pontos
-   * percentuais — é ela que define a "maior queda", não a diferença absoluta
-   * (perder 900 de 1000 contatos é pior que perder 900 de 100000 interações).
+   * Conversão de cada estágio para o anterior.
+   *
+   * Este funil NÃO é monotonicamente decrescente: os estágios têm unidades
+   * diferentes (contas → contatos → dossiês → plays → touchpoints → interações
+   * → plays fechadas). Um cliente saudável tem MAIS contatos que contas — a
+   * razão `próximo/anterior` legitimamente passa de 1. Isso é EXPANSÃO, não
+   * queda, e chamá-la de "↓ 400%" faria o componente mentir em todo cliente.
+   *
+   *   rate > 1  → expansão   (normal, saudável)
+   *   rate < 1  → contração  (só ela é candidata a "maior queda")
+   *   rate = 1  → estável    (nem seta, nem palavra)
+   *
+   * Denominador zero é INDEFINIDO — não é 0%, não é Infinity: sem estágio
+   * anterior não existe taxa de conversão. A linha simplesmente não é
+   * renderizada (é o caso dos clientes-fantasma, que zeram tudo após o topo).
+   *
+   * `deltaPP` é a variação em pontos percentuais (negativa numa contração).
    */
   const conversions = stages.map((s, i) => {
     if (i === 0) return null;
     const prev = stages[i - 1].value;
-    if (prev <= 0) return null;
+    if (prev <= 0) return null; // indefinido, não zero
     const rate = s.value / prev;
-    return { rate, dropPct: (1 - rate) * 100 };
+    return {
+      rate,
+      deltaPP: (rate - 1) * 100,
+      isContraction: rate < 1,
+      isExpansion: rate > 1,
+    };
   });
 
+  /**
+   * A "maior queda" é a PIOR CONTRAÇÃO — a menor razão abaixo de 1. Uma
+   * expansão nunca concorre, nem quando é a menor de todas: se o funil só
+   * expande, nenhum estágio é marcado (não existe gargalo a apontar).
+   */
   let worstIndex = -1;
-  let worstDrop = -1;
+  let worstRate = Infinity;
   conversions.forEach((c, i) => {
-    if (c && c.dropPct > worstDrop) {
-      worstDrop = c.dropPct;
+    if (c && c.isContraction && c.rate < worstRate) {
+      worstRate = c.rate;
       worstIndex = i;
     }
   });
-  // Só faz sentido chamar de "maior queda" se de fato houve queda.
-  if (worstDrop <= 0) worstIndex = -1;
 
   return (
     <div
@@ -92,8 +115,16 @@ export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
                     className="flex items-center gap-1.5 pl-1 py-0.5 text-xs tabular-nums"
                     style={{ color: isWorst ? AMBER : MUTED }}
                   >
-                    <span aria-hidden="true">↓</span>
+                    {/* Seta, sinal e palavra têm que concordar: uma expansão
+                        jamais é descrita como queda. Estável não ganha seta. */}
+                    {conv.isExpansion && <span aria-hidden="true">↑</span>}
+                    {conv.isContraction && <span aria-hidden="true">↓</span>}
                     <span>{Math.round(conv.rate * 100)}%</span>
+                    <span style={{ color: isWorst ? AMBER : TREND_FLAT }}>
+                      {conv.isExpansion && `expansão (+${Math.round(conv.deltaPP)} pp)`}
+                      {conv.isContraction && `queda (${Math.round(conv.deltaPP)} pp)`}
+                      {!conv.isExpansion && !conv.isContraction && 'estável'}
+                    </span>
                     {isWorst && (
                       <span
                         className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium"
