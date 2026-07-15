@@ -157,8 +157,22 @@ export function ScoreTimeline({
     bucket: p.bucket,
   }));
 
-  const periodStart = period.start.getTime();
-  const periodEnd = period.end.getTime();
+  // Eixo X ancorado nos DADOS REAIS, não no filtro. A série é recortada ao span
+  // dos dados semeados (lib/timeline), então tipicamente termina antes de `today`.
+  // Fixar o domínio nos timestamps do primeiro/último ponto (números, não as
+  // strings 'dataMin'/'dataMax') impede que a ReferenceArea do período — que se
+  // estende até `periodEnd` (hoje, no filtro padrão) — force o Recharts a alargar
+  // o eixo além do último ponto, deixando a curva encolhida no terço esquerdo.
+  // Série vazia renderiza o empty state (não chega ao chart); os 0 são inertes.
+  const dataMin = data.length > 0 ? data[0].x : 0;
+  const dataMax = data.length > 0 ? data[data.length - 1].x : 0;
+
+  // Recorta o tint do período ao span visível: marca a parte do filtro que se
+  // sobrepõe à curva, sem nunca empurrar o eixo além do último ponto. Se após o
+  // recorte não sobrar sobreposição (range custom fora da série), não desenha.
+  const periodStart = Math.max(period.start.getTime(), dataMin);
+  const periodEnd = Math.min(period.end.getTime(), dataMax);
+  const showPeriodArea = periodStart < periodEnd;
 
   return (
     <div
@@ -209,23 +223,27 @@ export function ScoreTimeline({
                 </linearGradient>
               </defs>
 
-              {/* Tint sutil do período selecionado dentro da janela fixa. Marca,
-                  não dado — não briga com a curva a 6% de opacidade. */}
-              <ReferenceArea
-                key="period-area"
-                x1={periodStart}
-                x2={periodEnd}
-                fill={BRAND}
-                fillOpacity={0.06}
-                stroke="none"
-                ifOverflow="hidden"
-                label={{
-                  value: 'período',
-                  position: 'insideTopRight',
-                  fontSize: 10,
-                  fill: MUTED,
-                }}
-              />
+              {/* Tint sutil do período selecionado, recortado ao span visível.
+                  Marca, não dado — não briga com a curva a 6% de opacidade. Só
+                  desenha quando o filtro sobrepõe a curva (senão, retângulo
+                  degenerado/invertido). `ifOverflow="hidden"` mantém o clamp. */}
+              {showPeriodArea && (
+                <ReferenceArea
+                  key="period-area"
+                  x1={periodStart}
+                  x2={periodEnd}
+                  fill={BRAND}
+                  fillOpacity={0.06}
+                  stroke="none"
+                  ifOverflow="hidden"
+                  label={{
+                    value: 'período',
+                    position: 'insideTopRight',
+                    fontSize: 10,
+                    fill: MUTED,
+                  }}
+                />
+              )}
 
               {/* Fronteiras de bucket (30/55/75) — finas, em cinza de gridline. */}
               <ReferenceLine key="thr-critical" y={BUCKET_THRESHOLDS.critical} stroke={GRID} strokeWidth={1} />
@@ -236,7 +254,8 @@ export function ScoreTimeline({
                 key="x-axis"
                 dataKey="x"
                 type="number"
-                domain={['dataMin', 'dataMax']}
+                domain={[dataMin, dataMax]}
+                allowDataOverflow={false}
                 scale="time"
                 tickFormatter={ddmm}
                 tick={{ fontSize: 11, fill: MUTED }}
