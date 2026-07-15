@@ -99,8 +99,6 @@ const TREND_ICON = {
   none: Minus,
 } as const;
 
-const TREND_GLYPH = { up: '▲', down: '▼', flat: '', none: '' } as const;
-
 interface TooltipPayloadItem {
   payload: Datum;
 }
@@ -177,16 +175,13 @@ export function ScoreTimeline({
           </p>
         </div>
 
-        {/* Selo de tendência: glyph + ícone lucide + palavra + cor de TENDÊNCIA
-            (fora da rampa). Cor nunca é o único sinal — há glyph e texto. */}
+        {/* Selo de tendência: ícone lucide + palavra + cor de TENDÊNCIA (fora da
+            rampa). Cor nunca é o único sinal — o ícone e o texto carregam a direção. */}
         <span
           className="inline-flex items-center gap-1 text-xs font-semibold tabular-nums shrink-0"
           style={{ color: trend.color }}
           data-testid="trend-badge"
         >
-          {TREND_GLYPH[trend.dir] && (
-            <span aria-hidden="true">{TREND_GLYPH[trend.dir]}</span>
-          )}
           <TrendIcon size={14} aria-hidden="true" className="shrink-0" />
           {trend.label}
         </span>

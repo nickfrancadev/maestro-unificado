@@ -3,7 +3,7 @@
  *
  * Responde "por que esse cliente está em risco?" e "o que acontece dentro dele?".
  * Seis seções na ordem do spec: saúde → StatTiles com Δ → funil + mix →
- * heatmap → usuários.
+ * evolução do score → usuários.
  */
 import { useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -12,7 +12,6 @@ import { getCompany } from './data/mockData';
 import { periodSearch, usePeriodParam } from './usePeriodParam';
 import { BUCKET_META, WEIGHTS, computeHealth } from './lib/health';
 import {
-  activityHeatmap,
   adoptionFunnel,
   computeMetrics,
   lastAccessAt,
@@ -21,6 +20,7 @@ import {
   previousPeriod,
   userStats,
 } from './lib/selectors';
+import { scoreTimeline } from './lib/timeline';
 import { formatDaysAgo, formatDelta, formatNumber } from './lib/format';
 import { PeriodFilter } from './components/PeriodFilter';
 import { StatTile } from './components/StatTile';
@@ -29,15 +29,15 @@ import { SignalChips } from './components/SignalChips';
 import { PendingMarker } from './components/PendingMarker';
 import { AdoptionFunnel } from './components/AdoptionFunnel';
 import { PlayTypeMix } from './components/PlayTypeMix';
-import { ActivityHeatmap } from './components/ActivityHeatmap';
+import { ScoreTimeline } from './components/ScoreTimeline';
 import { UsersTable } from './components/UsersTable';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
 const GRID = '#E2E8F0';
 
-/** O heatmap e o seletor PRECISAM concordar: o mapa célula→data depende disso. */
-const HEATMAP_WEEKS = 12;
+/** Alcance fixo do gráfico de evolução; o período do filtro fica sombreado dentro. */
+const TIMELINE_WEEKS = 12;
 
 const DIMENSION_LABEL: Record<keyof typeof WEIGHTS, string> = {
   recency: 'Recência',
@@ -193,14 +193,14 @@ export function UsageCompanyDetail() {
       prevMetrics: computeMetrics(company, prev),
       funnel: adoptionFunnel(company, period),
       mix: playTypeMix(company, period),
-      heatmap: activityHeatmap(company, HEATMAP_WEEKS),
+      timeline: scoreTimeline(company, period, TIMELINE_WEEKS),
       users: userStats(company, period),
     };
   }, [company, period]);
 
   if (!company || !data) return <NotFound companyId={companyId} />;
 
-  const { health, metrics: m, prevMetrics: p, funnel, mix, heatmap, users } = data;
+  const { health, metrics: m, prevMetrics: p, funnel, mix, timeline, users } = data;
   const meta = BUCKET_META[health.bucket];
 
   return (
@@ -401,8 +401,8 @@ export function UsageCompanyDetail() {
           <PlayTypeMix mix={mix} />
         </div>
 
-        {/* 4 — heatmap (mesmas `weeks` do seletor) */}
-        <ActivityHeatmap cells={heatmap} weeks={HEATMAP_WEEKS} />
+        {/* 4 — evolução do score (12 semanas fixas; período do filtro sombreado) */}
+        <ScoreTimeline points={timeline} period={period} weeks={TIMELINE_WEEKS} />
 
         {/* 5 — usuários */}
         <section aria-label="Usuários">
