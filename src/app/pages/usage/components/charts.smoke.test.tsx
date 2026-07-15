@@ -2,11 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { AdoptionFunnel } from './AdoptionFunnel';
 import { PlayTypeMix } from './PlayTypeMix';
-import { ActivityHeatmap } from './ActivityHeatmap';
 import { COMPANIES, DEFAULT_PERIOD } from '../data/mockData';
-import { adoptionFunnel, playTypeMix, activityHeatmap } from '../lib/selectors';
+import { adoptionFunnel, playTypeMix } from '../lib/selectors';
 import { formatNumber } from '../lib/format';
-import { TODAY } from '../data/types';
 
 afterEach(cleanup);
 
@@ -108,57 +106,5 @@ describe('PlayTypeMix', () => {
   it('empty state para o cliente-fantasma real do mock', () => {
     render(<PlayTypeMix mix={playTypeMix(ghost, DEFAULT_PERIOD)} />);
     expect(screen.getByText('Nenhuma play criada no período.')).toBeTruthy();
-  });
-});
-
-describe('ActivityHeatmap', () => {
-  it('renderiza 7*weeks células focáveis com valor exato + data e legenda numérica', () => {
-    const weeks = 12;
-    render(<ActivityHeatmap cells={activityHeatmap(company, weeks)} weeks={weeks} />);
-    const cellEls = screen.getAllByRole('gridcell');
-    expect(cellEls.length).toBe(7 * weeks);
-    expect(cellEls[0].getAttribute('tabindex')).toBe('0');
-    expect(cellEls[0].getAttribute('aria-label')).toMatch(
-      /^\d+ eventos? em \S+, \d{2}\/\d{2}\/\d{4}$/,
-    );
-    expect(screen.getByText('menos')).toBeTruthy();
-    expect(screen.getByText('mais')).toBeTruthy();
-    expect(screen.getByText('0')).toBeTruthy();
-  });
-
-  it('a célula da semana atual no weekday de TODAY mapeia para TODAY', () => {
-    const weeks = 4;
-    render(
-      <ActivityHeatmap cells={activityHeatmap(company, weeks)} weeks={weeks} today={TODAY} />,
-    );
-    const dd = String(TODAY.getUTCDate()).padStart(2, '0');
-    const mm = String(TODAY.getUTCMonth() + 1).padStart(2, '0');
-    const label = `${dd}/${mm}/${TODAY.getUTCFullYear()}`;
-    const matches = screen
-      .getAllByRole('gridcell')
-      .filter((el) => (el.getAttribute('aria-label') ?? '').includes(label));
-    expect(matches.length).toBe(1);
-  });
-
-  it('não quebra com todas as células zeradas', () => {
-    const weeks = 4;
-    const zeros = Array.from({ length: weeks * 7 }, (_, i) => ({
-      week: Math.floor(i / 7),
-      day: i % 7,
-      count: 0,
-    }));
-    render(<ActivityHeatmap cells={zeros} weeks={weeks} />);
-    expect(screen.getAllByRole('gridcell').length).toBe(28);
-    expect(screen.getByText(/Nenhuma atividade registrada/)).toBeTruthy();
-  });
-
-  it('empty state com cells = []', () => {
-    render(<ActivityHeatmap cells={[]} weeks={0} />);
-    expect(screen.getByText(/Sem dados de atividade/)).toBeTruthy();
-  });
-
-  it('renderiza o cliente-fantasma real do mock sem quebrar', () => {
-    render(<ActivityHeatmap cells={activityHeatmap(ghost, 8)} weeks={8} />);
-    expect(screen.getAllByRole('gridcell').length).toBe(56);
   });
 });

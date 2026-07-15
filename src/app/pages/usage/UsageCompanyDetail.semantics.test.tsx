@@ -1,19 +1,13 @@
 /**
  * As SEMÂNTICAS renderizadas do detalhe — não a mera presença de rótulos.
  *
- * Dois testes anteriores eram vazios, e a mutação provou:
+ * O teste anterior era vazio, e a mutação provou:
  *
  *  (I2) o teste de `invertDelta` assertava só que dois rótulos existiam. Removendo
  *       `invertDelta` dos DOIS tiles de touchpoints atrasados, os 16 smokes
  *       continuavam verdes — um tile que celebra a ALTA de touchpoints atrasados
  *       com seta verde para cima entraria em produção sem ninguém ver. O que
  *       importa não é o rótulo: é a COR e a DIREÇÃO do Δ.
- *
- *  (I3) `HEATMAP_WEEKS` alimenta `activityHeatmap(company, weeks)` E
- *       `<ActivityHeatmap weeks={…}>`. Dessincronizando a prop para `weeks={8}`,
- *       os 16 smokes continuavam verdes — mas o mapa célula→data desliza 4
- *       semanas: a célula rotulada "hoje" passa a mostrar a contagem de 4 semanas
- *       atrás. O guard tem que amarrar CONTAGEM a DATA, não contar colunas.
  *
  * Arquivo separado porque `vi.mock('./data/mockData')` é de escopo de ARQUIVO: a
  * carteira aqui é construída para produzir exatamente os sinais sob teste.
@@ -133,29 +127,7 @@ const WORSENING: Company = {
   dossiersCount: 6,
 };
 
-/**
- * Cliente para o guard do heatmap. A contagem tem que ficar amarrada à DATA:
- *  - HOJE: 3 eventos (3 plays criadas hoje);
- *  - HÁ 4 SEMANAS (28d): 1 evento.
- *
- * Com `weeks` sincronizado (12 dos dois lados), a célula rotulada com a data de
- * HOJE mostra 3. Se a prop do componente cair para 8 enquanto o seletor continua
- * em 12, a última coluna renderizada deixa de ser o bucket 11 e passa a ler o
- * bucket 7 (= 4 semanas atrás) — a célula ainda diz "hoje", mas mostra 1.
- */
-const HEATMAP_CO: Company = {
-  ...WORSENING,
-  id: 'heatmap',
-  name: 'Cliente Heatmap',
-  plays: [
-    play('hoje-1', 0),
-    play('hoje-2', 0),
-    play('hoje-3', 0),
-    play('ha-4-semanas', 28),
-  ],
-};
-
-const FIXTURES = [WORSENING, HEATMAP_CO];
+const FIXTURES = [WORSENING];
 
 vi.mock('./data/mockData', async () => {
   const actual = await vi.importActual<typeof import('./data/mockData')>('./data/mockData');
@@ -248,45 +220,5 @@ describe('I2 — invertDelta: a COR do Δ, não a existência do rótulo', () =>
     const good = deltaOf('Plays criadas');
     expect(bad.dir).toBe(good.dir); // ambos "alta"
     expect(bad.color).not.toBe(good.color); // e ainda assim cores opostas
-  });
-});
-
-describe('I3 — heatmap: a célula de HOJE mostra a contagem de HOJE', () => {
-  /** `dd/mm/aaaa` em UTC, igual ao `formatDate` do ActivityHeatmap. */
-  function ddmmyyyy(x: Date): string {
-    const dd = String(x.getUTCDate()).padStart(2, '0');
-    const mm = String(x.getUTCMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}/${x.getUTCFullYear()}`;
-  }
-
-  it('as `weeks` do seletor e as da prop concordam — senão o mapa célula→data desliza', () => {
-    renderDetail(HEATMAP_CO.id);
-
-    // 3 eventos hoje. Se `<ActivityHeatmap weeks>` dessincronizar do
-    // `activityHeatmap(company, weeks)`, a última coluna renderizada passa a ler
-    // um bucket antigo: a célula continua rotulada "hoje", mas mostra 1 (os
-    // eventos de 4 semanas atrás) em vez de 3.
-    const cell = screen.getByRole('gridcell', {
-      name: new RegExp(`^3 eventos em .*${ddmmyyyy(TODAY)}$`),
-    });
-    expect(cell).toBeTruthy();
-  });
-
-  it('a célula de 4 semanas atrás mostra o evento de 4 semanas atrás', () => {
-    renderDetail(HEATMAP_CO.id);
-    const cell = screen.getByRole('gridcell', {
-      name: new RegExp(`^1 evento em .*${ddmmyyyy(d(28))}$`),
-    });
-    expect(cell).toBeTruthy();
-  });
-
-  it('o número de colunas renderizadas bate com as semanas do seletor', () => {
-    renderDetail(HEATMAP_CO.id);
-    const grid = screen.getByRole('grid');
-    // 7 dias × N semanas. Se a prop e o seletor divergirem, isto muda junto com
-    // o teste acima — os dois juntos amarram contagem, data e geometria.
-    const cells = grid.querySelectorAll('[role="gridcell"]');
-    expect(cells.length % 7).toBe(0);
-    expect(cells.length / 7).toBe(12); // HEATMAP_WEEKS
   });
 });

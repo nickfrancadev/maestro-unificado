@@ -157,7 +157,7 @@ describe('UsageCompanyDetail', () => {
     expect(screen.getByText('Composição do score')).toBeTruthy();
     expect(screen.getByText('Plays criadas')).toBeTruthy();
     expect(screen.getByText('Funil de adoção')).toBeTruthy();
-    expect(screen.getByText('Atividade por dia')).toBeTruthy();
+    expect(screen.getByText('Evolução do score')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Usuários' })).toBeTruthy();
   });
 
