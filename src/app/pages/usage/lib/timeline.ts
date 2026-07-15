@@ -23,14 +23,44 @@ export interface ScorePoint {
 }
 
 /**
+ * Menor `createdAt` observável na company: a primeira data em que houve atividade
+ * REAL (play ou touchpoint criado). Varredura pura e local sobre `company.plays`
+ * e seus `touchpoints`. Sem plays/touchpoints, não há piso de dados vindo de
+ * atividade — retorna `null` e o piso cai só sobre `onboardedAt`.
+ */
+function firstActivityMs(company: Company): number | null {
+  let min = Infinity;
+  for (const play of company.plays) {
+    if (play.createdAt.getTime() < min) min = play.createdAt.getTime();
+    for (const tp of play.touchpoints) {
+      if (tp.createdAt.getTime() < min) min = tp.createdAt.getTime();
+    }
+  }
+  return min === Infinity ? null : min;
+}
+
+/**
  * Série do score ao longo das últimas `weeks` semanas.
  *
  * A janela deslizante tem a mesma duração do filtro (`period.end - period.start`).
- * A semana `i` (0 = mais antiga, `weeks-1` = atual) termina em
- * `today - (weeks-1-i)*7d`; sua janela é `[end_i - duration, end_i]`.
+ * A semana `i` (0 = mais antiga, `weeks-1` = mais recente) termina em
+ * `period.end - (weeks-1-i)*7d`; sua janela é `[end_i - duration, end_i]`. Ancorar
+ * em `period.end` (e não em `today`) garante que o último ponto use exatamente o
+ * período do filtro — seu score coincide com `computeHealth(company, period)` para
+ * QUALQUER período, inclusive os que não terminam hoje ("Este trimestre", range
+ * customizado). `today` segue sendo o "agora" da dimensão de recência.
  *
- * Pontos cuja janela COMEÇA antes de `company.onboardedAt` são omitidos — não se
- * inventa histórico pré-onboarding. Uma company nova rende menos pontos.
+ * Pontos cuja janela COMEÇA antes do PISO DE DADOS REAIS são omitidos — não se
+ * inventa histórico. O piso é `max(onboardedAt, primeira atividade real)`:
+ *  - pré-onboarding não existe;
+ *  - antes da primeira atividade não há dado semeado, então `computeHealth`
+ *    colapsaria trend/depth/concentration a 0 e só o termo de recência (medido
+ *    globalmente contra `today`) sobreviveria, fabricando uma subida
+ *    "em risco → saudável" para todo mundo. Clamp ESTRITO: a janela precisa
+ *    caber inteira sobre dados reais (`window.start >= piso`).
+ *
+ * Uma company rende menos pontos (tipicamente ~4-5) — curva curta mas honesta.
+ * Com um backend real de histórico longo, a série preenche até `weeks` sozinha.
  */
 export function scoreTimeline(
   company: Company,
@@ -39,19 +69,22 @@ export function scoreTimeline(
   today: Date = TODAY,
 ): ScorePoint[] {
   const duration = period.end.getTime() - period.start.getTime();
-  const todayMs = today.getTime();
+  const anchorMs = period.end.getTime();
   const onboardedMs = company.onboardedAt.getTime();
+  const activityMs = firstActivityMs(company);
+  // Piso de dados reais: nem pré-onboarding, nem antes da primeira atividade.
+  const dataFloorMs = activityMs === null ? onboardedMs : Math.max(onboardedMs, activityMs);
   const filterStartMs = period.start.getTime();
   const filterEndMs = period.end.getTime();
 
   const points: ScorePoint[] = [];
 
   for (let i = 0; i < weeks; i++) {
-    const endMs = todayMs - (weeks - 1 - i) * 7 * MS_PER_DAY;
+    const endMs = anchorMs - (weeks - 1 - i) * 7 * MS_PER_DAY;
     const startMs = endMs - duration;
 
-    // Não inventa histórico pré-onboarding.
-    if (startMs < onboardedMs) continue;
+    // Clamp estrito: janela inteira sobre dados reais (não inventa histórico).
+    if (startMs < dataFloorMs) continue;
 
     const end = new Date(endMs);
     const window: Period = { start: new Date(startMs), end };
