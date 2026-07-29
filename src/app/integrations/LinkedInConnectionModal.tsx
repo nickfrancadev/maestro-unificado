@@ -138,8 +138,11 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
           }
         }, 500);
       }
-    } catch {
-      toast.error('Erro ao iniciar OAuth do LinkedIn.');
+    } catch (err: any) {
+      // Mostra a causa real (backend fora do ar, client_id ausente no
+      // servidor) em vez de uma mensagem genérica que manda o usuário
+      // investigar o LinkedIn quando o problema é nosso.
+      setError(err?.message || 'Erro ao iniciar OAuth do LinkedIn.');
       setState('idle');
     }
   };
