@@ -2,7 +2,15 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // `supabase/functions` entra aqui porque a lógica pura do ciclo de vida do
+    // token do LinkedIn mora lá, ao lado do edge function que a consome. O
+    // módulo testado não importa nada de Deno/npm justamente para rodar no
+    // Node sob o Vitest.
+    include: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'supabase/functions/**/*.test.ts',
+    ],
 
     // Testes de componente (`.test.tsx`) rodam em jsdom para montar telas e
     // pegar crash de render.
