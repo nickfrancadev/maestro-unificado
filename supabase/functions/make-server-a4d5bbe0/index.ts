@@ -4,6 +4,11 @@ import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { Resvg, initWasm } from "npm:@resvg/resvg-wasm@2.6.2";
 import * as kv from "./kv_store.ts";
+import {
+  decideTokenAction,
+  mergeRefreshedTokens,
+  isRefreshLocked,
+} from "./tokenLifecycle.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -108,6 +113,82 @@ app.post("/make-server-a4d5bbe0/linkedin/auth-url", async (c) => {
 });
 
 // ================================================
+// LinkedIn — Renovação automática do access_token
+// ================================================
+
+// Troca o refresh_token por um access_token novo. Só é chamada quando
+// decideTokenAction pediu 'refresh', ou seja, já sabemos que há refresh_token.
+async function refreshLinkedInToken(integration: any, nowMs: number) {
+  const clientId = Deno.env.get("LINKEDIN_CLIENT_ID");
+  const clientSecret = Deno.env.get("LINKEDIN_CLIENT_SECRET");
+  if (!clientId || !clientSecret) {
+    throw new Error("LINKEDIN_CLIENT_ID/LINKEDIN_CLIENT_SECRET não configurados");
+  }
+
+  const res = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: integration.refresh_token,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`LinkedIn refresh ${res.status}: ${await res.text()}`);
+  }
+
+  return mergeRefreshedTokens(integration, await res.json(), nowMs);
+}
+
+// Ponto único de leitura da integração para quem vai chamar a API do LinkedIn.
+// Renova o token sozinho quando ele entra na margem de expiração, então
+// nenhuma rota precisa saber que renovação existe.
+//
+// Nunca lança: em qualquer falha devolve a integração como está e deixa quem
+// chamou aplicar o próprio tratamento de 401. Um token perto de vencer ainda
+// é um token válido — derrubar o request aqui seria pior que tentar usá-lo.
+async function getLinkedInIntegration(): Promise<any> {
+  // Leitura crua de propósito: este é o único ponto que fala direto com o KV.
+  const integration = await kv.get("linkedin:integration");
+  const now = Date.now();
+
+  if (decideTokenAction(integration, now).action !== "refresh") {
+    return integration;
+  }
+
+  // Requisições paralelas (typeahead + audience count + analytics saem juntas)
+  // não podem disparar várias trocas do mesmo refresh_token: ele pode ser de
+  // uso único. Quem perde a corrida usa o token atual, que ainda vale.
+  const lock = await kv.get("linkedin:refresh_lock");
+  if (isRefreshLocked(lock?.locked_at_ms, now)) {
+    return integration;
+  }
+  await kv.set("linkedin:refresh_lock", { locked_at_ms: now });
+
+  try {
+    const renovada = await refreshLinkedInToken(integration, now);
+    await kv.set("linkedin:integration", renovada);
+    console.log("[LinkedIn Refresh] Token renovado; expira em", renovada.expires_at);
+    return renovada;
+  } catch (err: any) {
+    console.log("[LinkedIn Refresh] Falhou:", err.message);
+    // Registra a falha para o /status pedir reconexão, mas devolve a
+    // integração atual: se o token ainda não venceu, as chamadas seguem.
+    await kv.set("linkedin:integration", {
+      ...integration,
+      refresh_error: err.message,
+      refresh_failed_at: new Date(now).toISOString(),
+    });
+    return integration;
+  } finally {
+    await kv.del("linkedin:refresh_lock");
+  }
+}
+
+// ================================================
 // LinkedIn OAuth — Troca code por access_token
 // ================================================
 app.post("/make-server-a4d5bbe0/linkedin/oauth-callback", async (c) => {
@@ -154,6 +235,12 @@ app.post("/make-server-a4d5bbe0/linkedin/oauth-callback", async (c) => {
       expires_at: tokenData.expires_in
         ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
         : null,
+      // Prazo do próprio refresh_token (~365 dias). Quando ele vence não há
+      // renovação possível e a reconexão passa a ser manual — guardar a data
+      // permite avisar antes, em vez de descobrir pela integração caindo.
+      refresh_token_expires_at: tokenData.refresh_token_expires_in
+        ? new Date(Date.now() + tokenData.refresh_token_expires_in * 1000).toISOString()
+        : null,
       scopes: tokenData.scope?.split(",") || [],
       connected_at: new Date().toISOString(),
     };
@@ -179,6 +266,10 @@ app.get("/make-server-a4d5bbe0/linkedin/status", async (c) => {
     if (!data) {
       return c.json({ status: "disconnected", provider: "linkedin" });
     }
+    // Leitura sem efeito colateral: o /status não renova nada. A renovação
+    // acontece nas rotas que de fato usam o token.
+    const decisao = decideTokenAction(data, Date.now());
+
     // Don't leak tokens to frontend
     return c.json({
       status: data.status,
@@ -191,6 +282,16 @@ app.get("/make-server-a4d5bbe0/linkedin/status", async (c) => {
       selected_ad_account_id: data.selected_ad_account_id || null,
       selected_ad_account_name: data.selected_ad_account_name || null,
       selected_ad_account_currency: data.selected_ad_account_currency || null,
+
+      // Diagnóstico do ciclo de vida do token — booleano, nunca o token em si.
+      // `has_refresh_token: false` significa que o LinkedIn não emitiu
+      // refresh_token para este app: a reconexão só pode ser manual.
+      has_refresh_token: Boolean(data.refresh_token),
+      refresh_token_expires_at: data.refresh_token_expires_at || null,
+      needs_reconnect: decisao.action === "reconnect",
+      reconnect_reason: decisao.action === "reconnect" ? decisao.reason : null,
+      last_refresh_error: data.refresh_error || null,
+      refreshed_at: data.refreshed_at || null,
     });
   } catch (err: any) {
     console.log("[LinkedIn Status] Erro:", err.message);
@@ -217,7 +318,7 @@ app.post("/make-server-a4d5bbe0/linkedin/disconnect", async (c) => {
 // ================================================
 app.post("/make-server-a4d5bbe0/linkedin/select-ad-account", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -248,7 +349,7 @@ app.post("/make-server-a4d5bbe0/linkedin/select-ad-account", async (c) => {
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/ad-accounts", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -301,7 +402,7 @@ app.get("/make-server-a4d5bbe0/linkedin/ad-accounts", async (c) => {
 // ================================================
 app.post("/make-server-a4d5bbe0/linkedin/typeahead", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado", results: [] }, 401);
     }
@@ -418,7 +519,7 @@ app.post("/make-server-a4d5bbe0/linkedin/typeahead", async (c) => {
 // ================================================
 app.post("/make-server-a4d5bbe0/linkedin/similar-entities", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado", results: [] }, 401);
     }
@@ -468,7 +569,7 @@ app.post("/make-server-a4d5bbe0/linkedin/similar-entities", async (c) => {
 // ================================================
 app.post("/make-server-a4d5bbe0/linkedin/org-logos", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ logos: {}, error: "LinkedIn não conectado" }, 401);
     }
@@ -534,7 +635,7 @@ app.post("/make-server-a4d5bbe0/linkedin/org-logos", async (c) => {
 // ================================================
 app.post("/make-server-a4d5bbe0/linkedin/enrich-organization", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -693,7 +794,7 @@ function serializeTargetingCriteriaV2(criteria: any): string {
 
 app.post("/make-server-a4d5bbe0/linkedin/audience-count", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -790,7 +891,7 @@ function linkedInHeaders(accessToken: string, extra?: Record<string, string>): R
 
 // Validate integration, return access token or throw
 async function requireLinkedIn(): Promise<{ accessToken: string; integration: any }> {
-  const integration = await kv.get("linkedin:integration");
+  const integration = await getLinkedInIntegration();
   if (!integration || integration.status !== "connected") {
     throw new Error("UNAUTHORIZED");
   }
@@ -1373,7 +1474,7 @@ app.post("/make-server-a4d5bbe0/linkedin/create-campaigns", async (c) => {
 // ================================================
 app.post("/make-server-a4d5bbe0/linkedin/sync-performance", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -1523,7 +1624,7 @@ app.get("/make-server-a4d5bbe0/integrations", async (c) => {
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/ad-account-billing", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -1721,7 +1822,7 @@ app.post("/make-server-a4d5bbe0/creative-upload", async (c) => {
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado", campaigns: [] }, 401);
     }
@@ -1798,7 +1899,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-summary", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -1855,7 +1956,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-summary", async (c) =
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -1975,7 +2076,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics", async (c) => {
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-full", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
@@ -2124,7 +2225,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-full", async (c) => {
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/campaign-comments", async (c) => {
   try {
-    const integration = await kv.get("linkedin:integration");
+    const integration = await getLinkedInIntegration();
     if (!integration || integration.status !== "connected") {
       return c.json({ comments: [], total: 0, error: "LinkedIn não conectado" });
     }

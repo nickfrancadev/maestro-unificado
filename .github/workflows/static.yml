@@ -36,11 +36,49 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Valida a config do Supabase antes de buildar
+        # O Vite inlina as VITE_* no bundle em tempo de build. Se faltarem, o
+        # build passa silenciosamente e o app publicado monta as URLs como
+        # `https://.supabase.co/...` — host inexistente, e TODA integração
+        # (typeahead do LinkedIn, campanhas, analytics, IA) falha sem alarde.
+        # Falhar aqui é melhor que publicar um app mudo.
+        env:
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          missing=""
+          if [ -z "$VITE_SUPABASE_PROJECT_ID" ]; then missing="$missing VITE_SUPABASE_PROJECT_ID"; fi
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then missing="$missing VITE_SUPABASE_ANON_KEY"; fi
+          if [ -n "$missing" ]; then
+            echo "::error::Secrets ausentes:$missing — cadastre em Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "Config do Supabase presente."
+
       - name: Build
         env:
           # Faz o Vite emitir os assets com base '/maestro-unificado/'
           GITHUB_PAGES: "true"
+          # Chave anon e project id são públicos por design (rodam no browser);
+          # ficam em secrets só para não versionar credencial no repo.
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
+
+      - name: Confirma que a config entrou no bundle
+        # Defesa em profundidade: se o inline falhar por qualquer motivo, o
+        # deploy para aqui em vez de publicar o app quebrado de novo.
+        # Nota: o minificador NÃO resolve `https://${x}.supabase.co` — ele mantém
+        # o template e o `const x="..."` separados. Por isso a checagem é pela
+        # presença do project id no bundle, não pelo formato da URL.
+        env:
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
+        run: |
+          if ! grep -rqF "$VITE_SUPABASE_PROJECT_ID" dist/assets/*.js; then
+            echo "::error::O project id do Supabase não foi inlinado no bundle — o app publicado não alcançaria o backend."
+            exit 1
+          fi
+          echo "Bundle com config do Supabase resolvida."
 
       - name: SPA fallback (deep-links não dão 404)
         # O app usa BrowserRouter; o Pages não sabe reescrever /uso-clientes para
