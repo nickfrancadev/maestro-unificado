@@ -140,6 +140,24 @@ describe('mergeRefreshedTokens', () => {
     expect(out.refreshed_at).toBe(new Date(NOW).toISOString());
   });
 
+  it('guarda o prazo do refresh_token quando a resposta o informa', () => {
+    const out = mergeRefreshedTokens(
+      conectado(),
+      { access_token: 'at-novo', expires_in: 100, refresh_token_expires_in: 365 * 24 * 60 * 60 },
+      NOW,
+    );
+    expect(out.refresh_token_expires_at).toBe(inMs(365 * DIA));
+  });
+
+  it('preserva o prazo do refresh_token quando a resposta o omite', () => {
+    const out = mergeRefreshedTokens(
+      conectado({ refresh_token_expires_at: inMs(300 * DIA) }),
+      { access_token: 'at-novo', expires_in: 100 },
+      NOW,
+    );
+    expect(out.refresh_token_expires_at).toBe(inMs(300 * DIA));
+  });
+
   it('limpa o registro da renovação que falhou antes', () => {
     const out = mergeRefreshedTokens(
       conectado({ refresh_error: 'invalid_grant', refresh_failed_at: inMs(-DIA) }),

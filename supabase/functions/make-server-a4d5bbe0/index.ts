@@ -235,6 +235,12 @@ app.post("/make-server-a4d5bbe0/linkedin/oauth-callback", async (c) => {
       expires_at: tokenData.expires_in
         ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
         : null,
+      // Prazo do próprio refresh_token (~365 dias). Quando ele vence não há
+      // renovação possível e a reconexão passa a ser manual — guardar a data
+      // permite avisar antes, em vez de descobrir pela integração caindo.
+      refresh_token_expires_at: tokenData.refresh_token_expires_in
+        ? new Date(Date.now() + tokenData.refresh_token_expires_in * 1000).toISOString()
+        : null,
       scopes: tokenData.scope?.split(",") || [],
       connected_at: new Date().toISOString(),
     };
@@ -281,6 +287,7 @@ app.get("/make-server-a4d5bbe0/linkedin/status", async (c) => {
       // `has_refresh_token: false` significa que o LinkedIn não emitiu
       // refresh_token para este app: a reconexão só pode ser manual.
       has_refresh_token: Boolean(data.refresh_token),
+      refresh_token_expires_at: data.refresh_token_expires_at || null,
       needs_reconnect: decisao.action === "reconnect",
       reconnect_reason: decisao.action === "reconnect" ? decisao.reason : null,
       last_refresh_error: data.refresh_error || null,

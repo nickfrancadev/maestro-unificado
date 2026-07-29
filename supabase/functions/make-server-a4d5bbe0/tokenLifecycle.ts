@@ -23,6 +23,9 @@ export interface LinkedInTokenResponse {
   access_token: string;
   expires_in?: number;
   refresh_token?: string | null;
+  // O refresh_token também vence (~365 dias). Sem guardar esse prazo, o dia em
+  // que ele morre vira a mesma falha silenciosa que o access_token causava.
+  refresh_token_expires_in?: number;
 }
 
 export type TokenAction =
@@ -85,6 +88,11 @@ export function mergeRefreshedTokens(
     expires_at: token.expires_in
       ? new Date(nowMs + token.expires_in * 1000).toISOString()
       : null,
+    // Só sobrescreve quando a resposta traz o prazo novo; caso contrário
+    // mantém o que já se sabia sobre a validade do refresh_token.
+    refresh_token_expires_at: token.refresh_token_expires_in
+      ? new Date(nowMs + token.refresh_token_expires_in * 1000).toISOString()
+      : (integration.refresh_token_expires_at ?? null),
     refreshed_at: new Date(nowMs).toISOString(),
   };
 }
