@@ -16,14 +16,18 @@ export interface LinkedInIntegrationStatus {
   error?: string;
 }
 
+// Só o servidor conhece o LINKEDIN_CLIENT_ID, então não existe URL de
+// autorização válida montável no cliente. Falhar aqui é a única saída honesta:
+// a versão antiga devolvia uma URL com client_id "CONFIGURE_NO_SERVIDOR" e o
+// usuário caía numa tela do LinkedIn dizendo "The passed in client_id is
+// invalid" — mensagem que aponta para o lugar errado quando a causa real é o
+// backend inalcançável.
 export async function getLinkedInAuthUrl(redirectUri?: string, state?: string): Promise<string> {
   const effectiveRedirect = redirectUri || LINKEDIN_REDIRECT_URI;
 
-  console.log('[LinkedIn] Using redirect_uri:', effectiveRedirect);
-  console.log('[LinkedIn] Current window.location.origin:', window.location.origin);
-
+  let response: Response;
   try {
-    const response = await fetch(`${SERVER_BASE}/linkedin/auth-url`, {
+    response = await fetch(`${SERVER_BASE}/linkedin/auth-url`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({
@@ -31,30 +35,25 @@ export async function getLinkedInAuthUrl(redirectUri?: string, state?: string): 
         state: state || crypto.randomUUID(),
       }),
     });
-
-    if (!response.ok) {
-      const err = await response.json();
-      console.error('[LinkedIn] Erro ao gerar auth URL:', err);
-      return buildFallbackAuthUrl(effectiveRedirect, state);
-    }
-
-    const data = await response.json();
-    return data.auth_url;
   } catch (err: any) {
-    console.error('[LinkedIn] Falha na chamada auth-url:', err);
-    return buildFallbackAuthUrl(effectiveRedirect, state);
+    throw new Error(
+      `Não foi possível falar com o backend em ${SERVER_BASE}. ` +
+        'Confira a configuração do Supabase e se a página está com a versão mais recente.',
+    );
   }
-}
 
-function buildFallbackAuthUrl(redirectUri: string, state?: string): string {
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: 'CONFIGURE_NO_SERVIDOR',
-    redirect_uri: redirectUri,
-    scope: 'r_ads r_ads_reporting rw_ads r_organization_social',
-    state: state || crypto.randomUUID(),
-  });
-  return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(
+      err.error || `O servidor respondeu ${response.status} ao gerar a URL de autorização.`,
+    );
+  }
+
+  const data = await response.json();
+  if (!data.auth_url) {
+    throw new Error('O servidor não retornou auth_url.');
+  }
+  return data.auth_url;
 }
 
 export async function exchangeLinkedInCode(
