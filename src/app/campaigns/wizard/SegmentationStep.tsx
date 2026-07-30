@@ -35,6 +35,7 @@ import {
   fetchSimilarEntities,
   fetchOrgLogos,
   enrichOrganization,
+  logoDevUrl,
 } from "@/lib/linkedin";
 import type { EnrichedOrganization } from "@/lib/linkedin";
 import {
@@ -267,9 +268,14 @@ function CompanyHeroCard({
         setEnrichedOrgs((prev) => ({ ...prev, [urn]: result }));
 
         if (result.domain) {
-          const logoUrl = `https://img.logo.dev/${result.domain}?token=${import.meta.env.VITE_LOGO_DEV_KEY}`;
-          logoCache.current.set(urn, logoUrl);
-          setLogos((prev) => ({ ...prev, [urn]: logoUrl }));
+          // O logo depende da chave do logo.dev estar no build; a hidratação
+          // do domínio abaixo, não. Guardas separadas para que a falta da
+          // chave não impeça o domínio real de chegar nos próximos passos.
+          const logoUrl = logoDevUrl(result.domain);
+          if (logoUrl) {
+            logoCache.current.set(urn, logoUrl);
+            setLogos((prev) => ({ ...prev, [urn]: logoUrl }));
+          }
 
           // Hydrate the FacetItem inside the user's selection so downstream
           // steps (CreativeStep → compose-logo-overlay) get the real domain
@@ -377,7 +383,7 @@ function CompanyHeroCard({
               id: orgId || r.urn,
               label: r.name,
               urn: r.urn,
-              logoUrl: `https://img.logo.dev/${nameLower}.com?token=${import.meta.env.VITE_LOGO_DEV_KEY}`,
+              logoUrl: logoDevUrl(`${nameLower}.com`),
             };
           })
           .filter((item) => !selectedIds.has(item.id));

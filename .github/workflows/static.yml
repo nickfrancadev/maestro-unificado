@@ -54,6 +54,11 @@ jobs:
             exit 1
           fi
           echo "Config do Supabase presente."
+          # Não bloqueia o build: sem a chave os logos degradam para avatar de
+          # letra, o resto do app funciona. Mas avisa, porque a falha é muda.
+          if [ -z "${{ secrets.VITE_LOGO_DEV_KEY }}" ]; then
+            echo "::warning::VITE_LOGO_DEV_KEY ausente — os logos das empresas não serão exibidos."
+          fi
 
       - name: Build
         env:
@@ -63,6 +68,9 @@ jobs:
           # ficam em secrets só para não versionar credencial no repo.
           VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Chave publicável do logo.dev, usada no browser para os logos das
+          # empresas-alvo. Sem ela o bundle saía com `?token=undefined`.
+          VITE_LOGO_DEV_KEY: ${{ secrets.VITE_LOGO_DEV_KEY }}
         run: npm run build
 
       - name: Confirma que a config entrou no bundle
