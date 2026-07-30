@@ -1,6 +1,17 @@
 import { defineConfig } from 'vitest/config';
+import path from 'path';
 
 export default defineConfig({
+  // `vite.config.ts` documenta que este arquivo IGNORA o dele quando os dois
+  // existem — então o alias `@` (definido lá para apontar pra `src/`) precisa
+  // ser repetido aqui, senão qualquer teste que puxe (direta ou
+  // transitivamente) um import `@/...` quebra a resolução do Vite/Vitest.
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+
   test: {
     // `supabase/functions` entra aqui porque a lógica pura do ciclo de vida do
     // token do LinkedIn mora lá, ao lado do edge function que a consome. O

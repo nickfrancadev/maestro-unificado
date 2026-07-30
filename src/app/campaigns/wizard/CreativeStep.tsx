@@ -23,7 +23,6 @@ import {
   Megaphone,
   X,
   ChevronDown,
-  ChevronRight,
   FileText,
   Camera,
   Palette,
@@ -37,8 +36,7 @@ import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } fro
 import { resolveCreativeForCompany } from './types';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
-import { BriefModal } from './BriefModal';
-import type { BriefDraft } from './BriefModal';
+import { BriefPane, type BriefDraft } from './BriefPane';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
 import {
@@ -85,13 +83,14 @@ interface CreativeStepProps {
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
 
 const TEMPLATE_TARGET = '__template__';
+const BRIEF_TARGET = '__brief__';
 
 function statusOf(override: CompanyCreativeOverride | undefined): CompanyStatus {
   return override?.status ?? 'template';
 }
 
 const STATUS_META: Record<CompanyStatus, { label: string; color: string; dot: string }> = {
-  template: { label: 'Template global', color: 'text-slate-500 bg-slate-100', dot: 'bg-slate-300' },
+  template: { label: 'Segue o template', color: 'text-slate-500 bg-slate-100', dot: 'bg-slate-300' },
   brief_only: { label: 'Brief gerado', color: 'text-blue-700 bg-blue-50', dot: 'bg-blue-500' },
   fully_personalized: { label: 'Personalizado', color: 'text-emerald-700 bg-emerald-50', dot: 'bg-emerald-500' },
 };
@@ -108,9 +107,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const navigate = useNavigate();
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const companies: FacetItem[] = targetingData?.companies?.included || [];
-  const [editingTarget, setEditingTarget] = useState<string>(TEMPLATE_TARGET);
+  const [editingTarget, setEditingTarget] = useState<string>(BRIEF_TARGET);
   const [briefDrawerOpen, setBriefDrawerOpen] = useState(false);
-  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
 
   // ----------------- Landing page picker (URL de destino) -----------------
   // 'manual' keeps the historical free-text URL input available (nothing
@@ -119,8 +117,11 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const [urlMode, setUrlMode] = useState<'picker' | 'manual'>('manual');
   const [linkedPageId, setLinkedPageId] = useState<string | undefined>(undefined);
 
+  const isBrief = editingTarget === BRIEF_TARGET;
   const isTemplate = editingTarget === TEMPLATE_TARGET;
-  const editingCompany = !isTemplate ? companies.find((c) => c.id === editingTarget) || null : null;
+  const editingCompany = !isTemplate && !isBrief
+    ? companies.find((c) => c.id === editingTarget) || null
+    : null;
 
   // Defaults from props
   const headline = creativeData?.headline || '';
@@ -266,13 +267,19 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Preview source — what shows in the canvas
-  const previewCompany: FacetItem | null = !isTemplate
+  // Preview source — what shows in the canvas.
+  // `!isTemplate` sozinho classificaria o alvo Brief como "empresa" (e só não
+  // quebra hoje porque `editingCompany` já é `null` nesse caso). Espelha a
+  // condição de `editingCompany` para não virar armadilha na próxima edição.
+  const previewCompany: FacetItem | null = !isTemplate && !isBrief
     ? editingCompany
     : companies[0] || null;
   const resolved = useMemo(
-    () => resolveCreativeForCompany(creativeData!, previewCompany ? { id: previewCompany.id, label: previewCompany.label, industry: previewCompany.industry } : null),
-    [creativeData, previewCompany?.id, headline, bodyText, adImageUrl, overrides],
+    () => resolveCreativeForCompany(
+      { ...creativeData, headline, bodyText, imageUrl: adImageUrl, imageFileName: adImageFileName, overrides } as CreativeData,
+      previewCompany ? { id: previewCompany.id, label: previewCompany.label, industry: previewCompany.industry } : null,
+    ),
+    [creativeData, previewCompany?.id, headline, bodyText, adImageUrl, adImageFileName, overrides],
   );
 
   // ----------------- Image upload (manual) -----------------
@@ -484,7 +491,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
   const generateForAllCompanies = async () => {
     if (!clientVoice.trim()) {
-      setVoiceModalOpen(true);
+      setEditingTarget(BRIEF_TARGET);
       return;
     }
     setBulkProgress({ done: 0, total: companies.length });
@@ -509,22 +516,30 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     source: null,
     extractedRef: '',
   });
+  // DOIS efeitos, de propósito. Antes era um só, com os campos de campanha
+  // (produto/público/persona) na lista de deps e reescrevendo o draft INTEIRO —
+  // e como esses três gravam ao vivo em `creativeData`, o prop controlado dava
+  // a volta pelo `CampaignWizard`, o efeito reagia e ressuscitava a marca
+  // *salva* por cima do que o usuário tinha acabado de digitar/extrair.
+  // O semeador da marca agora só reage ao `brandKit`; os campos de campanha
+  // fazem patch cirúrgico das próprias chaves.
   useEffect(() => {
-    setBriefDraft({
+    setBriefDraft((d) => ({
+      ...d,
       voice: brandKit.voice,
       context: brandKit.context,
       websiteUrl: brandKit.websiteUrl,
-      productService: clientProductService,
-      audienceMarket: clientAudienceMarket,
-      persona: clientPersona,
       brandColors: brandKit.colors,
       fontFamily: brandKit.fontFamily,
       logos: brandKit.logos,
       icons: brandKit.icons,
       graphics: brandKit.graphics,
-      source: null,
-      extractedRef: '',
-    });
+      // `source`/`extractedRef` NÃO são tocados aqui de propósito: quem os
+      // possui são os handlers de extração (`applyFixtureToDraft` grava,
+      // `handleResetExtraction` limpa). Zerá-los aqui fazia o chip de
+      // procedência sumir exatamente ao salvar — o momento em que ele mais
+      // importa —, já que salvar muda o `brandKit` e reacende este efeito.
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     brandKit.status,
@@ -535,17 +550,32 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     brandKit.colors.primary,
     brandKit.colors.secondary,
     brandKit.colors.accent,
-    clientProductService,
-    clientAudienceMarket,
-    clientPersona,
   ]);
+
+  useEffect(() => {
+    setBriefDraft((d) => ({
+      ...d,
+      productService: clientProductService,
+      audienceMarket: clientAudienceMarket,
+      persona: clientPersona,
+    }));
+  }, [clientProductService, clientAudienceMarket, clientPersona]);
 
   // Extraction UI state
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractWarning, setExtractWarning] = useState<string | null>(null);
+  const [savingBrand, setSavingBrand] = useState(false);
+  // Sem o modal fechando, sucesso e falha do save global ficavam
+  // indistinguíveis (o botão ia pra "Salvando…" e voltava). Estes dois estados
+  // dão o feedback que a dispensa do overlay levou embora.
+  const [saveBrandError, setSaveBrandError] = useState<string | null>(null);
+  const [brandSaved, setBrandSaved] = useState(false);
 
   const persistVoice = async () => {
+    setSavingBrand(true);
+    setSaveBrandError(null);
+    setBrandSaved(false);
     updateCreative({
       brandKit: {
         ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()),
@@ -573,9 +603,21 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         persona: briefDraft.persona,
         brand_colors: briefDraft.brandColors,
       });
-    } catch (_e) { /* non-fatal */ }
-    setVoiceModalOpen(false);
+      setBrandSaved(true);
+    } catch (e: any) {
+      // A escrita local (updateCreative acima) permanece — o que falhou foi o
+      // envio pro servidor, e é isso que a mensagem precisa dizer.
+      setSaveBrandError(`Não foi possível salvar a marca no servidor: ${e?.message || 'erro desconhecido'}`);
+    }
+    setSavingBrand(false);
   };
+
+  // O "salvo" é confirmação momentânea, não estado permanente da tela.
+  useEffect(() => {
+    if (!brandSaved) return;
+    const t = setTimeout(() => setBrandSaved(false), 4000);
+    return () => clearTimeout(t);
+  }, [brandSaved]);
 
   const applyFixtureToDraft = (source: 'brandbook' | 'website', ref: string) => {
     setBriefDraft((d) => ({
@@ -688,21 +730,24 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {/* Brief entry — opens the Brief modal (client voice + context + dropdowns) */}
+          {/* Brief entry — third editing target, sibling of Template global e das empresas */}
           <button
-            onClick={() => setVoiceModalOpen(true)}
-            className="w-full text-left px-4 py-3 flex items-center gap-3 border-b border-slate-100 hover:bg-slate-50 border-l-4 border-l-transparent transition-colors"
+            onClick={() => { setEditingTarget(BRIEF_TARGET); setBriefDrawerOpen(false); }}
+            className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-slate-100 transition-colors ${
+              isBrief ? 'bg-[#FFF1ED] border-l-4 border-l-[#FF5F39]' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+            }`}
           >
             <div className="w-8 h-8 rounded-md bg-[#FFE3DA] flex items-center justify-center shrink-0">
               <PaintBucket className="w-4 h-4 text-[#FF5F39]" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-slate-700">Brief</div>
+              <div className={`text-sm truncate ${isBrief ? 'font-bold text-[#212A46]' : 'font-semibold text-slate-700'}`}>
+                Brief
+              </div>
               <div className="text-[10px] text-slate-500 truncate">
-                {clientVoice || <span className="italic text-slate-400">Configure tom de voz e contexto</span>}
+                {clientVoice || <span className="italic text-slate-400">Defina a marca</span>}
               </div>
             </div>
-            <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
           </button>
 
           {/* Template entry */}
@@ -786,14 +831,18 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              {isTemplate ? (
+              {isBrief ? (
+                <><PaintBucket className="w-4 h-4 text-[#FF5F39]" /> Editando: Brief</>
+              ) : isTemplate ? (
                 <><FileText className="w-4 h-4 text-[#FF5F39]" /> Editando: Template global</>
               ) : (
                 <><Sparkles className="w-4 h-4 text-emerald-600" /> Editando: {editingCompany?.label}</>
               )}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {isTemplate
+              {isBrief
+                ? 'Define a marca e o brief usados por toda a campanha.'
+                : isTemplate
                 ? 'Use variáveis como {{company.name}} para personalizar dinamicamente.'
                 : 'Estas alterações só se aplicam a esta empresa, sobrescrevendo o template.'}
             </p>
@@ -848,7 +897,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           </div>
         </header>
 
-        {needsBaseImage && (
+        {needsBaseImage && !isBrief && (
           <div className="px-6 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center gap-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
             <span className="flex-1">
@@ -876,6 +925,34 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           </div>
         )}
 
+        {isBrief ? (
+          // A casca (`main`) tem altura fixa e `overflow-hidden`; sem este
+          // wrapper com `flex-1 overflow-y-auto` o painel (>1000px) era cortado
+          // sem barra de rolagem e o "Salvar marca" ficava inalcançável.
+          // Mesma convenção do ramo irmão (template/empresa) logo abaixo.
+          <div className="flex-1 overflow-y-auto p-6 bg-white">
+            <BriefPane
+              draft={briefDraft}
+              setDraft={setBriefDraft}
+              status={brandKit.status}
+              savingBrand={savingBrand}
+              saveError={saveBrandError}
+              saveSucceeded={brandSaved}
+              onSaveBrand={persistVoice}
+              extracting={extracting}
+              extractError={extractError}
+              extractWarning={extractWarning}
+              onExtractWebsite={handleExtract}
+              onUploadBrandBook={handleBrandBookUpload}
+              onResetExtraction={handleResetExtraction}
+              onCampaignFieldChange={(patch) => updateCreative({
+                ...(patch.productService !== undefined && { clientProductService: patch.productService }),
+                ...(patch.audienceMarket !== undefined && { clientAudienceMarket: patch.audienceMarket }),
+                ...(patch.persona !== undefined && { clientPersona: patch.persona }),
+              })}
+            />
+          </div>
+        ) : (
         <div className="flex-1 grid grid-cols-2 overflow-hidden">
           {/* ---------- Editor form ---------- */}
           <div className="overflow-y-auto p-6 border-r border-slate-200 bg-white space-y-5">
@@ -1311,6 +1388,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             </div>
           </div>
         </div>
+        )}
       </main>
 
       {/* ============= Brand Brief drawer ============= */}
@@ -1322,23 +1400,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           onClose={() => setBriefDrawerOpen(false)}
           onGenerate={() => generateBriefFor(editingCompany)}
           onSave={(b) => updateOverride(editingCompany.id, { brief: { ...b, manually_edited: true } })}
-        />
-      )}
-
-      {/* ============= Brief modal ============= */}
-      {voiceModalOpen && (
-        <BriefModal
-          draft={briefDraft}
-          setDraft={setBriefDraft}
-          status={brandKit.status}
-          onClose={() => setVoiceModalOpen(false)}
-          onSave={persistVoice}
-          extracting={extracting}
-          extractError={extractError}
-          extractWarning={extractWarning}
-          onExtractWebsite={handleExtract}
-          onUploadBrandBook={handleBrandBookUpload}
-          onResetExtraction={handleResetExtraction}
         />
       )}
     </div>
