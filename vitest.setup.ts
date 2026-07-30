@@ -11,6 +11,10 @@
  * renderizado sem esperar rAF.
  */
 
+// Matchers de DOM do jest-dom (`toHaveAttribute`, `toBeInTheDocument`, etc.)
+// para os testes de componente — sem isso o Chai não reconhece esses métodos.
+import '@testing-library/jest-dom/vitest';
+
 // Roda também nos testes puros (`environment: 'node'`), onde não há `window`.
 if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = ((query: string) => ({
