@@ -58,4 +58,13 @@ describe('CreativeStep — Brief inline', () => {
     fireEvent.click(screen.getByRole('button', { name: /^brief/i }));
     expect(screen.getByLabelText(/tom de voz/i)).toBeTruthy();
   });
+
+  it('permite trocar para uma empresa', () => {
+    renderStep();
+    // "Nubank" só aparece na linha da empresa — evita a ambiguidade de nome
+    // acessível que o botão "Template global" tem com o badge de status.
+    fireEvent.click(screen.getByRole('button', { name: /nubank/i }));
+    expect(screen.queryByLabelText(/tom de voz/i)).toBeNull();
+    expect(screen.getByRole('heading', { name: /editando: nubank/i })).toBeTruthy();
+  });
 });
