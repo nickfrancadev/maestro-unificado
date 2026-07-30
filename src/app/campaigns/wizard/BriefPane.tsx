@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Loader2, Upload } from 'lucide-react';
+import { Sparkles, Loader2, Upload, Settings2, CheckCircle2 } from 'lucide-react';
 import { FontPicker } from './CreativeStep';
 import { LOGO_VARIANTS, MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
 import type { BrandKit, LogoVariant } from './brandKit';
@@ -32,6 +32,10 @@ export interface BriefPaneProps {
   setDraft: React.Dispatch<React.SetStateAction<BriefDraft>>;
   status: BrandKit['status'];
   savingBrand: boolean;
+  /** Falha do POST global (`/ai/client-voice`). Sem o modal fechando, é o único sinal de erro. */
+  saveError?: string | null;
+  /** Confirmação transitória de que a marca foi gravada no servidor. */
+  saveSucceeded?: boolean;
   onSaveBrand: () => void;
   extracting: boolean;
   extractError: string | null;
@@ -45,7 +49,7 @@ export interface BriefPaneProps {
 }
 
 export function BriefPane({
-  draft, setDraft, status, savingBrand, onSaveBrand,
+  draft, setDraft, status, savingBrand, saveError = null, saveSucceeded = false, onSaveBrand,
   extracting, extractError, extractWarning,
   onExtractWebsite, onUploadBrandBook, onResetExtraction,
   onCampaignFieldChange,
@@ -64,6 +68,8 @@ export function BriefPane({
         {/* Extração: destaque quando vazia, secundária quando definida */}
         {definida ? (
           <SecondaryExtraction
+            draft={draft}
+            setDraft={setDraft}
             extracting={extracting}
             onUploadBrandBook={onUploadBrandBook}
             onExtractWebsite={onExtractWebsite}
@@ -78,9 +84,14 @@ export function BriefPane({
           />
         )}
 
-        {draft.source && (
+        {/* Procedência: extração desta sessão tem `source`; marca que veio do
+            servidor não tem — e nesse caso o chip aponta as configurações
+            salvas, em vez de simplesmente sumir. */}
+        {draft.source ? (
           <ProvenanceChip source={draft.source} reference={draft.extractedRef} onReset={onResetExtraction} />
-        )}
+        ) : definida ? (
+          <SavedBrandChip />
+        ) : null}
         {extractWarning && (
           <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">{extractWarning}</p>
         )}
@@ -91,14 +102,29 @@ export function BriefPane({
         {/* Campos sempre visíveis e editáveis, nos dois estados */}
         <BrandFields draft={draft} setDraft={setDraft} />
 
-        <button
-          type="button"
-          onClick={onSaveBrand}
-          disabled={savingBrand}
-          className="mt-4 px-4 py-2 text-sm font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] disabled:bg-slate-300 rounded-lg shadow-sm"
-        >
-          {savingBrand ? 'Salvando…' : 'Salvar marca'}
-        </button>
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={onSaveBrand}
+            disabled={savingBrand}
+            className="px-4 py-2 text-sm font-bold text-white bg-[#FF5F39] hover:bg-[#E54A26] disabled:bg-slate-300 rounded-lg shadow-sm"
+          >
+            {savingBrand ? 'Salvando…' : 'Salvar marca'}
+          </button>
+          {/* Sem o modal fechando, "salvou" e "o servidor recusou" eram
+              visualmente idênticos: o botão piscava e nada mais acontecia. */}
+          {!savingBrand && saveSucceeded && !saveError && (
+            <span role="status" className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Marca salva
+            </span>
+          )}
+        </div>
+        {saveError && (
+          <p role="alert" className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+            {saveError}
+          </p>
+        )}
       </section>
 
       <div className="h-px bg-slate-200" />
@@ -129,26 +155,56 @@ export function BriefPane({
   );
 }
 
-function SecondaryExtraction({ extracting, onUploadBrandBook, onExtractWebsite }: {
+function SecondaryExtraction({ draft, setDraft, extracting, onUploadBrandBook, onExtractWebsite }: {
+  draft: BriefDraft;
+  setDraft: React.Dispatch<React.SetStateAction<BriefDraft>>;
   extracting: boolean;
   onUploadBrandBook: (file: File) => void;
   onExtractWebsite: () => void;
 }) {
+  // `websiteUrl` é campo da marca (vai pro servidor como `website_url`), então
+  // precisa ser editável nos dois estados — `status` governa apresentação, não
+  // editabilidade. Sem ele aqui, uma marca salva via PDF nascia com URL vazia e
+  // "Extrair do site novamente" não tinha como funcionar nem como ser corrigida.
+  const semUrl = !draft.websiteUrl.trim();
+  // `<label>` com `input[type=file]` escondido não entra na ordem de tabulação
+  // (o input tem `display:none`, logo não é focável): o caminho de PDF virava
+  // exclusivo de mouse. Mesmo padrão de `BrandBookDropzone.pick()`.
+  const pickPdf = () => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'application/pdf';
+    input.onchange = () => { const f = input.files?.[0]; if (f) onUploadBrandBook(f); };
+    input.click();
+  };
   return (
-    <div className="mt-2 flex flex-wrap gap-3">
-      <label className="text-[11px] font-semibold text-[#FF5F39] hover:text-[#E54A26] cursor-pointer">
-        Substituir a partir de PDF
+    <div className="mt-2 space-y-3">
+      <div>
+        <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
+          Website da sua empresa
+        </label>
         <input
-          type="file" accept="application/pdf" className="hidden" disabled={extracting}
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadBrandBook(f); }}
+          id="brief-website" type="url" value={draft.websiteUrl}
+          onChange={(e) => setDraft((d) => ({ ...d, websiteUrl: e.target.value }))}
+          placeholder="https://suaempresa.com"
+          className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
         />
-      </label>
-      <button
-        type="button" onClick={onExtractWebsite} disabled={extracting}
-        className="text-[11px] font-semibold text-[#FF5F39] hover:text-[#E54A26] disabled:text-slate-300"
-      >
-        Extrair do site novamente
-      </button>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button" onClick={pickPdf} disabled={extracting}
+          className="text-[11px] font-semibold text-[#FF5F39] hover:text-[#E54A26] disabled:text-slate-300"
+        >
+          Substituir a partir de PDF
+        </button>
+        <button
+          type="button" onClick={onExtractWebsite} disabled={extracting || semUrl}
+          title={semUrl ? 'Informe o website da empresa acima para extrair novamente' : undefined}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#FF5F39] hover:text-[#E54A26] disabled:text-slate-300 disabled:cursor-not-allowed"
+        >
+          {extracting && <Loader2 className="w-3 h-3 animate-spin" />}
+          Extrair do site novamente
+        </button>
+      </div>
     </div>
   );
 }
@@ -169,9 +225,9 @@ function PrimaryExtraction({ draft, setDraft, extracting, onUploadBrandBook, onE
         <span className="flex-1 h-px bg-slate-200" /> ou <span className="flex-1 h-px bg-slate-200" />
       </div>
       <div>
-        <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Website da sua empresa</label>
+        <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Website da sua empresa</label>
         <div className="flex gap-2">
-          <input type="url" value={draft.websiteUrl}
+          <input id="brief-website" type="url" value={draft.websiteUrl}
             onChange={(e) => setDraft((d) => ({ ...d, websiteUrl: e.target.value }))}
             placeholder="https://suaempresa.com"
             className="flex-1 p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none" />
@@ -180,6 +236,29 @@ function PrimaryExtraction({ draft, setDraft, extracting, onUploadBrandBook, onE
             {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             Extrair com IA
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Procedência da marca que já estava definida quando o painel abriu — veio das
+ * configurações salvas em `/ai/client-voice`, não de uma extração desta sessão
+ * (por isso não há `source` nem referência a exibir). Sem botão de "Trocar":
+ * quem quiser refazer usa as ações de extração logo acima, que não apagam nada
+ * antes da hora.
+ */
+function SavedBrandChip() {
+  return (
+    <div className="mt-3 flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+      <div className="w-6 h-6 rounded-md bg-slate-400 text-white flex items-center justify-center shrink-0">
+        <Settings2 className="w-3.5 h-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] font-bold text-slate-700">Marca das configurações salvas</div>
+        <div className="text-[10px] text-slate-500 truncate">
+          Carregada da marca já salva na conta — edite e salve para atualizar.
         </div>
       </div>
     </div>

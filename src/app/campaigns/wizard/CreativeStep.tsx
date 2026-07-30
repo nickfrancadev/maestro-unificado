@@ -267,8 +267,11 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Preview source — what shows in the canvas
-  const previewCompany: FacetItem | null = !isTemplate
+  // Preview source — what shows in the canvas.
+  // `!isTemplate` sozinho classificaria o alvo Brief como "empresa" (e só não
+  // quebra hoje porque `editingCompany` já é `null` nesse caso). Espelha a
+  // condição de `editingCompany` para não virar armadilha na próxima edição.
+  const previewCompany: FacetItem | null = !isTemplate && !isBrief
     ? editingCompany
     : companies[0] || null;
   const resolved = useMemo(
@@ -563,9 +566,16 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractWarning, setExtractWarning] = useState<string | null>(null);
   const [savingBrand, setSavingBrand] = useState(false);
+  // Sem o modal fechando, sucesso e falha do save global ficavam
+  // indistinguíveis (o botão ia pra "Salvando…" e voltava). Estes dois estados
+  // dão o feedback que a dispensa do overlay levou embora.
+  const [saveBrandError, setSaveBrandError] = useState<string | null>(null);
+  const [brandSaved, setBrandSaved] = useState(false);
 
   const persistVoice = async () => {
     setSavingBrand(true);
+    setSaveBrandError(null);
+    setBrandSaved(false);
     updateCreative({
       brandKit: {
         ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()),
@@ -593,9 +603,21 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         persona: briefDraft.persona,
         brand_colors: briefDraft.brandColors,
       });
-    } catch (_e) { /* non-fatal */ }
+      setBrandSaved(true);
+    } catch (e: any) {
+      // A escrita local (updateCreative acima) permanece — o que falhou foi o
+      // envio pro servidor, e é isso que a mensagem precisa dizer.
+      setSaveBrandError(`Não foi possível salvar a marca no servidor: ${e?.message || 'erro desconhecido'}`);
+    }
     setSavingBrand(false);
   };
+
+  // O "salvo" é confirmação momentânea, não estado permanente da tela.
+  useEffect(() => {
+    if (!brandSaved) return;
+    const t = setTimeout(() => setBrandSaved(false), 4000);
+    return () => clearTimeout(t);
+  }, [brandSaved]);
 
   const applyFixtureToDraft = (source: 'brandbook' | 'website', ref: string) => {
     setBriefDraft((d) => ({
@@ -904,24 +926,32 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         )}
 
         {isBrief ? (
-          <BriefPane
-            draft={briefDraft}
-            setDraft={setBriefDraft}
-            status={brandKit.status}
-            savingBrand={savingBrand}
-            onSaveBrand={persistVoice}
-            extracting={extracting}
-            extractError={extractError}
-            extractWarning={extractWarning}
-            onExtractWebsite={handleExtract}
-            onUploadBrandBook={handleBrandBookUpload}
-            onResetExtraction={handleResetExtraction}
-            onCampaignFieldChange={(patch) => updateCreative({
-              ...(patch.productService !== undefined && { clientProductService: patch.productService }),
-              ...(patch.audienceMarket !== undefined && { clientAudienceMarket: patch.audienceMarket }),
-              ...(patch.persona !== undefined && { clientPersona: patch.persona }),
-            })}
-          />
+          // A casca (`main`) tem altura fixa e `overflow-hidden`; sem este
+          // wrapper com `flex-1 overflow-y-auto` o painel (>1000px) era cortado
+          // sem barra de rolagem e o "Salvar marca" ficava inalcançável.
+          // Mesma convenção do ramo irmão (template/empresa) logo abaixo.
+          <div className="flex-1 overflow-y-auto p-6 bg-white">
+            <BriefPane
+              draft={briefDraft}
+              setDraft={setBriefDraft}
+              status={brandKit.status}
+              savingBrand={savingBrand}
+              saveError={saveBrandError}
+              saveSucceeded={brandSaved}
+              onSaveBrand={persistVoice}
+              extracting={extracting}
+              extractError={extractError}
+              extractWarning={extractWarning}
+              onExtractWebsite={handleExtract}
+              onUploadBrandBook={handleBrandBookUpload}
+              onResetExtraction={handleResetExtraction}
+              onCampaignFieldChange={(patch) => updateCreative({
+                ...(patch.productService !== undefined && { clientProductService: patch.productService }),
+                ...(patch.audienceMarket !== undefined && { clientAudienceMarket: patch.audienceMarket }),
+                ...(patch.persona !== undefined && { clientPersona: patch.persona }),
+              })}
+            />
+          </div>
         ) : (
         <div className="flex-1 grid grid-cols-2 overflow-hidden">
           {/* ---------- Editor form ---------- */}

@@ -126,4 +126,40 @@ describe('CreativeStep — Brief inline com estado controlado de verdade', () =>
       product_service: 'Produto A',
     });
   });
+
+  // O catch engolia o erro e o painel não fecha mais: falha do servidor ficava
+  // indistinguível de sucesso.
+  it('mostra o erro quando o save global falha', async () => {
+    vi.mocked(saveClientVoice).mockRejectedValueOnce(new Error('HTTP 500'));
+    renderStatefulStep();
+    fireEvent.change(screen.getByLabelText(/tom de voz/i), { target: { value: 'Direto' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /salvar marca/i }));
+    });
+    expect(screen.getByRole('alert').textContent).toMatch(/não foi possível salvar a marca.*http 500/i);
+  });
+
+  // Salvar mudava o `brandKit`, o semeador do draft reagia e zerava
+  // `source`/`extractedRef` — o chip de procedência sumia exatamente no
+  // momento em que ele mais serve.
+  it('mantém o chip de procedência depois de salvar a marca', async () => {
+    vi.useFakeTimers();
+    try {
+      renderStatefulStep();
+      const dropzone = screen.getByText(/arraste o pdf/i).closest('div')!;
+      const pdf = new File(['%PDF-'], 'manual-da-marca.pdf', { type: 'application/pdf' });
+      fireEvent.drop(dropzone, { dataTransfer: { files: [pdf] } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByText('Brand Book lido')).toBeTruthy();
+      expect(screen.getByText('manual-da-marca.pdf')).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /salvar marca/i }));
+      });
+      expect(screen.getByText('Brand Book lido')).toBeTruthy();
+      expect(screen.getByText('manual-da-marca.pdf')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
