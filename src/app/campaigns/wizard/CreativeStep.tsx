@@ -513,22 +513,30 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     source: null,
     extractedRef: '',
   });
+  // DOIS efeitos, de propósito. Antes era um só, com os campos de campanha
+  // (produto/público/persona) na lista de deps e reescrevendo o draft INTEIRO —
+  // e como esses três gravam ao vivo em `creativeData`, o prop controlado dava
+  // a volta pelo `CampaignWizard`, o efeito reagia e ressuscitava a marca
+  // *salva* por cima do que o usuário tinha acabado de digitar/extrair.
+  // O semeador da marca agora só reage ao `brandKit`; os campos de campanha
+  // fazem patch cirúrgico das próprias chaves.
   useEffect(() => {
-    setBriefDraft({
+    setBriefDraft((d) => ({
+      ...d,
       voice: brandKit.voice,
       context: brandKit.context,
       websiteUrl: brandKit.websiteUrl,
-      productService: clientProductService,
-      audienceMarket: clientAudienceMarket,
-      persona: clientPersona,
       brandColors: brandKit.colors,
       fontFamily: brandKit.fontFamily,
       logos: brandKit.logos,
       icons: brandKit.icons,
       graphics: brandKit.graphics,
-      source: null,
-      extractedRef: '',
-    });
+      // `source`/`extractedRef` NÃO são tocados aqui de propósito: quem os
+      // possui são os handlers de extração (`applyFixtureToDraft` grava,
+      // `handleResetExtraction` limpa). Zerá-los aqui fazia o chip de
+      // procedência sumir exatamente ao salvar — o momento em que ele mais
+      // importa —, já que salvar muda o `brandKit` e reacende este efeito.
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     brandKit.status,
@@ -539,10 +547,16 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     brandKit.colors.primary,
     brandKit.colors.secondary,
     brandKit.colors.accent,
-    clientProductService,
-    clientAudienceMarket,
-    clientPersona,
   ]);
+
+  useEffect(() => {
+    setBriefDraft((d) => ({
+      ...d,
+      productService: clientProductService,
+      audienceMarket: clientAudienceMarket,
+      persona: clientPersona,
+    }));
+  }, [clientProductService, clientAudienceMarket, clientPersona]);
 
   // Extraction UI state
   const [extracting, setExtracting] = useState(false);
