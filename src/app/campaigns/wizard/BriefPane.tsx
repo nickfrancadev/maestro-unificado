@@ -86,10 +86,12 @@ export function BriefPane({
 
         {/* Procedência: extração desta sessão tem `source`; marca que veio do
             servidor não tem — e nesse caso o chip aponta as configurações
-            salvas, em vez de simplesmente sumir. */}
+            salvas, em vez de simplesmente sumir. O teste de conteúdo evita
+            afirmar "veio das configurações" logo depois de "Trocar ↻", que
+            limpa os campos sem mexer no `status`. */}
         {draft.source ? (
           <ProvenanceChip source={draft.source} reference={draft.extractedRef} onReset={onResetExtraction} />
-        ) : definida ? (
+        ) : definida && (draft.voice.trim() || draft.context.trim()) ? (
           <SavedBrandChip />
         ) : null}
         {extractWarning && (

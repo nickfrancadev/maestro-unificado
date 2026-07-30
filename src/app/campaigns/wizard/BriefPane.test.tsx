@@ -111,6 +111,11 @@ describe('BriefPane — marca já definida', () => {
     expect(screen.getByText(/configurações salvas/i)).toBeTruthy();
   });
 
+  it('não afirma origem salva quando os campos foram limpos por "Trocar"', () => {
+    setup({ voice: '', context: '', source: null }, 'defined');
+    expect(screen.queryByText(/configurações salvas/i)).toBeNull();
+  });
+
   it('prefere o chip da extração quando ela aconteceu nesta sessão', () => {
     setup({ voice: 'Técnico', source: 'website', extractedRef: 'https://exemplo.com' }, 'defined');
     expect(screen.getByText(/extraído do site/i)).toBeTruthy();
