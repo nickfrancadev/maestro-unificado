@@ -582,6 +582,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         context: briefDraft.context,
         websiteUrl: briefDraft.websiteUrl,
         colors: briefDraft.brandColors,
+        // As candidatas precisam ir junto: o efeito de sync re-semeia o draft a
+        // partir do brandKit depois deste write, e sem elas aqui as amostras
+        // desapareceriam no instante em que o usuário salva.
+        colorOptions: briefDraft.colorOptions,
         fontFamily: briefDraft.fontFamily,
         logo: briefDraft.logo,
       },

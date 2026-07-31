@@ -333,6 +333,27 @@ function BrandFields({ draft, setDraft }: {
                     onChange={(e) => setDraft((d) => ({ ...d, brandColors: { ...d.brandColors, [role]: e.target.value } }))}
                     className="flex-1 text-xs font-mono text-slate-700 bg-transparent outline-none min-w-0" />
                 </div>
+                {/* Candidatas da extração. Só aparecem quando existem: marca
+                    carregada do servidor não tem, e a ausência é normal. */}
+                {draft.colorOptions?.[role]?.length ? (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {draft.colorOptions[role].map((hex) => {
+                      const ativa = value.toLowerCase() === hex.toLowerCase();
+                      return (
+                        <button
+                          key={hex}
+                          type="button"
+                          aria-label={`Usar ${hex}`}
+                          aria-pressed={ativa}
+                          title={hex}
+                          onClick={() => setDraft((d) => ({ ...d, brandColors: { ...d.brandColors, [role]: hex } }))}
+                          className={`w-5 h-5 rounded border ${ativa ? 'border-[#FF5F39] ring-2 ring-[#FF5F39]/30' : 'border-slate-200'}`}
+                          style={{ backgroundColor: hex }}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             );
           })}

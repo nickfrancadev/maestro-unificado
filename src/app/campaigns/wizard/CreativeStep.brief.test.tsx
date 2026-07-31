@@ -163,3 +163,30 @@ describe('CreativeStep — Brief inline com estado controlado de verdade', () =>
     }
   });
 });
+
+describe('CreativeStep — candidatas de cor sobrevivem ao save', () => {
+  // Regressão: persistVoice escrevia o brandKit sem colorOptions, e o efeito de
+  // sync re-semeia o draft a partir do brandKit. Resultado: extrair mostrava as
+  // amostras e salvar as apagava.
+  it('mantém as amostras depois de salvar a marca', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderStatefulStep();
+
+      const url = screen.getByLabelText(/website da sua empresa/i);
+      fireEvent.change(url, { target: { value: 'https://exemplo.com' } });
+      fireEvent.click(screen.getByRole('button', { name: /extrair com ia/i }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+
+      expect(screen.getByRole('button', { name: /usar #E54A26/i })).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /salvar marca/i }));
+      });
+
+      expect(screen.getByRole('button', { name: /usar #E54A26/i })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

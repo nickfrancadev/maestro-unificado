@@ -197,3 +197,51 @@ describe('BriefPane — marca enxuta', () => {
     expect(screen.getByAltText(/logo da marca/i)).toBeTruthy();
   });
 });
+
+describe('BriefPane — candidatas de cor', () => {
+  const opts = {
+    primary: ['#3571de', '#2b5fc4'],
+    secondary: ['#212a46'],
+    accent: ['#ff5f39', '#e54a26'],
+  };
+
+  it('sem colorOptions, mostra só os campos hex', () => {
+    setup({ brandColors: { primary: '#3571de', secondary: '', accent: '' } }, 'defined');
+    expect(screen.queryByRole('button', { name: /usar #2b5fc4/i })).toBeNull();
+  });
+
+  it('mostra uma amostra por candidata', () => {
+    setup({ colorOptions: opts }, 'defined');
+    expect(screen.getByRole('button', { name: /usar #3571de/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /usar #2b5fc4/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /usar #e54a26/i })).toBeTruthy();
+  });
+
+  it('clicar numa amostra grava aquele hex no papel', () => {
+    const { draftAtual } = setup(
+      { colorOptions: opts, brandColors: { primary: '#3571de', secondary: '', accent: '' } },
+      'defined',
+    );
+    fireEvent.click(screen.getByRole('button', { name: /usar #2b5fc4/i }));
+    expect(draftAtual().brandColors.primary).toBe('#2b5fc4');
+    // não pode vazar para os outros papéis
+    expect(draftAtual().brandColors.secondary).toBe('');
+  });
+
+  // A amostra ativa reflete o valor atual, não a ordem da lista.
+  it('marca como ativa a amostra que casa com o valor atual', () => {
+    setup(
+      { colorOptions: opts, brandColors: { primary: '#2b5fc4', secondary: '', accent: '' } },
+      'defined',
+    );
+    expect(screen.getByRole('button', { name: /usar #2b5fc4/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /usar #3571de/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('o campo hex aceita valor fora das candidatas', () => {
+    const { draftAtual } = setup({ colorOptions: opts }, 'defined');
+    const campos = screen.getAllByPlaceholderText('#______');
+    fireEvent.change(campos[0], { target: { value: '#123456' } });
+    expect(draftAtual().brandColors.primary).toBe('#123456');
+  });
+});
