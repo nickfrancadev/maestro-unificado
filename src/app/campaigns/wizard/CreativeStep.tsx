@@ -511,8 +511,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     productService: '', audienceMarket: '', persona: '',
     brandColors: { primary: '', secondary: '', accent: '' },
     fontFamily: 'Inter',
-    logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
-    icons: [], graphics: [],
+    logo: null,
     source: null,
     extractedRef: '',
   });
@@ -531,9 +530,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       websiteUrl: brandKit.websiteUrl,
       brandColors: brandKit.colors,
       fontFamily: brandKit.fontFamily,
-      logos: brandKit.logos,
-      icons: brandKit.icons,
-      graphics: brandKit.graphics,
+      logo: brandKit.logo,
+      colorOptions: brandKit.colorOptions,
       // `source`/`extractedRef` NÃO são tocados aqui de propósito: quem os
       // possui são os handlers de extração (`applyFixtureToDraft` grava,
       // `handleResetExtraction` limpa). Zerá-los aqui fazia o chip de
@@ -585,9 +583,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         websiteUrl: briefDraft.websiteUrl,
         colors: briefDraft.brandColors,
         fontFamily: briefDraft.fontFamily,
-        logos: briefDraft.logos,
-        icons: briefDraft.icons,
-        graphics: briefDraft.graphics,
+        logo: briefDraft.logo,
       },
       clientProductService: briefDraft.productService,
       clientAudienceMarket: briefDraft.audienceMarket,
@@ -626,9 +622,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       context: MOCK_BRAND_FIXTURE.context,
       brandColors: MOCK_BRAND_FIXTURE.colors,
       fontFamily: MOCK_BRAND_FIXTURE.fontFamily,
-      logos: MOCK_BRAND_FIXTURE.logos,
-      icons: MOCK_BRAND_FIXTURE.icons,
-      graphics: MOCK_BRAND_FIXTURE.graphics,
+      logo: MOCK_BRAND_FIXTURE.logo,
+      colorOptions: MOCK_BRAND_FIXTURE.colorOptions,
       source,
       extractedRef: ref,
     }));
@@ -668,9 +663,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       voice: '',
       context: '',
       brandColors: { primary: '', secondary: '', accent: '' },
-      logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
-      icons: [],
-      graphics: [],
+      logo: null,
     }));
   };
 

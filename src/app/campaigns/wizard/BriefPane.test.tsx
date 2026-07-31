@@ -10,8 +10,7 @@ function draft(over: Partial<BriefDraft> = {}): BriefDraft {
     productService: '', audienceMarket: '', persona: '',
     brandColors: { primary: '', secondary: '', accent: '' },
     fontFamily: 'Inter',
-    logos: { lightFull: null, lightMark: null, darkFull: null, darkMark: null },
-    icons: [], graphics: [],
+    logo: null,
     source: null, extractedRef: '',
     ...over,
   };
@@ -176,5 +175,25 @@ describe('BriefPane — feedback do save global', () => {
     setup({ voice: 'Técnico' }, 'defined');
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('BriefPane — marca enxuta', () => {
+  it('não renderiza mais ícones nem grafismos', () => {
+    setup({}, 'defined');
+    expect(screen.queryByText(/ícones da marca/i)).toBeNull();
+    expect(screen.queryByText(/grafismos/i)).toBeNull();
+  });
+
+  it('mostra um único slot de logo, sem variantes', () => {
+    setup({}, 'defined');
+    expect(screen.getByText(/^logo$/i)).toBeTruthy();
+    expect(screen.queryByText(/claro · completo/i)).toBeNull();
+    expect(screen.queryByText(/escuro · símbolo/i)).toBeNull();
+  });
+
+  it('renderiza o logo já enviado', () => {
+    setup({ logo: 'blob:fake-logo' }, 'defined');
+    expect(screen.getByAltText(/logo da marca/i)).toBeTruthy();
   });
 });

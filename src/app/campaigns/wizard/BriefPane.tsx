@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Sparkles, Loader2, Upload, Settings2, CheckCircle2 } from 'lucide-react';
 import { FontPicker } from './CreativeStep';
-import { LOGO_VARIANTS, MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
-import type { BrandKit, LogoVariant } from './brandKit';
+import { MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
+import type { BrandKit } from './brandKit';
 
 const MAX_ASSET_MB = 5;
 function makeImageObjectUrl(file: File, onError: (msg: string) => void): string | null {
@@ -20,9 +20,8 @@ export interface BriefDraft {
   persona: string;
   brandColors: { primary: string; secondary: string; accent: string };
   fontFamily: string;
-  logos: Record<LogoVariant, string | null>;
-  icons: string[];
-  graphics: string[];
+  logo: string | null;
+  colorOptions?: { primary: string[]; secondary: string[]; accent: string[] };
   source: 'website' | 'brandbook' | null;   // qual método de extração foi usado (null = nenhum ainda)
   extractedRef: string;                       // referência exibida no chip: URL do site ou nome do arquivo PDF
 }
@@ -345,12 +344,6 @@ function BrandFields({ draft, setDraft }: {
       </div>
 
       <LogoGallery draft={draft} setDraft={setDraft} />
-      <AssetGallery label="Ícones da marca" items={draft.icons}
-        onAdd={(u) => setDraft((d) => ({ ...d, icons: [...d.icons, u] }))}
-        onRemove={(i) => setDraft((d) => ({ ...d, icons: d.icons.filter((_, idx) => idx !== i) }))} />
-      <AssetGallery label="Grafismos / padrões" items={draft.graphics}
-        onAdd={(u) => setDraft((d) => ({ ...d, graphics: [...d.graphics, u] }))}
-        onRemove={(i) => setDraft((d) => ({ ...d, graphics: d.graphics.filter((_, idx) => idx !== i) }))} />
     </div>
   );
 }
@@ -359,74 +352,31 @@ function LogoGallery({ draft, setDraft }: {
   draft: BriefDraft; setDraft: React.Dispatch<React.SetStateAction<BriefDraft>>;
 }) {
   const [err, setErr] = useState<string | null>(null);
-  const pick = (variant: LogoVariant) => {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = 'image/*';
-    input.onchange = () => {
-      const file = input.files?.[0]; if (!file) return;
-      const url = makeImageObjectUrl(file, setErr);
-      if (url) { setErr(null); setDraft((d) => ({ ...d, logos: { ...d.logos, [variant]: url } })); }
-    };
-    input.click();
-  };
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Logos (claro/escuro · completo/símbolo)</label>
-      <div className="grid grid-cols-2 gap-2">
-        {LOGO_VARIANTS.map((v) => {
-          const url = draft.logos[v.key];
-          return (
-            <div key={v.key} className={`relative border border-slate-200 rounded-lg p-2 text-center ${v.dark ? 'bg-slate-900' : 'bg-white'}`}>
-              <div className="text-[9px] uppercase tracking-wide mb-1 text-slate-400">{v.label}</div>
-              {url ? (
-                <div className="relative">
-                  <img src={url} alt={v.label} className="w-full h-12 object-contain" />
-                  <button type="button" onClick={() => setDraft((d) => ({ ...d, logos: { ...d.logos, [v.key]: null } }))}
-                    className="absolute -top-1 -right-1 bg-white text-slate-500 rounded-full w-4 h-4 text-[10px] leading-none border border-slate-200">×</button>
-                </div>
-              ) : (
-                <button type="button" onClick={() => pick(v.key)}
-                  className="w-full h-12 flex items-center justify-center text-slate-400 hover:text-[#FF5F39] border border-dashed border-slate-300 rounded">
-                  <Upload className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
-    </div>
-  );
-}
-
-function AssetGallery({ label, items, onAdd, onRemove }: {
-  label: string; items: string[]; onAdd: (url: string) => void; onRemove: (index: number) => void;
-}) {
-  const [err, setErr] = useState<string | null>(null);
   const pick = () => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'image/*';
     input.onchange = () => {
       const file = input.files?.[0]; if (!file) return;
       const url = makeImageObjectUrl(file, setErr);
-      if (url) { setErr(null); onAdd(url); }
+      if (url) { setErr(null); setDraft((d) => ({ ...d, logo: url })); }
     };
     input.click();
   };
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">{label}</label>
-      <div className="flex gap-2 flex-wrap">
-        {items.map((u, i) => (
-          <div key={u} className="relative">
-            <img src={u} alt="" className="w-14 h-14 object-contain rounded-lg border border-slate-200 p-1 bg-white" />
-            <button type="button" onClick={() => onRemove(i)}
-              className="absolute -top-1 -right-1 bg-white text-slate-500 rounded-full w-4 h-4 text-[10px] leading-none border border-slate-200">×</button>
-          </div>
-        ))}
+      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Logo</label>
+      {draft.logo ? (
+        <div className="relative border border-slate-200 rounded-lg p-2 bg-white inline-block">
+          <img src={draft.logo} alt="Logo da marca" className="h-12 object-contain" />
+          <button type="button" onClick={() => setDraft((d) => ({ ...d, logo: null }))}
+            className="absolute -top-1 -right-1 bg-white text-slate-500 rounded-full w-4 h-4 text-[10px] leading-none border border-slate-200">×</button>
+        </div>
+      ) : (
         <button type="button" onClick={pick}
-          className="w-14 h-14 flex items-center justify-center text-slate-400 hover:text-[#FF5F39] border border-dashed border-slate-300 rounded-lg bg-slate-50 text-xl">+</button>
-      </div>
+          className="w-full h-16 flex items-center justify-center text-slate-400 hover:text-[#FF5F39] border border-dashed border-slate-300 rounded-lg">
+          <Upload className="w-4 h-4" />
+        </button>
+      )}
       {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
     </div>
   );
