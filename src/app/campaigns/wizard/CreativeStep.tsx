@@ -27,6 +27,8 @@ import {
   Link2,
   PencilLine,
   Plus,
+  Square,
+  RectangleHorizontal,
 } from 'lucide-react';
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
@@ -1249,12 +1251,12 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
                     <FormatButton
-                      label="Quadrado"
+                      format="square"
                       active={imageCfg.format === 'square'}
                       onClick={() => setImageField({ format: 'square' })}
                     />
                     <FormatButton
-                      label="Banner"
+                      format="banner"
                       active={imageCfg.format === 'banner'}
                       onClick={() => setImageField({ format: 'banner' })}
                     />
@@ -1314,7 +1316,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       <Upload className="w-6 h-6 text-slate-400" />
                       <span className="text-xs text-slate-600 font-medium">Clique ou arraste uma imagem</span>
                       <span className="text-[10px] text-slate-400 text-center">
-                        JPG ou PNG • {imageCfg.format === 'square' ? '1200×1200px' : '1200×628px'} • Máx 5MB
+                        JPG ou PNG • {AD_FORMATS[imageCfg.format].size} • Máx 5MB
                       </span>
                     </>
                   )}
@@ -1753,18 +1755,43 @@ function CardAction({ label, onClick, loading, disabled, title, icon }: {
   );
 }
 
-function FormatButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+// The icon is drawn to the real aspect ratio of the option it represents, so
+// the shape itself carries the meaning and the numbers just confirm it.
+const AD_FORMATS: Record<AdFormat, { label: string; size: string; ratio: string; icon: React.ReactNode }> = {
+  square: {
+    label: 'Quadrado',
+    size: '1200 × 1200 px',
+    ratio: '1:1',
+    icon: <Square className="w-4 h-4" strokeWidth={2.25} />,
+  },
+  banner: {
+    label: 'Banner',
+    size: '1200 × 628 px',
+    ratio: '1.91:1',
+    icon: <RectangleHorizontal className="w-4 h-4" strokeWidth={2.25} />,
+  },
+};
+
+function FormatButton({ format, active, onClick }: { format: AdFormat; active: boolean; onClick: () => void }) {
+  const meta = AD_FORMATS[format];
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-2 text-xs font-bold rounded-md border transition-colors ${
+      aria-pressed={active}
+      className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg border transition-colors ${
         active
           ? 'bg-[#FF5F39] border-[#FF5F39] text-white shadow-sm'
           : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
       }`}
     >
-      {label}
+      <span className="flex items-center gap-1.5">
+        {meta.icon}
+        <span className="text-xs font-bold">{meta.label}</span>
+      </span>
+      <span className={`text-[9px] font-semibold tabular-nums ${active ? 'text-white/85' : 'text-slate-400'}`}>
+        {meta.size} · {meta.ratio}
+      </span>
     </button>
   );
 }

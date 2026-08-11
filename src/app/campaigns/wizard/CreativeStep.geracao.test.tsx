@@ -82,8 +82,11 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByPlaceholderText('Texto principal na imagem')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Texto secundário na imagem')).toBeInTheDocument();
     expect(screen.getByText('Fonte')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Quadrado' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Banner' })).toBeInTheDocument();
+    // Cada formato anuncia medida e proporção, não só o nome.
+    expect(screen.getByRole('button', { name: /Quadrado/ })).toBeInTheDocument();
+    expect(screen.getByText('1200 × 1200 px · 1:1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Banner/ })).toBeInTheDocument();
+    expect(screen.getByText('1200 × 628 px · 1.91:1')).toBeInTheDocument();
     expect(screen.getByLabelText(/Aplicar logo da empresa-alvo/)).toBeInTheDocument();
   });
 
