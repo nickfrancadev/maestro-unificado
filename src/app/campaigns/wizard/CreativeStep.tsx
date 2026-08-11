@@ -46,7 +46,6 @@ import {
   saveClientVoice,
 } from '@/lib/ai';
 import { LandingPagePicker } from '@/app/landingPages/ads/LandingPagePicker';
-import { buildAdLink } from '@/app/landingPages/ads/utm';
 import { listPages, savePage } from '@/app/landingPages/store/repo';
 import type { LandingPage } from '@/app/landingPages/store/model';
 
@@ -1404,19 +1403,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
                 />
               )}
-
-              <div className="mt-1.5 px-2.5 py-2 bg-slate-50 border border-slate-100 rounded-lg">
-                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">
-                  Link efetivo do anúncio (com conta + UTMs)
-                </p>
-                <p className="text-[11px] font-mono text-slate-600 break-all">
-                  {buildAdLink(editorLandingPageUrl || '/p/{{account.slug}}', editingCompany?.id || '{{account.id}}', {
-                    utm_source: 'linkedin',
-                    utm_medium: 'paid-social',
-                    utm_campaign: '{{campaign.id}}',
-                  })}
-                </p>
-              </div>
 
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">CTA</label>
               <select
