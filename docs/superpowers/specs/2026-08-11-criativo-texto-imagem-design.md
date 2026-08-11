@@ -169,6 +169,33 @@ Decisão consciente para destravar a validação visual. Para funcionar de verda
 precisa parametrizar `CANVAS_W/H` por `format` **e** recalibrar as coordenadas do SVG
 (`TEXT_X`, posições das caixas de texto, `LOGO_CARD_W`), hoje ajustadas para 1200×628.
 
+## Revisão 3 — sem eco do anúncio, e destino por conta
+
+### O editor não repete o que o preview já mostra
+
+O card Imagem da empresa tinha dois slots de imagem (a base e o anúncio composto), e a
+coluna de preview mostrava o mesmo anúncio pela terceira vez. O slot "Anúncio composto"
+sai; a base vira uma linha compacta (miniatura + procedência + `Trocar`), que é o que o
+preview não faz: dizer que a base existe, de onde veio, e deixar trocá-la.
+
+`resolveCreativeForCompany` ganha um degrau na cadeia de fallback:
+`override.imageUrl → override.baseImageUrl → data.imageUrl`. Sem o degrau do meio, subir uma
+imagem para uma empresa deixava o preview mostrando o anúncio do template — justamente o
+que aquela empresa não vai rodar.
+
+### URL de destino e CTA por conta
+
+O card Destino deixa de ser exclusivo do template. `CompanyCreativeOverride` ganha
+`landingPageUrl` e `cta` (opcionais, herdam quando `undefined`), com `Voltar ao template`
+no header do card quando há override.
+
+O efeito que sincroniza o LandingPagePicker passa a reagir à troca de alvo — uma empresa
+pode apontar para outra LP —, mas **não** a cada tecla digitada, o que arrancaria o usuário
+do modo "picker" no meio da seleção.
+
+O "link efetivo" passa a usar o id real da empresa em vez de `{{account.id}}` quando há uma
+empresa em edição, e o CTA do preview passa a ler `resolved.cta`, não o valor do template.
+
 ## Fora de escopo
 
 - [AdsPipelineDocs.tsx:287-303](../../../src/app/pages/AdsPipelineDocs.tsx) documenta os três

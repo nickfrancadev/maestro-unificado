@@ -132,6 +132,9 @@ export interface CompanyCreativeOverride {
   showTargetLogo?: boolean;
   fontFamily?: string;
   format?: AdFormat;
+  // Destination, overridden for this company only. Same rule: undefined inherits.
+  landingPageUrl?: string;
+  cta?: string;
   status: 'template' | 'brief_only' | 'fully_personalized';
 }
 
@@ -246,7 +249,10 @@ export function createDefaultCreativeData(): CreativeData {
 export function resolveCreativeForCompany(
   data: CreativeData,
   company: { id: string; label: string; industry?: string } | null,
-): { headline: string; bodyText: string; imageUrl: string | null; imageFileName: string | null; usedOverride: boolean } {
+): {
+  headline: string; bodyText: string; imageUrl: string | null; imageFileName: string | null;
+  landingPageUrl: string; cta: string; usedOverride: boolean;
+} {
   const override = company ? data.overrides[company.id] : undefined;
   const substituted = (s: string) =>
     s
@@ -255,8 +261,14 @@ export function resolveCreativeForCompany(
   return {
     headline: override?.headline ?? substituted(data.headline),
     bodyText: override?.bodyText ?? substituted(data.bodyText),
-    imageUrl: override?.imageUrl ?? data.imageUrl,
+    // Most specific first: the composed ad, then this company's own base
+    // canvas (uploaded or generated but not composed yet), then the campaign
+    // image. Without the middle step, uploading an image for one company left
+    // the preview showing the template's — the ad it is NOT going to run.
+    imageUrl: override?.imageUrl ?? override?.baseImageUrl ?? data.imageUrl,
     imageFileName: override?.imageFileName ?? data.imageFileName,
+    landingPageUrl: override?.landingPageUrl ?? data.landingPageUrl,
+    cta: override?.cta ?? data.cta,
     usedOverride: !!override && override.status !== 'template',
   };
 }

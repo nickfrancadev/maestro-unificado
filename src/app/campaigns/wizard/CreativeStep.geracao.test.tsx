@@ -128,6 +128,33 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByPlaceholderText('Texto principal na imagem')).toHaveValue('WORKSHOP ABM');
   });
 
+  it('o editor não repete o anúncio — quem renderiza o resultado é o preview', () => {
+    renderStep({
+      overrides: {
+        c1: { status: 'fully_personalized', imageUrl: 'https://x/composto.png', imageFileName: 'composto.png' },
+      },
+    });
+    goTo(/Nubank/);
+
+    // Nada de um segundo slot para o mesmo anúncio dentro do formulário.
+    expect(screen.queryByText('Anúncio composto')).not.toBeInTheDocument();
+    expect(screen.getByAltText('Ad creative')).toHaveAttribute('src', 'https://x/composto.png');
+  });
+
+  it('a imagem-base da própria empresa aparece no preview antes de compor', () => {
+    renderStep({
+      imageUrl: 'https://x/template.png',
+      overrides: {
+        c1: { status: 'fully_personalized', baseImageUrl: 'https://x/base-nubank.png' },
+      },
+    });
+    goTo(/Nubank/);
+
+    // Sem a base da empresa na cadeia, o preview mostraria o anúncio do
+    // template — que não é o que essa empresa vai rodar.
+    expect(screen.getByAltText('Ad creative')).toHaveAttribute('src', 'https://x/base-nubank.png');
+  });
+
   it('sem imagem-base e com origem upload, a empresa bloqueia a geração', () => {
     renderStep();
     goTo(/Nubank/);
@@ -135,6 +162,36 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByRole('button', { name: /^Gerar imagem$/ })).toBeDisabled();
     // O aviso vive dentro do card, não numa faixa no topo da página.
     expect(screen.queryByText(/Modo "Template \+ logo" selecionado/)).not.toBeInTheDocument();
+  });
+
+  it('a empresa tem URL de destino e CTA próprios, herdados até serem mudados', () => {
+    renderStep({ landingPageUrl: '/p/campanha-geral', cta: 'LEARN_MORE' });
+    goTo(/Nubank/);
+
+    const url = screen.getByDisplayValue('/p/campanha-geral');
+    expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
+
+    fireEvent.change(url, { target: { value: '/p/nubank' } });
+    fireEvent.change(screen.getByDisplayValue('Learn More'), { target: { value: 'REQUEST_DEMO' } });
+
+    expect(screen.getByDisplayValue('/p/nubank')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Request Demo')).toBeInTheDocument();
+
+    // O template segue intocado.
+    goTo(/Template global/);
+    expect(screen.getByDisplayValue('/p/campanha-geral')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
+  });
+
+  it('o CTA do preview segue o override da empresa, não o do template', () => {
+    renderStep({
+      cta: 'LEARN_MORE',
+      overrides: { c1: { status: 'fully_personalized', cta: 'REQUEST_DEMO' } },
+    });
+    goTo(/Nubank/);
+
+    expect(screen.getByRole('button', { name: 'Request Demo' })).toBeInTheDocument();
   });
 
   it('o Brand Brief sai do header e passa a ser acessível pelo card de Texto', () => {

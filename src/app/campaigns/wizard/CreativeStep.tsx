@@ -14,7 +14,6 @@ import {
   Globe,
   Upload,
   Loader2,
-  CheckCircle2,
   AlertTriangle,
   Sparkles,
   Wand2,
@@ -182,25 +181,22 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     onCreativeChange(next);
   };
 
-  // On mount (and whenever the URL is changed elsewhere), detect whether the
-  // current landingPageUrl already points at a page created in the Landing
-  // Pages product (path /p/{slug}) so the picker opens pre-selected instead
-  // of defaulting users back into "manual" every time they revisit this step.
+  // Detect whether the URL of the target being edited already points at a page
+  // created in the Landing Pages product (path /p/{slug}) so the picker opens
+  // pre-selected. Re-runs on target switch — a company can point somewhere
+  // else than the template — but deliberately NOT on every keystroke, which
+  // would yank the user out of "picker" mode mid-selection.
   useEffect(() => {
-    const match = landingPageUrl.match(/\/p\/([^/?#]+)/);
-    if (!match) return;
-    const slug = match[1];
-    const page = listPages().find((p) => p.slug === slug);
-    if (page) {
-      setLinkedPageId(page.id);
-      setUrlMode('picker');
-    }
+    const match = editorLandingPageUrl.match(/\/p\/([^/?#]+)/);
+    const page = match ? listPages().find((p) => p.slug === match[1]) : undefined;
+    setLinkedPageId(page?.id);
+    setUrlMode(page ? 'picker' : 'manual');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [editingTarget]);
 
   const handleSelectLandingPage = (page: LandingPage) => {
     setLinkedPageId(page.id);
-    updateCreative({ landingPageUrl: `/p/${page.slug}` });
+    setDestination({ landingPageUrl: `/p/${page.slug}` });
     // Best-effort bidirectional link: only recorded when we actually know
     // the campaign id (brand-new campaigns have none yet — there's no
     // campaign repo to persist into in this prototype). The LP selection
@@ -292,7 +288,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     : companies[0] || null;
   const resolved = useMemo(
     () => resolveCreativeForCompany(
-      { ...creativeData, headline, bodyText, imageUrl: adImageUrl, imageFileName: adImageFileName, overrides } as CreativeData,
+      { ...creativeData, headline, bodyText, imageUrl: adImageUrl, imageFileName: adImageFileName, cta, landingPageUrl, overrides } as CreativeData,
       previewCompany ? { id: previewCompany.id, label: previewCompany.label, industry: previewCompany.industry } : null,
     ),
     [creativeData, previewCompany?.id, headline, bodyText, adImageUrl, adImageFileName, overrides],
@@ -746,18 +742,15 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     }));
   };
 
-  const ctaLabel = CTA_OPTIONS.find((o) => o.value === cta)?.label || 'Learn More';
+  // Resolved, not raw: the preview must show the CTA the previewed company
+  // will actually run, which may be its own override rather than the template's.
+  const ctaLabel = CTA_OPTIONS.find((o) => o.value === resolved.cta)?.label || 'Learn More';
 
-  // What the editor edits — template OR a specific company override
+  // What the editor edits — template OR a specific company override.
+  // No image equivalent here on purpose: the composed ad is rendered by the
+  // preview column, and the image card reads its own state from `imageCfg`.
   const editorHeadline = isTemplate ? headline : (editingOverride?.headline ?? '');
   const editorBody = isTemplate ? bodyText : (editingOverride?.bodyText ?? '');
-  // At the template level the editor always shows the campaign base image —
-  // both origins now write to templateLogo.baseImageUrl, so there is no longer
-  // a branch here. Only a company can hold its own composed/overridden image.
-  const editorImageUrl = isTemplate
-    ? templateLogo.baseImageUrl
-    : (editingOverride?.imageUrl ?? null);
-  const editorImageFileName = isTemplate ? adImageFileName : (editingOverride?.imageFileName ?? null);
 
   const setEditorHeadline = (v: string) => {
     if (v.length > 200) return;
@@ -816,6 +809,22 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         templateLogo: { ...(creativeDataRef.current?.templateLogo || DEFAULT_TEMPLATE_LOGO), ...rest },
       });
     }
+  };
+
+  // Destination follows the same inherit-then-override rule as the image block.
+  const editorLandingPageUrl = editingOverride?.landingPageUrl ?? landingPageUrl;
+  const editorCta = editingOverride?.cta ?? cta;
+  const destinationOverridden = !!editingCompany
+    && (editingOverride?.landingPageUrl !== undefined || editingOverride?.cta !== undefined);
+
+  const setDestination = (patch: { landingPageUrl?: string; cta?: string }) => {
+    if (editingCompany) updateOverride(editingCompany.id, patch);
+    else updateCreative(patch);
+  };
+
+  const resetDestination = () => {
+    if (!editingCompany) return;
+    updateOverride(editingCompany.id, { landingPageUrl: undefined, cta: undefined });
   };
 
   const resetImageOverrides = () => {
@@ -1274,23 +1283,32 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 </label>
               </div>
 
-              {/* Base image state for the current target */}
+              {/* Base image, deliberately compact. The preview column on the
+                  right is where the result gets judged — repeating it here
+                  (plus a second slot for the composed ad) meant the same
+                  picture had three homes on one screen. What is left is only
+                  what the preview cannot do: tell you the base exists, where
+                  it came from, and let you replace it. */}
               {imageCfg.baseImageUrl ? (
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <img src={imageCfg.baseImageUrl} alt="Imagem-base" className="w-full h-36 object-cover" />
-                  <div className="px-3 py-2 bg-emerald-50 border-t border-emerald-100 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span className="text-xs text-emerald-700 font-medium truncate">
-                      Imagem-base {imageCfg.baseImageSource === 'ai' ? 'gerada por IA' : 'enviada'}
-                      {editingCompany && imageOverrides.includes('baseImageUrl') ? ` (só de ${editingCompany.label})` : ''}
-                    </span>
+                <div className="flex items-center gap-2.5 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <img
+                    src={imageCfg.baseImageUrl}
+                    alt="Imagem-base"
+                    className="w-14 h-9 object-cover rounded border border-slate-200 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Imagem-base</div>
+                    <div className="text-[11px] text-slate-600 truncate">
+                      {imageCfg.baseImageSource === 'ai' ? 'Gerada por IA' : 'Enviada'}
+                      {editingCompany && imageOverrides.includes('baseImageUrl') && ` · só de ${editingCompany.label}`}
+                    </div>
                   </div>
                   {imageCfg.imageMode === 'upload' && (
                     <button
                       onClick={() => adImageInputRef.current?.click()}
-                      className="w-full px-3 py-2 text-xs font-medium text-[#FF5F39] hover:bg-[#FFF1ED] border-t border-slate-100 transition-colors"
+                      className="text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26] px-2 py-1 rounded hover:bg-[#FFF1ED] shrink-0"
                     >
-                      Trocar imagem-base
+                      Trocar
                     </button>
                   )}
                 </div>
@@ -1300,7 +1318,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onClick={() => !isUploadingImage && adImageInputRef.current?.click()}
-                  className={`w-full border-2 border-dashed rounded-lg p-6 flex flex-col items-center gap-2 transition-colors cursor-pointer ${
+                  className={`w-full border-2 border-dashed rounded-lg p-5 flex flex-col items-center gap-1.5 transition-colors cursor-pointer ${
                     isDragging ? 'border-[#FF5F39] bg-[#FFF1ED]'
                       : isUploadingImage ? 'border-slate-300 bg-slate-50 cursor-not-allowed'
                       : 'border-slate-300 hover:border-[#FF7A59] hover:bg-[#FFF1ED]/30'
@@ -1308,135 +1326,109 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 >
                   {isUploadingImage ? (
                     <>
-                      <Loader2 className="w-6 h-6 text-[#FF5F39] animate-spin" />
+                      <Loader2 className="w-5 h-5 text-[#FF5F39] animate-spin" />
                       <span className="text-xs text-[#FF5F39] font-medium">Fazendo upload…</span>
                     </>
                   ) : (
                     <>
-                      <Upload className="w-6 h-6 text-slate-400" />
-                      <span className="text-xs text-slate-600 font-medium">Clique ou arraste uma imagem</span>
-                      <span className="text-[10px] text-slate-400 text-center">
+                      <Upload className="w-5 h-5 text-slate-400" />
+                      <span className="text-xs text-slate-600 font-medium">Clique ou arraste a imagem-base</span>
+                      <span className="text-[10px] text-slate-400">
                         JPG ou PNG • {AD_FORMATS[imageCfg.format].size} • Máx 5MB
                       </span>
                     </>
                   )}
                 </div>
               ) : (
-                <div className="w-full border-2 border-dashed border-slate-200 rounded-lg p-6 flex flex-col items-center gap-1.5 text-center">
-                  <ImageIcon className="w-6 h-6 text-slate-300" />
-                  <span className="text-xs text-slate-500 font-medium">Nenhuma imagem-base ainda</span>
-                  <span className="text-[10px] text-slate-400">
-                    Use <span className="font-semibold text-[#E54A26]">
-                      {editingCompany ? 'Gerar imagem' : 'Gerar imagem-base'}
-                    </span> acima.
-                  </span>
-                </div>
+                <p className="text-[11px] text-slate-400 text-center py-1.5">
+                  A imagem-base será criada quando você usar{' '}
+                  <span className="font-semibold text-[#E54A26]">
+                    {editingCompany ? 'Gerar imagem' : 'Gerar imagem-base'}
+                  </span>.
+                </p>
               )}
               {uploadError && (
                 <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 shrink-0" /> {uploadError}
                 </p>
               )}
-
-              {/* The composed ad — only a company has one. */}
-              {editingCompany && (
-                <div className="mt-3 pt-3 border-t border-dashed border-slate-200">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-                    Anúncio composto
-                  </label>
-                  {editorImageUrl ? (
-                    <div className="border border-slate-200 rounded-lg overflow-hidden">
-                      <img src={editorImageUrl} alt="Ad creative" className="w-full h-40 object-cover" />
-                      <div className="px-3 py-2 bg-emerald-50 border-t border-emerald-100 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span className="text-xs text-emerald-700 font-medium truncate">{editorImageFileName}</span>
-                        </div>
-                        <button
-                          onClick={() => updateOverride(editingCompany.id, { imageUrl: undefined, imageFileName: undefined })}
-                          className="text-[10px] font-semibold text-slate-500 hover:text-red-600 shrink-0"
-                        >
-                          Descartar
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-full border-2 border-dashed border-slate-200 rounded-lg p-5 flex flex-col items-center gap-1.5 text-center">
-                      <ImageIcon className="w-5 h-5 text-slate-300" />
-                      <span className="text-[11px] text-slate-500 font-medium">Ainda não gerado</span>
-                      <span className="text-[10px] text-slate-400">
-                        <span className="font-semibold text-[#E54A26]">Gerar imagem</span> compõe os textos e o logo sobre a base.
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
             </SectionCard>
 
             {/* ============ 3 · DESTINO ============ */}
-            {isTemplate && (
-              <SectionCard index={3} title="Destino">
-                <div className="flex items-center justify-between mb-1.5 gap-2">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">URL de destino</label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setUrlMode((m) => (m === 'picker' ? 'manual' : 'picker'))}
-                      className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26]"
-                    >
-                      {urlMode === 'picker' ? (
-                        <><PencilLine className="w-3 h-3" /> Usar URL manual</>
-                      ) : (
-                        <><Link2 className="w-3 h-3" /> Escolher landing page</>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCreateLpFromCampaign}
-                      className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-[#E54A26] border border-slate-200 hover:border-[#FFD0C2] rounded-full px-2 py-0.5"
-                      title="Abre o fluxo de criação de landing page com IA"
-                    >
-                      <Plus className="w-3 h-3" /> Criar LP
-                    </button>
-                  </div>
-                </div>
-
-                {urlMode === 'picker' ? (
-                  <LandingPagePicker value={linkedPageId} onSelect={handleSelectLandingPage} />
-                ) : (
-                  <input
-                    type="text"
-                    value={landingPageUrl}
-                    onChange={(e) => { setLinkedPageId(undefined); updateCreative({ landingPageUrl: e.target.value }); }}
-                    className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                  />
-                )}
-
-                <div className="mt-1.5 px-2.5 py-2 bg-slate-50 border border-slate-100 rounded-lg">
-                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">
-                    Link efetivo do anúncio (com conta + UTMs)
-                  </p>
-                  <p className="text-[11px] font-mono text-slate-600 break-all">
-                    {buildAdLink(landingPageUrl || '/p/{{account.slug}}', '{{account.id}}', {
-                      utm_source: 'linkedin',
-                      utm_medium: 'paid-social',
-                      utm_campaign: '{{campaign.id}}',
-                    })}
-                  </p>
-                </div>
-
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">CTA</label>
-                <select
-                  value={cta}
-                  onChange={(e) => updateCreative({ cta: e.target.value })}
-                  className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
+            {/* Also per company: a target account can point at its own landing
+                page and ask for a different CTA than the campaign default. */}
+            <SectionCard
+              index={3}
+              title="Destino"
+              action={destinationOverridden ? (
+                <button
+                  onClick={resetDestination}
+                  className="text-[10px] font-semibold text-slate-500 hover:text-red-600 shrink-0"
                 >
-                  {CTA_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </SectionCard>
-            )}
+                  Voltar ao template
+                </button>
+              ) : undefined}
+            >
+              <div className="flex items-center justify-between mb-1.5 gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">URL de destino</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setUrlMode((m) => (m === 'picker' ? 'manual' : 'picker'))}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26]"
+                  >
+                    {urlMode === 'picker' ? (
+                      <><PencilLine className="w-3 h-3" /> Usar URL manual</>
+                    ) : (
+                      <><Link2 className="w-3 h-3" /> Escolher landing page</>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateLpFromCampaign}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-[#E54A26] border border-slate-200 hover:border-[#FFD0C2] rounded-full px-2 py-0.5"
+                    title="Abre o fluxo de criação de landing page com IA"
+                  >
+                    <Plus className="w-3 h-3" /> Criar LP
+                  </button>
+                </div>
+              </div>
+
+              {urlMode === 'picker' ? (
+                <LandingPagePicker value={linkedPageId} onSelect={handleSelectLandingPage} />
+              ) : (
+                <input
+                  type="text"
+                  value={editorLandingPageUrl}
+                  onChange={(e) => { setLinkedPageId(undefined); setDestination({ landingPageUrl: e.target.value }); }}
+                  className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
+                />
+              )}
+
+              <div className="mt-1.5 px-2.5 py-2 bg-slate-50 border border-slate-100 rounded-lg">
+                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">
+                  Link efetivo do anúncio (com conta + UTMs)
+                </p>
+                <p className="text-[11px] font-mono text-slate-600 break-all">
+                  {buildAdLink(editorLandingPageUrl || '/p/{{account.slug}}', editingCompany?.id || '{{account.id}}', {
+                    utm_source: 'linkedin',
+                    utm_medium: 'paid-social',
+                    utm_campaign: '{{campaign.id}}',
+                  })}
+                </p>
+              </div>
+
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">CTA</label>
+              <select
+                value={editorCta}
+                onChange={(e) => setDestination({ cta: e.target.value })}
+                className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
+              >
+                {CTA_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </SectionCard>
 
             {!isTemplate && editingCompany && editingOverride && (
               <button
