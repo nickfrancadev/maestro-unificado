@@ -14,7 +14,6 @@ import {
   Globe,
   Upload,
   Loader2,
-  CheckCircle2,
   AlertTriangle,
   Sparkles,
   Wand2,
@@ -24,16 +23,15 @@ import {
   X,
   ChevronDown,
   FileText,
-  Camera,
-  Palette,
-  LayoutGrid,
   Link2,
   PencilLine,
   Plus,
+  Square,
+  RectangleHorizontal,
 } from 'lucide-react';
 import { TargetAccount } from './types';
-import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } from './types';
-import { resolveCreativeForCompany } from './types';
+import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
+import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields } from './types';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
 import { BriefPane, type BriefDraft } from './BriefPane';
@@ -48,7 +46,6 @@ import {
   saveClientVoice,
 } from '@/lib/ai';
 import { LandingPagePicker } from '@/app/landingPages/ads/LandingPagePicker';
-import { buildAdLink } from '@/app/landingPages/ads/utm';
 import { listPages, savePage } from '@/app/landingPages/store/repo';
 import type { LandingPage } from '@/app/landingPages/store/model';
 
@@ -95,6 +92,29 @@ const STATUS_META: Record<CompanyStatus, { label: string; color: string; dot: st
   fully_personalized: { label: 'Personalizado', color: 'text-emerald-700 bg-emerald-50', dot: 'bg-emerald-500' },
 };
 
+const DEFAULT_TEMPLATE_LOGO = {
+  baseImageUrl: null,
+  baseImageSource: undefined as ImageMode | undefined,
+  basePrompt: '',
+  textoDestaque: 'WORKSHOP ABM',
+  textoComplementar: 'Convite exclusivo VIP',
+  showTargetLogo: true,
+  format: 'banner' as AdFormat,
+};
+
+// `creativeData` reaches this component partially populated in some entry
+// points (and in tests), so every read of the image config goes through this
+// instead of touching the raw prop and blowing up on a missing sub-object.
+function withImageDefaults(d?: CreativeData): CreativeData {
+  return {
+    ...(d as CreativeData),
+    imageMode: d?.imageMode || 'upload',
+    templateLogo: d?.templateLogo || DEFAULT_TEMPLATE_LOGO,
+    brandKit: d?.brandKit || createDefaultBrandKit(),
+    overrides: d?.overrides || {},
+  };
+}
+
 function getAccountColor(name: string) {
   const colors: Record<string, string> = {
     NVIDIA: '#76b900', Revolut: '#0075EB', Datadog: '#632CA6', Figma: '#F24E1E',
@@ -139,14 +159,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const clientAudienceMarket = creativeData?.clientAudienceMarket || '';
   const clientPersona = creativeData?.clientPersona || '';
   const clientBrandColors = brandKit.colors;
-  const imageMode: ImageMode = creativeData?.imageMode || 'template_logo';
-  const templateLogo = creativeData?.templateLogo || {
-    baseImageUrl: null,
-    baseImageSource: undefined as 'upload' | 'photo_ai' | 'graphic_ai' | undefined,
-    textoDestaque: 'WORKSHOP ABM',
-    textoComplementar: 'Convite exclusivo VIP',
-    showTargetLogo: true,
-  };
+  const imageMode: ImageMode = creativeData?.imageMode || 'upload';
+  const templateLogo = creativeData?.templateLogo || DEFAULT_TEMPLATE_LOGO;
 
   const editingOverride = editingCompany ? overrides[editingCompany.id] : undefined;
 
@@ -166,25 +180,22 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     onCreativeChange(next);
   };
 
-  // On mount (and whenever the URL is changed elsewhere), detect whether the
-  // current landingPageUrl already points at a page created in the Landing
-  // Pages product (path /p/{slug}) so the picker opens pre-selected instead
-  // of defaulting users back into "manual" every time they revisit this step.
+  // Detect whether the URL of the target being edited already points at a page
+  // created in the Landing Pages product (path /p/{slug}) so the picker opens
+  // pre-selected. Re-runs on target switch — a company can point somewhere
+  // else than the template — but deliberately NOT on every keystroke, which
+  // would yank the user out of "picker" mode mid-selection.
   useEffect(() => {
-    const match = landingPageUrl.match(/\/p\/([^/?#]+)/);
-    if (!match) return;
-    const slug = match[1];
-    const page = listPages().find((p) => p.slug === slug);
-    if (page) {
-      setLinkedPageId(page.id);
-      setUrlMode('picker');
-    }
+    const match = editorLandingPageUrl.match(/\/p\/([^/?#]+)/);
+    const page = match ? listPages().find((p) => p.slug === match[1]) : undefined;
+    setLinkedPageId(page?.id);
+    setUrlMode(page ? 'picker' : 'manual');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [editingTarget]);
 
   const handleSelectLandingPage = (page: LandingPage) => {
     setLinkedPageId(page.id);
-    updateCreative({ landingPageUrl: `/p/${page.slug}` });
+    setDestination({ landingPageUrl: `/p/${page.slug}` });
     // Best-effort bidirectional link: only recorded when we actually know
     // the campaign id (brand-new campaigns have none yet — there's no
     // campaign repo to persist into in this prototype). The LP selection
@@ -276,7 +287,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     : companies[0] || null;
   const resolved = useMemo(
     () => resolveCreativeForCompany(
-      { ...creativeData, headline, bodyText, imageUrl: adImageUrl, imageFileName: adImageFileName, overrides } as CreativeData,
+      { ...creativeData, headline, bodyText, imageUrl: adImageUrl, imageFileName: adImageFileName, cta, landingPageUrl, overrides } as CreativeData,
       previewCompany ? { id: previewCompany.id, label: previewCompany.label, industry: previewCompany.industry } : null,
     ),
     [creativeData, previewCompany?.id, headline, bodyText, adImageUrl, adImageFileName, overrides],
@@ -302,19 +313,17 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     try {
       const result = await uploadCreativeImageToStorage(file);
       if (result.success && result.url) {
-        // In template_logo mode at the template level, the upload becomes the
-        // base image used by the composer (not the final ad). For everything
-        // else it's the final ad image.
-        if (isTemplate && imageMode === 'template_logo') {
+        // An upload is always a BASE image — the canvas the composer paints
+        // texts and the target logo onto. At the template it is the shared
+        // campaign base; on a company it belongs to that company alone.
+        if (isTemplate) {
           updateCreative({
-            templateLogo: { ...templateLogo, baseImageUrl: result.url },
+            templateLogo: { ...templateLogo, baseImageUrl: result.url, baseImageSource: 'upload' },
             imageUrl: result.url,
             imageFileName: result.filename || file.name,
           });
-        } else if (isTemplate) {
-          updateCreative({ imageUrl: result.url, imageFileName: result.filename || file.name });
         } else if (editingCompany) {
-          updateOverride(editingCompany.id, { imageUrl: result.url, imageFileName: result.filename || file.name });
+          updateOverride(editingCompany.id, { baseImageUrl: result.url, baseImageSource: 'upload' });
         }
       } else {
         setUploadError(result.error || 'Erro ao fazer upload da imagem.');
@@ -403,58 +412,114 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   };
 
   // Generate the campaign-wide base image (single canvas reused across all
-  // target companies). Modes: 'photo_ai' or 'graphic_ai' use the IA generator;
-  // 'template_logo' relies on the user uploading the base manually elsewhere.
+  // target companies). Only relevant when the base image origin is 'ai' — the
+  // 'upload' origin gets its base from the file picker instead.
   // Returns the URL of the new base image, or null on failure.
   const [baseImageLoading, setBaseImageLoading] = useState(false);
 
-  const generateBaseImageFor = async (mode: 'photo_ai' | 'graphic_ai', promptBrief?: string): Promise<string | null> => {
+  // `company` null = generate the shared campaign base. With a company, the
+  // base belongs to that company alone (it overrode the prompt or the origin).
+  const generateBaseImageFor = async (company?: FacetItem | null): Promise<string | null> => {
     setBaseImageLoading(true);
     setAiError(null);
     try {
-      const data = creativeDataRef.current!;
+      const data = withImageDefaults(creativeDataRef.current);
+      const cfg = resolveImageConfig(data, company?.id);
       const result = await generateBaseImage({
-        mode,
         client_brand_context: data.brandKit.context,
-        prompt_brief: promptBrief,
+        prompt_brief: cfg.basePrompt?.trim() || undefined,
+        format: cfg.format,
       });
-      updateCreative({
-        templateLogo: { ...data.templateLogo, baseImageUrl: result.url, baseImageSource: mode },
-        imageFileName: result.filename,
-      });
+      if (company) {
+        updateOverride(company.id, { baseImageUrl: result.url, baseImageSource: 'ai' });
+      } else {
+        updateCreative({
+          templateLogo: { ...data.templateLogo, baseImageUrl: result.url, baseImageSource: 'ai' },
+          imageFileName: result.filename,
+        });
+      }
       return result.url;
     } catch (err: any) {
-      setAiError(`Imagem-base (${mode}): ${err.message}`);
+      setAiError(`Imagem-base${company ? ` (${company.label})` : ''}: ${err.message}`);
       return null;
     } finally {
       setBaseImageLoading(false);
     }
   };
 
+  // Template-level copy generation. The template is company-agnostic, so we ask
+  // the model to write for the literal `{{company.name}}` placeholder and then
+  // normalise anything that slipped through as a real company name back into
+  // the variable — the model does honour the placeholder most of the time, but
+  // "most of the time" is not a contract we can ship without a safety net.
+  const [templateCopyLoading, setTemplateCopyLoading] = useState(false);
+
+  const generateTemplateCopy = async (): Promise<boolean> => {
+    setTemplateCopyLoading(true);
+    setAiError(null);
+    try {
+      const data = creativeDataRef.current!;
+      const result = await generateCopy({
+        brand_brief: {
+          industry: '',
+          value_proposition: '',
+          visual_style_keywords: [],
+          primary_colors: [],
+          key_messaging_themes: [],
+          target_persona_hint: '',
+          generated_at: new Date().toISOString(),
+        } as BrandBrief,
+        client_voice: data.brandKit.voice,
+        client_brand_colors: data.brandKit.colors,
+        target_company_name: '{{company.name}}',
+        objective: 'brand_awareness',
+        cta: data.cta,
+      });
+      // Guard against the model echoing a concrete name from the client voice
+      // instead of the placeholder: any first-listed target company name found
+      // verbatim is folded back into the variable.
+      const restore = (s: string) =>
+        companies.reduce(
+          (acc, c) => (c.label ? acc.split(c.label).join('{{company.name}}') : acc),
+          s,
+        );
+      updateCreative({
+        headline: restore(result.headline),
+        bodyText: restore(result.bodyText),
+      });
+      return true;
+    } catch (err: any) {
+      setAiError(`Texto do template: ${err.message}`);
+      return false;
+    } finally {
+      setTemplateCopyLoading(false);
+    }
+  };
+
   // Apply the IA composer (texts + target logo) for one company on top of the
   // shared base image. Same pipeline regardless of how the base was produced.
   const composeOverlayFor = async (company: FacetItem): Promise<boolean> => {
-    const tpl = creativeDataRef.current?.templateLogo;
-    if (!tpl?.baseImageUrl) {
-      setAiError(`Configure uma imagem-base no template antes de compor para ${company.label}.`);
+    const cfg = resolveImageConfig(withImageDefaults(creativeDataRef.current), company.id);
+    if (!cfg.baseImageUrl) {
+      setAiError(`Defina uma imagem-base antes de compor para ${company.label}.`);
       return false;
     }
     setAiImageLoading((s) => ({ ...s, [company.id]: true }));
     setAiError(null);
     try {
       const result = await composeLogoOverlay({
-        base_image_url: tpl.baseImageUrl,
+        base_image_url: cfg.baseImageUrl,
         target_company_name: company.label,
         target_company_domain: company.domain || null,
-        show_target_logo: tpl.showTargetLogo,
-        texto_destaque: tpl.textoDestaque,
-        texto_complementar: tpl.textoComplementar,
-        font_family: creativeDataRef.current?.brandKit.fontFamily,
+        show_target_logo: cfg.showTargetLogo,
+        texto_destaque: cfg.textoDestaque,
+        texto_complementar: cfg.textoComplementar,
+        font_family: cfg.fontFamily,
+        format: cfg.format,
       });
       updateOverride(company.id, {
         imageUrl: result.url,
         imageFileName: result.filename,
-        imageMode: creativeDataRef.current!.imageMode,
       });
       return true;
     } catch (err: any) {
@@ -468,14 +533,19 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Single per-company image pipeline: ensure a base image exists (generating
   // one with IA if needed) and then compose the per-company overlay on top.
   const generateImageFor = async (company: FacetItem): Promise<boolean> => {
-    const data = creativeDataRef.current!;
-    if (!data.templateLogo.baseImageUrl) {
-      if (data.imageMode === 'template_logo') {
-        setAiError(`Suba uma imagem-base no Template antes de gerar para ${company.label}.`);
+    const data = withImageDefaults(creativeDataRef.current);
+    const cfg = resolveImageConfig(data, company.id);
+    if (!cfg.baseImageUrl) {
+      if (cfg.imageMode === 'upload') {
+        setAiError(`Envie uma imagem-base antes de gerar para ${company.label}.`);
         return false;
       }
-      // Auto-generate the base image once for the campaign
-      const newBase = await generateBaseImageFor(data.imageMode);
+      // Whoever owns the settings owns the base: a company that customised the
+      // origin or the prompt gets its own canvas, otherwise we fill the shared
+      // campaign one so the other companies benefit from the same call.
+      const ownsBase = overriddenImageFields(data, company.id)
+        .some((f) => f === 'imageMode' || f === 'basePrompt' || f === 'baseImageUrl');
+      const newBase = await generateBaseImageFor(ownsBase ? company : null);
       if (!newBase) return false;
     }
     return composeOverlayFor(company);
@@ -671,15 +741,15 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     }));
   };
 
-  const ctaLabel = CTA_OPTIONS.find((o) => o.value === cta)?.label || 'Learn More';
+  // Resolved, not raw: the preview must show the CTA the previewed company
+  // will actually run, which may be its own override rather than the template's.
+  const ctaLabel = CTA_OPTIONS.find((o) => o.value === resolved.cta)?.label || 'Learn More';
 
-  // What the editor edits — template OR a specific company override
+  // What the editor edits — template OR a specific company override.
+  // No image equivalent here on purpose: the composed ad is rendered by the
+  // preview column, and the image card reads its own state from `imageCfg`.
   const editorHeadline = isTemplate ? headline : (editingOverride?.headline ?? '');
   const editorBody = isTemplate ? bodyText : (editingOverride?.bodyText ?? '');
-  const editorImageUrl = isTemplate
-    ? (imageMode === 'template_logo' ? templateLogo.baseImageUrl : adImageUrl)
-    : (editingOverride?.imageUrl ?? null);
-  const editorImageFileName = isTemplate ? adImageFileName : (editingOverride?.imageFileName ?? null);
 
   const setEditorHeadline = (v: string) => {
     if (v.length > 200) return;
@@ -710,7 +780,60 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   );
 
   const briefForEditing = editingCompany ? overrides[editingCompany.id]?.brief : undefined;
-  const needsBaseImage = imageMode === 'template_logo' && !templateLogo.baseImageUrl;
+
+  // Image settings for whatever is being edited: the template's values, with
+  // this company's overrides on top. Both levels render the same fields from
+  // this — a company is no longer a read-only spectator of the image block.
+  const imageCfgSource = withImageDefaults(creativeData);
+  const imageCfg = resolveImageConfig(imageCfgSource, editingCompany?.id);
+  const imageOverrides = overriddenImageFields(imageCfgSource, editingCompany?.id);
+  const needsBaseImage = imageCfg.imageMode === 'upload' && !imageCfg.baseImageUrl;
+  const noVoice = !clientVoice.trim();
+
+  // Routes a field edit to the right home: a company writes an override, the
+  // template writes to its own config (with the font living in the brand kit).
+  const setImageField = (patch: Partial<ResolvedImageConfig>) => {
+    if (editingCompany) {
+      updateOverride(editingCompany.id, patch);
+      return;
+    }
+    const { fontFamily, imageMode: mode, baseImageSource, ...tpl } = patch;
+    if (fontFamily !== undefined) {
+      updateCreative({ brandKit: { ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()), fontFamily } });
+    }
+    if (mode !== undefined) updateCreative({ imageMode: mode });
+    const rest = { ...tpl, ...(baseImageSource !== undefined && { baseImageSource }) };
+    if (Object.keys(rest).length) {
+      updateCreative({
+        templateLogo: { ...(creativeDataRef.current?.templateLogo || DEFAULT_TEMPLATE_LOGO), ...rest },
+      });
+    }
+  };
+
+  // Destination follows the same inherit-then-override rule as the image block.
+  const editorLandingPageUrl = editingOverride?.landingPageUrl ?? landingPageUrl;
+  const editorCta = editingOverride?.cta ?? cta;
+  const destinationOverridden = !!editingCompany
+    && (editingOverride?.landingPageUrl !== undefined || editingOverride?.cta !== undefined);
+
+  const setDestination = (patch: { landingPageUrl?: string; cta?: string }) => {
+    if (editingCompany) updateOverride(editingCompany.id, patch);
+    else updateCreative(patch);
+  };
+
+  const resetDestination = () => {
+    if (!editingCompany) return;
+    updateOverride(editingCompany.id, { landingPageUrl: undefined, cta: undefined });
+  };
+
+  const resetImageOverrides = () => {
+    if (!editingCompany) return;
+    updateOverride(editingCompany.id, {
+      imageMode: undefined, baseImageUrl: undefined, baseImageSource: undefined,
+      basePrompt: undefined, textoDestaque: undefined, textoComplementar: undefined,
+      showTargetLogo: undefined, fontFamily: undefined, format: undefined,
+    });
+  };
 
   return (
     <div className="flex h-[calc(100vh-140px)] bg-slate-50 -m-8">
@@ -851,40 +974,33 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 Gerando {bulkProgress.done}/{bulkProgress.total}…
               </div>
             )}
+            {/* One strong action per level: the company header generates both
+                halves for that company, the template header fans out to every
+                company. Per-block buttons live in each card's own header. */}
             {!isTemplate && editingCompany && (
-              <>
-                <button
-                  onClick={() => setBriefDrawerOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700"
-                >
-                  <Info className="w-3.5 h-3.5" />
-                  Brand Brief
-                  {briefForEditing && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />}
-                </button>
-                <button
-                  disabled={!clientVoice.trim() || needsBaseImage || aiBriefLoading[editingCompany.id] || aiCopyLoading[editingCompany.id] || aiImageLoading[editingCompany.id]}
-                  onClick={() => generateAllFor(editingCompany)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={
-                    !clientVoice.trim() ? 'Configure a voz da marca primeiro'
-                    : needsBaseImage ? 'Suba uma imagem-base no Template global primeiro'
-                    : `Gerar criativo para ${editingCompany.label}`
-                  }
-                >
-                  <Wand2 className="w-3.5 h-3.5" />
-                  Gerar com IA
-                </button>
-              </>
+              <button
+                disabled={noVoice || needsBaseImage || aiBriefLoading[editingCompany.id] || aiCopyLoading[editingCompany.id] || aiImageLoading[editingCompany.id]}
+                onClick={() => generateAllFor(editingCompany)}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-[#FF5F39] hover:bg-[#E54A26] text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                title={
+                  noVoice ? 'Defina a voz da marca no Brief primeiro'
+                  : needsBaseImage ? 'Envie uma imagem-base no Template global primeiro'
+                  : `Gerar texto e imagem para ${editingCompany.label}`
+                }
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                Gerar texto + imagem
+              </button>
             )}
             {isTemplate && companies.length > 0 && (
               <button
-                disabled={bulkProgress !== null || !clientVoice.trim() || needsBaseImage}
+                disabled={bulkProgress !== null || noVoice || needsBaseImage}
                 onClick={generateForAllCompanies}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-[#FF5F39] to-violet-600 hover:from-[#E54A26] hover:to-violet-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-[#FF5F39] to-violet-600 hover:from-[#E54A26] hover:to-violet-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
-                  !clientVoice.trim() ? 'Configure a voz da marca primeiro'
-                  : needsBaseImage ? 'Suba uma imagem-base no Template primeiro'
-                  : `Gerar para todas as ${companies.length} empresas`
+                  noVoice ? 'Defina a voz da marca no Brief primeiro'
+                  : needsBaseImage ? 'Envie uma imagem-base no card Imagem primeiro'
+                  : `Gerar texto e imagem para as ${companies.length} empresas`
                 }
               >
                 <Sparkles className="w-3.5 h-3.5" />
@@ -893,24 +1009,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             )}
           </div>
         </header>
-
-        {needsBaseImage && !isBrief && (
-          <div className="px-6 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-center gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-            <span className="flex-1">
-              <span className="font-semibold">Modo "Template + logo" selecionado:</span>{' '}
-              suba uma imagem-base no Template global. Ela será reutilizada para gerar 1 anúncio por empresa.
-            </span>
-            {!isTemplate && (
-              <button
-                onClick={() => setEditingTarget(TEMPLATE_TARGET)}
-                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded shadow-sm shrink-0"
-              >
-                Ir para Template global
-              </button>
-            )}
-          </div>
-        )}
 
         {aiError && (
           <div className="px-6 py-2 bg-red-50 border-b border-red-100 text-xs text-red-700 flex items-center gap-2">
@@ -952,30 +1050,47 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         ) : (
         <div className="flex-1 grid grid-cols-2 overflow-hidden">
           {/* ---------- Editor form ---------- */}
-          <div className="overflow-y-auto p-6 border-r border-slate-200 bg-white space-y-5">
-            {/* Body text */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-slate-600 uppercase">
-                  Texto do anúncio
-                </label>
-                {!isTemplate && editingCompany && (
-                  <button
-                    disabled={aiCopyLoading[editingCompany.id]}
+          <div className="overflow-y-auto p-5 border-r border-slate-200 bg-slate-50 space-y-3">
+
+            {/* ============ 1 · TEXTO ============ */}
+            <SectionCard
+              index={1}
+              title="Texto"
+              action={
+                isTemplate ? (
+                  <CardAction
+                    label="Gerar texto"
+                    onClick={generateTemplateCopy}
+                    loading={templateCopyLoading}
+                    disabled={noVoice}
+                    title={noVoice
+                      ? 'Defina a voz da marca no Brief primeiro'
+                      : 'Escreve a copy do template já com {{company.name}}'}
+                  />
+                ) : editingCompany ? (
+                  <CardAction
+                    label="Gerar texto"
                     onClick={() => generateCopyFor(editingCompany)}
-                    className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
-                  >
-                    {aiCopyLoading[editingCompany.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />}
-                    Regenerar texto
-                  </button>
-                )}
-              </div>
+                    loading={!!aiCopyLoading[editingCompany.id]}
+                    disabled={noVoice}
+                    title={noVoice
+                      ? 'Defina a voz da marca no Brief primeiro'
+                      : `Gerar texto para ${editingCompany.label}`}
+                  />
+                ) : null
+              }
+            >
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">
+                Corpo do anúncio
+              </label>
               <div className="relative">
                 <textarea
                   value={editorBody}
                   onChange={(e) => setEditorBody(e.target.value)}
                   maxLength={600}
-                  placeholder={isTemplate ? 'Ex: Hi {{company.name}} team, ABM teams in {{company.industry}} are…' : 'Texto específico para esta empresa (opcional — usa o template se vazio)'}
+                  placeholder={isTemplate
+                    ? 'Ex: Hi {{company.name}} team, ABM teams in {{company.industry}} are…'
+                    : 'Texto específico para esta empresa (vazio = usa o template)'}
                   className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg h-28 resize-none focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
                 />
                 <span className="absolute bottom-2 right-2 text-[10px] text-slate-400 bg-white px-1">
@@ -989,170 +1104,77 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   <VariableChip value="{{company.industry}}" label="company.industry" />
                 </div>
               )}
-            </div>
 
-            {/* Headline */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-slate-600 uppercase">Headline</label>
-              </div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">
+                Headline
+              </label>
               <div className="relative">
                 <input
                   type="text"
                   value={editorHeadline}
                   onChange={(e) => setEditorHeadline(e.target.value)}
                   maxLength={200}
-                  placeholder={isTemplate ? 'Ex: Acelere seu ABM com {{company.name}}' : 'Headline específico (opcional)'}
+                  placeholder={isTemplate
+                    ? 'Ex: Acelere seu ABM com {{company.name}}'
+                    : 'Headline específico (vazio = usa o template)'}
                   className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
                 />
                 <span className="absolute top-2.5 right-2.5 text-[10px] text-slate-400">
                   {editorHeadline.length}/200
                 </span>
               </div>
-            </div>
 
-            {/* Image — mode selector + content */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-semibold text-slate-600 uppercase">
-                  {isTemplate ? 'Imagem (modo de geração)' : 'Imagem do anúncio'}
-                </label>
-                {!isTemplate && editingCompany && (
-                  <button
-                    disabled={aiImageLoading[editingCompany.id] || needsBaseImage}
+              {/* The brand brief is the raw material the copy above is written
+                  from — so its entry point lives here, not competing for
+                  attention up in the page header. */}
+              {!isTemplate && editingCompany && (
+                <button
+                  onClick={() => setBriefDrawerOpen(true)}
+                  className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 hover:text-[#E54A26]"
+                >
+                  <Info className="w-3 h-3" />
+                  Brand Brief de {editingCompany.label}
+                  {briefForEditing && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />}
+                </button>
+              )}
+            </SectionCard>
+
+            {/* ============ 2 · IMAGEM ============ */}
+            {/* Identical block at both levels. On a company the fields start
+                pre-filled from the template and the first edit turns into an
+                override for that company only. */}
+            <SectionCard
+              index={2}
+              title="Imagem"
+              action={
+                imageCfg.imageMode === 'ai' ? (
+                  <CardAction
+                    label={editingCompany ? 'Gerar imagem' : (
+                      imageCfg.baseImageUrl && imageCfg.baseImageSource === 'ai'
+                        ? 'Regerar imagem-base'
+                        : 'Gerar imagem-base'
+                    )}
+                    onClick={() => (editingCompany ? generateImageFor(editingCompany) : generateBaseImageFor(null))}
+                    loading={editingCompany ? !!aiImageLoading[editingCompany.id] : baseImageLoading}
+                  />
+                ) : editingCompany ? (
+                  <CardAction
+                    label="Gerar imagem"
                     onClick={() => generateImageFor(editingCompany)}
-                    title={needsBaseImage ? 'Suba uma imagem-base no Template global primeiro' : ''}
-                    className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {aiImageLoading[editingCompany.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                    {imageMode === 'template_logo' ? 'Aplicar overlay' : 'Gerar com IA'}
-                  </button>
-                )}
-              </div>
-
-              {/* Mode selector + overlay config — always visible, but the
-                  values are template-level (apply to every company). When
-                  editing a single company, we surface that with a hint. */}
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                  Modo de geração
-                </span>
-                {!isTemplate && (
-                  <span className="text-[10px] text-slate-400 italic">configuração global do template</span>
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-1.5 mb-3 p-1 bg-slate-100 rounded-lg">
-                <ModeButton
-                  icon={<LayoutGrid className="w-3.5 h-3.5" />}
-                  label="Template + logo"
-                  sub="Foto base + logo"
-                  active={imageMode === 'template_logo'}
-                  onClick={() => updateCreative({ imageMode: 'template_logo' })}
-                />
-                <ModeButton
-                  icon={<Camera className="w-3.5 h-3.5" />}
-                  label="Foto IA"
-                  sub="Realista"
-                  active={imageMode === 'photo_ai'}
-                  onClick={() => updateCreative({ imageMode: 'photo_ai' })}
-                />
-                <ModeButton
-                  icon={<Palette className="w-3.5 h-3.5" />}
-                  label="Gráfico IA"
-                  sub="Ilustrado"
-                  active={imageMode === 'graphic_ai'}
-                  onClick={() => updateCreative({ imageMode: 'graphic_ai' })}
-                />
-              </div>
-
-              {/* Campaign visual identity — shared across all companies. The
-                  texts + logo toggle apply to every ad regardless of mode;
-                  the IA composer decides where to place each element. */}
-              <div className="mb-3 p-3 bg-[#FFF1ED]/50 border border-[#FFE3DA] rounded-lg space-y-2.5">
-                <p className="text-[10px] text-[#E54A26] leading-relaxed">
-                  Os textos abaixo e o logo da empresa-alvo são aplicados pela IA
-                  em cima da imagem-base. {isTemplate
-                    ? 'Compartilhados entre todas as empresas da campanha.'
-                    : 'Configuração global do template.'}
-                </p>
-
-                <div className="grid grid-cols-1 gap-2">
-                  <TextField
-                    label="Texto destaque (principal)"
-                    value={templateLogo.textoDestaque}
-                    onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, textoDestaque: v } })}
-                    placeholder="WORKSHOP ABM"
+                    loading={!!aiImageLoading[editingCompany.id]}
+                    disabled={needsBaseImage}
+                    title={needsBaseImage ? 'Envie uma imagem-base primeiro' : `Compor a imagem para ${editingCompany.label}`}
                   />
-                  <TextField
-                    label="Texto complementar"
-                    value={templateLogo.textoComplementar}
-                    onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, textoComplementar: v } })}
-                    placeholder="Convite exclusivo VIP"
+                ) : (
+                  <CardAction
+                    label="Enviar arquivo"
+                    icon={<Upload className="w-3 h-3" />}
+                    onClick={() => adImageInputRef.current?.click()}
+                    loading={isUploadingImage}
                   />
-                  <label className="flex items-center gap-1.5 text-[11px] text-slate-700 font-medium pt-1">
-                    <input
-                      type="checkbox"
-                      checked={templateLogo.showTargetLogo}
-                      onChange={(e) => updateCreative({ templateLogo: { ...templateLogo, showTargetLogo: e.target.checked } })}
-                      className="rounded"
-                    />
-                    Aplicar logo da empresa-alvo na imagem
-                  </label>
-                </div>
-              </div>
-
-              {/* Base image management — depends on the active mode */}
-              {!isTemplate && (
-                <div className="mb-3 flex items-center gap-2 p-2 bg-white border border-slate-200 rounded-md">
-                  {templateLogo.baseImageUrl ? (
-                    <img
-                      src={templateLogo.baseImageUrl}
-                      alt="Imagem-base"
-                      className="w-16 h-10 object-cover rounded border border-slate-200 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-10 bg-slate-100 rounded border border-dashed border-slate-300 flex items-center justify-center shrink-0">
-                      <ImageIcon className="w-4 h-4 text-slate-400" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Imagem-base da campanha</div>
-                    <div className="text-xs text-slate-600 truncate">
-                      {templateLogo.baseImageUrl
-                        ? `${adImageFileName || 'Definida'}${templateLogo.baseImageSource && templateLogo.baseImageSource !== 'upload' ? ' (gerada por IA)' : ''}`
-                        : 'Nenhuma — configure no Template'}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setEditingTarget(TEMPLATE_TARGET)}
-                    className="text-[10px] font-semibold text-[#FF5F39] hover:text-[#212A46] px-2 py-1 rounded hover:bg-[#FFF1ED] shrink-0"
-                  >
-                    {templateLogo.baseImageUrl ? 'Trocar' : 'Configurar'}
-                  </button>
-                </div>
-              )}
-
-              {/* IA base-image generator — only shown at template level, for
-                  the IA modes. template_logo mode uses the file uploader below. */}
-              {isTemplate && imageMode !== 'template_logo' && (
-                <div className="mb-3 p-3 bg-emerald-50/50 border border-emerald-100 rounded-lg space-y-2">
-                  <p className="text-[10px] text-emerald-800 leading-relaxed">
-                    {imageMode === 'photo_ai'
-                      ? 'A IA vai gerar uma foto editorial corporativa para usar como imagem-base. Sem texto na imagem — os textos serão aplicados depois.'
-                      : 'A IA vai gerar uma ilustração abstrata para usar como imagem-base. Sem texto na imagem — os textos serão aplicados depois.'}
-                  </p>
-                  <button
-                    disabled={baseImageLoading}
-                    onClick={() => generateBaseImageFor(imageMode === 'photo_ai' ? 'photo_ai' : 'graphic_ai')}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {baseImageLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                    {templateLogo.baseImageUrl && templateLogo.baseImageSource === imageMode
-                      ? 'Regenerar imagem-base'
-                      : 'Gerar imagem-base com IA'}
-                  </button>
-                </div>
-              )}
+                )
+              }
+            >
               <input
                 type="file"
                 ref={adImageInputRef}
@@ -1160,37 +1182,142 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 className="hidden"
                 accept="image/png,image/jpeg"
               />
-              {editorImageUrl ? (
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <img src={editorImageUrl} alt="Ad creative" className="w-full h-40 object-cover" />
-                  <div className="px-3 py-2 bg-emerald-50 border-t border-emerald-100 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="text-xs text-emerald-700 font-medium truncate">{editorImageFileName}</span>
-                    </div>
-                    {!isTemplate && editingCompany && (
-                      <button
-                        onClick={() => updateOverride(editingCompany.id, { imageUrl: undefined, imageFileName: undefined })}
-                        className="text-xs text-slate-500 hover:text-red-600"
-                      >
-                        Usar template
-                      </button>
-                    )}
-                  </div>
+
+              {/* Origin — available at both levels now. */}
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                  Origem da imagem-base
+                </label>
+                {editingCompany && imageOverrides.length > 0 && (
                   <button
-                    onClick={() => adImageInputRef.current?.click()}
-                    className="w-full px-3 py-2 text-xs font-medium text-[#FF5F39] hover:bg-[#FFF1ED] border-t border-slate-100 transition-colors"
+                    onClick={resetImageOverrides}
+                    className="text-[10px] font-semibold text-slate-500 hover:text-red-600"
                   >
-                    Trocar imagem
+                    Voltar ao template
                   </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg mb-3">
+                <ModeButton
+                  icon={<Upload className="w-3.5 h-3.5" />}
+                  label="Enviar imagem"
+                  sub="Você envia o arquivo"
+                  active={imageCfg.imageMode === 'upload'}
+                  onClick={() => setImageField({ imageMode: 'upload' })}
+                />
+                <ModeButton
+                  icon={<Sparkles className="w-3.5 h-3.5" />}
+                  label="Gerar com IA"
+                  sub="A IA cria a base"
+                  active={imageCfg.imageMode === 'ai'}
+                  onClick={() => setImageField({ imageMode: 'ai' })}
+                />
+              </div>
+
+              <div className="p-3 bg-[#FFF1ED]/50 border border-[#FFE3DA] rounded-lg space-y-2.5 mb-3">
+                <p className="text-[10px] text-[#E54A26] leading-relaxed">
+                  {editingCompany
+                    ? `Os textos e o logo são aplicados pela IA em cima da imagem-base. Alterar qualquer campo aqui vale só para ${editingCompany.label}.`
+                    : 'Os textos abaixo e o logo da empresa-alvo são aplicados pela IA em cima da imagem-base. Compartilhados entre todas as empresas da campanha.'}
+                </p>
+
+                {imageCfg.imageMode === 'ai' && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                      Prompt para imagem
+                    </label>
+                    <textarea
+                      value={imageCfg.basePrompt}
+                      onChange={(e) => setImageField({ basePrompt: e.target.value })}
+                      placeholder="Descreva a imagem que deseja gerar"
+                      className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded h-14 resize-none focus:ring-1 focus:ring-[#FF5F39] outline-none leading-relaxed"
+                    />
+                  </div>
+                )}
+
+                <TextField
+                  label="Texto destaque (principal)"
+                  value={imageCfg.textoDestaque}
+                  onChange={(v) => setImageField({ textoDestaque: v })}
+                  placeholder="Texto principal na imagem"
+                />
+                <TextField
+                  label="Texto complementar"
+                  value={imageCfg.textoComplementar}
+                  onChange={(v) => setImageField({ textoComplementar: v })}
+                  placeholder="Texto secundário na imagem"
+                />
+
+                <FontPicker
+                  value={imageCfg.fontFamily}
+                  onChange={(v) => setImageField({ fontFamily: v })}
+                />
+
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                    Formato
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <FormatButton
+                      format="square"
+                      active={imageCfg.format === 'square'}
+                      onClick={() => setImageField({ format: 'square' })}
+                    />
+                    <FormatButton
+                      format="banner"
+                      active={imageCfg.format === 'banner'}
+                      onClick={() => setImageField({ format: 'banner' })}
+                    />
+                  </div>
                 </div>
-              ) : (
+
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-700 font-medium pt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={imageCfg.showTargetLogo}
+                    onChange={(e) => setImageField({ showTargetLogo: e.target.checked })}
+                    className="rounded"
+                  />
+                  Aplicar logo da empresa-alvo na imagem
+                </label>
+              </div>
+
+              {/* Base image, deliberately compact. The preview column on the
+                  right is where the result gets judged — repeating it here
+                  (plus a second slot for the composed ad) meant the same
+                  picture had three homes on one screen. What is left is only
+                  what the preview cannot do: tell you the base exists, where
+                  it came from, and let you replace it. */}
+              {imageCfg.baseImageUrl ? (
+                <div className="flex items-center gap-2.5 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <img
+                    src={imageCfg.baseImageUrl}
+                    alt="Imagem-base"
+                    className="w-14 h-9 object-cover rounded border border-slate-200 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Imagem-base</div>
+                    <div className="text-[11px] text-slate-600 truncate">
+                      {imageCfg.baseImageSource === 'ai' ? 'Gerada por IA' : 'Enviada'}
+                      {editingCompany && imageOverrides.includes('baseImageUrl') && ` · só de ${editingCompany.label}`}
+                    </div>
+                  </div>
+                  {imageCfg.imageMode === 'upload' && (
+                    <button
+                      onClick={() => adImageInputRef.current?.click()}
+                      className="text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26] px-2 py-1 rounded hover:bg-[#FFF1ED] shrink-0"
+                    >
+                      Trocar
+                    </button>
+                  )}
+                </div>
+              ) : imageCfg.imageMode === 'upload' ? (
                 <div
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onClick={() => !isUploadingImage && adImageInputRef.current?.click()}
-                  className={`w-full border-2 border-dashed rounded-lg p-6 flex flex-col items-center gap-2 transition-colors cursor-pointer ${
+                  className={`w-full border-2 border-dashed rounded-lg p-5 flex flex-col items-center gap-1.5 transition-colors cursor-pointer ${
                     isDragging ? 'border-[#FF5F39] bg-[#FFF1ED]'
                       : isUploadingImage ? 'border-slate-300 bg-slate-50 cursor-not-allowed'
                       : 'border-slate-300 hover:border-[#FF7A59] hover:bg-[#FFF1ED]/30'
@@ -1198,99 +1325,101 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 >
                   {isUploadingImage ? (
                     <>
-                      <Loader2 className="w-6 h-6 text-[#FF5F39] animate-spin" />
+                      <Loader2 className="w-5 h-5 text-[#FF5F39] animate-spin" />
                       <span className="text-xs text-[#FF5F39] font-medium">Fazendo upload…</span>
                     </>
                   ) : (
                     <>
-                      <Upload className="w-6 h-6 text-slate-400" />
-                      <span className="text-xs text-slate-600 font-medium">Clique ou arraste uma imagem</span>
-                      <span className="text-[10px] text-slate-400 text-center">
-                        JPG ou PNG • 1200×628px ou 1200×1200px • Máx 5MB
+                      <Upload className="w-5 h-5 text-slate-400" />
+                      <span className="text-xs text-slate-600 font-medium">Clique ou arraste a imagem-base</span>
+                      <span className="text-[10px] text-slate-400">
+                        JPG ou PNG • {AD_FORMATS[imageCfg.format].size} • Máx 5MB
                       </span>
                     </>
                   )}
                 </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 text-center py-1.5">
+                  A imagem-base será criada quando você usar{' '}
+                  <span className="font-semibold text-[#E54A26]">
+                    {editingCompany ? 'Gerar imagem' : 'Gerar imagem-base'}
+                  </span>.
+                </p>
               )}
               {uploadError && (
                 <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 shrink-0" /> {uploadError}
                 </p>
               )}
-            </div>
+            </SectionCard>
 
-            {/* CTA + URL — only meaningful in template */}
-            {isTemplate && (
-              <>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-semibold text-slate-600 uppercase">URL de destino</label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setUrlMode((m) => (m === 'picker' ? 'manual' : 'picker'))}
-                        className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26]"
-                      >
-                        {urlMode === 'picker' ? (
-                          <><PencilLine className="w-3 h-3" /> Usar URL manual</>
-                        ) : (
-                          <><Link2 className="w-3 h-3" /> Escolher landing page</>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCreateLpFromCampaign}
-                        className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-[#E54A26] border border-slate-200 hover:border-[#FFD0C2] rounded-full px-2 py-0.5"
-                        title="Abre o fluxo de criação de landing page com IA"
-                      >
-                        <Plus className="w-3 h-3" /> Criar LP a partir desta campanha
-                      </button>
-                    </div>
-                  </div>
-
-                  {urlMode === 'picker' ? (
-                    <LandingPagePicker value={linkedPageId} onSelect={handleSelectLandingPage} />
-                  ) : (
-                    <input
-                      type="text"
-                      value={landingPageUrl}
-                      onChange={(e) => { setLinkedPageId(undefined); updateCreative({ landingPageUrl: e.target.value }); }}
-                      className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
-                    />
-                  )}
-
-                  <div className="mt-1.5 px-2.5 py-2 bg-slate-50 border border-slate-100 rounded-lg">
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">
-                      Link efetivo do anúncio (com conta + UTMs)
-                    </p>
-                    <p className="text-[11px] font-mono text-slate-600 break-all">
-                      {buildAdLink(landingPageUrl || '/p/{{account.slug}}', '{{account.id}}', {
-                        utm_source: 'linkedin',
-                        utm_medium: 'paid-social',
-                        utm_campaign: '{{campaign.id}}',
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">CTA</label>
-                  <select
-                    value={cta}
-                    onChange={(e) => updateCreative({ cta: e.target.value })}
-                    className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
+            {/* ============ 3 · DESTINO ============ */}
+            {/* Also per company: a target account can point at its own landing
+                page and ask for a different CTA than the campaign default. */}
+            <SectionCard
+              index={3}
+              title="Destino"
+              action={destinationOverridden ? (
+                <button
+                  onClick={resetDestination}
+                  className="text-[10px] font-semibold text-slate-500 hover:text-red-600 shrink-0"
+                >
+                  Voltar ao template
+                </button>
+              ) : undefined}
+            >
+              <div className="flex items-center justify-between mb-1.5 gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">URL de destino</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setUrlMode((m) => (m === 'picker' ? 'manual' : 'picker'))}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26]"
                   >
-                    {CTA_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                    {urlMode === 'picker' ? (
+                      <><PencilLine className="w-3 h-3" /> Usar URL manual</>
+                    ) : (
+                      <><Link2 className="w-3 h-3" /> Escolher landing page</>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateLpFromCampaign}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-[#E54A26] border border-slate-200 hover:border-[#FFD0C2] rounded-full px-2 py-0.5"
+                    title="Abre o fluxo de criação de landing page com IA"
+                  >
+                    <Plus className="w-3 h-3" /> Criar LP
+                  </button>
                 </div>
-              </>
-            )}
+              </div>
+
+              {urlMode === 'picker' ? (
+                <LandingPagePicker value={linkedPageId} onSelect={handleSelectLandingPage} />
+              ) : (
+                <input
+                  type="text"
+                  value={editorLandingPageUrl}
+                  onChange={(e) => { setLinkedPageId(undefined); setDestination({ landingPageUrl: e.target.value }); }}
+                  className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
+                />
+              )}
+
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">CTA</label>
+              <select
+                value={editorCta}
+                onChange={(e) => setDestination({ cta: e.target.value })}
+                className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
+              >
+                {CTA_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </SectionCard>
 
             {!isTemplate && editingCompany && editingOverride && (
               <button
                 onClick={() => clearOverride(editingCompany.id)}
-                className="w-full text-xs text-slate-500 hover:text-red-600 py-2 border-t border-slate-100 mt-2"
+                className="w-full text-xs text-slate-500 hover:text-red-600 py-2"
               >
                 Limpar personalização e usar template
               </button>
@@ -1554,6 +1683,93 @@ function ModeButton({ icon, label, sub, active, onClick }: { icon: React.ReactNo
       <span className={active ? 'text-[#FF5F39]' : 'text-slate-400'}>{icon}</span>
       <span className="text-[11px] font-bold leading-tight">{label}</span>
       <span className="text-[9px] text-slate-500 leading-tight">{sub}</span>
+    </button>
+  );
+}
+
+// One numbered card per responsibility. The card owns the action that fills
+// it — which is the whole point: the button you press is attached to the thing
+// it produces, instead of floating in a header shared by everything.
+function SectionCard({ index, title, action, children }: {
+  index: number;
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <header className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-slate-50 border-b border-slate-200">
+        <h3 className="flex items-center gap-2 text-[11px] font-extrabold text-slate-800 uppercase tracking-wide">
+          <span className="w-4 h-4 rounded bg-[#FF5F39] text-white text-[9px] font-black flex items-center justify-center shrink-0">
+            {index}
+          </span>
+          {title}
+        </h3>
+        {action}
+      </header>
+      <div className="p-3.5">{children}</div>
+    </section>
+  );
+}
+
+function CardAction({ label, onClick, loading, disabled, title, icon }: {
+  label: string;
+  onClick: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  title?: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || loading}
+      title={title}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold rounded-md bg-[#FFF1ED] border border-[#FFD0C2] text-[#E54A26] hover:bg-[#FFE3DA] disabled:opacity-45 disabled:cursor-not-allowed shrink-0"
+    >
+      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : (icon ?? <Sparkles className="w-3 h-3" />)}
+      {label}
+    </button>
+  );
+}
+
+// The icon is drawn to the real aspect ratio of the option it represents, so
+// the shape itself carries the meaning and the numbers just confirm it.
+const AD_FORMATS: Record<AdFormat, { label: string; size: string; ratio: string; icon: React.ReactNode }> = {
+  square: {
+    label: 'Quadrado',
+    size: '1200 × 1200 px',
+    ratio: '1:1',
+    icon: <Square className="w-4 h-4" strokeWidth={2.25} />,
+  },
+  banner: {
+    label: 'Banner',
+    size: '1200 × 628 px',
+    ratio: '1.91:1',
+    icon: <RectangleHorizontal className="w-4 h-4" strokeWidth={2.25} />,
+  },
+};
+
+function FormatButton({ format, active, onClick }: { format: AdFormat; active: boolean; onClick: () => void }) {
+  const meta = AD_FORMATS[format];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg border transition-colors ${
+        active
+          ? 'bg-[#FF5F39] border-[#FF5F39] text-white shadow-sm'
+          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+      }`}
+    >
+      <span className="flex items-center gap-1.5">
+        {meta.icon}
+        <span className="text-xs font-bold">{meta.label}</span>
+      </span>
+      <span className={`text-[9px] font-semibold tabular-nums ${active ? 'text-white/85' : 'text-slate-400'}`}>
+        {meta.size} · {meta.ratio}
+      </span>
     </button>
   );
 }

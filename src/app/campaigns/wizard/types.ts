@@ -98,13 +98,19 @@ export interface BrandBrief {
   manually_edited?: boolean;
 }
 
-// Image generation mode for an ad creative. Each mode produces a different
-// kind of asset and exposes different controls in the UI.
-//   template_logo: programmatic composition over a user-provided base image
-//                  with the target company's logo + fixed brand texts (no AI).
-//   photo_ai:      Gemini generates a realistic editorial photograph.
-//   graphic_ai:    Gemini generates an abstract/illustrative graphic.
-export type ImageMode = 'template_logo' | 'photo_ai' | 'graphic_ai';
+// Where the campaign's BASE image comes from. It is only about origin — the
+// final ad is composed the same way in both cases (texts + the target
+// company's logo painted on top by composeLogoOverlay).
+//   upload: the user uploads the base image file.
+//   ai:     Gemini generates the base image from an optional prompt.
+export type ImageMode = 'upload' | 'ai';
+
+// Ad canvas format.
+// ATENÇÃO: hoje isto é só front. O composer do servidor renderiza 1200×628
+// fixo (CANVAS_W/CANVAS_H em supabase/functions/make-server-a4d5bbe0/index.ts)
+// e o prompt da imagem-base pede 1.91:1, então escolher 'square' ainda devolve
+// um banner. Parametrizar o servidor é tarefa pendente.
+export type AdFormat = 'square' | 'banner';
 
 // Per-company override on top of the template creative. status reflects how
 // far the user has pushed personalization for this company.
@@ -112,10 +118,71 @@ export interface CompanyCreativeOverride {
   brief?: BrandBrief;
   headline?: string;
   bodyText?: string;
-  imageUrl?: string;
+  imageUrl?: string;            // the COMPOSED ad for this company
   imageFileName?: string;
-  imageMode?: ImageMode;        // mode used to produce imageUrl for this company
+  // Image composition, overridden for this company only. Every field is
+  // optional: `undefined` means "inherit whatever the template says". Read
+  // them through resolveImageConfig, never directly.
+  imageMode?: ImageMode;
+  baseImageUrl?: string;        // this company's own base canvas
+  baseImageSource?: ImageMode;
+  basePrompt?: string;
+  textoDestaque?: string;
+  textoComplementar?: string;
+  showTargetLogo?: boolean;
+  fontFamily?: string;
+  format?: AdFormat;
+  // Destination, overridden for this company only. Same rule: undefined inherits.
+  landingPageUrl?: string;
+  cta?: string;
   status: 'template' | 'brief_only' | 'fully_personalized';
+}
+
+// Fields of the image block that a company may override. Kept as data so the
+// UI can tell the user exactly what it changed for this company.
+export const IMAGE_OVERRIDE_FIELDS = [
+  'imageMode', 'baseImageUrl', 'basePrompt', 'textoDestaque',
+  'textoComplementar', 'showTargetLogo', 'fontFamily', 'format',
+] as const;
+
+export type ImageOverrideField = typeof IMAGE_OVERRIDE_FIELDS[number];
+
+export interface ResolvedImageConfig {
+  imageMode: ImageMode;
+  baseImageUrl: string | null;
+  baseImageSource?: ImageMode;
+  basePrompt: string;
+  textoDestaque: string;
+  textoComplementar: string;
+  showTargetLogo: boolean;
+  fontFamily: string;
+  format: AdFormat;
+}
+
+// Effective image settings for a target — the template's values, with any
+// per-company override laid on top. `companyId` undefined = the template itself.
+export function resolveImageConfig(data: CreativeData, companyId?: string): ResolvedImageConfig {
+  const tpl = data.templateLogo;
+  const ovr = companyId ? data.overrides[companyId] : undefined;
+  return {
+    imageMode: ovr?.imageMode ?? data.imageMode,
+    baseImageUrl: ovr?.baseImageUrl ?? tpl.baseImageUrl,
+    baseImageSource: ovr?.baseImageUrl ? ovr.baseImageSource : tpl.baseImageSource,
+    basePrompt: ovr?.basePrompt ?? tpl.basePrompt,
+    textoDestaque: ovr?.textoDestaque ?? tpl.textoDestaque,
+    textoComplementar: ovr?.textoComplementar ?? tpl.textoComplementar,
+    showTargetLogo: ovr?.showTargetLogo ?? tpl.showTargetLogo,
+    fontFamily: ovr?.fontFamily ?? data.brandKit.fontFamily,
+    format: ovr?.format ?? tpl.format,
+  };
+}
+
+// Which image fields this company actually overrides — drives the
+// "personalizado" chip and the reset affordance.
+export function overriddenImageFields(data: CreativeData, companyId?: string): ImageOverrideField[] {
+  const ovr = companyId ? data.overrides[companyId] : undefined;
+  if (!ovr) return [];
+  return IMAGE_OVERRIDE_FIELDS.filter((f) => ovr[f] !== undefined);
 }
 
 // Campaign-wide visual identity used by the AI composer. Lives at the
@@ -124,10 +191,12 @@ export interface CompanyCreativeOverride {
 // each element goes — we only declare the content.
 export interface TemplateLogoConfig {
   baseImageUrl: string | null;   // base image (uploaded OR AI-generated, signed URL)
-  baseImageSource?: 'upload' | 'photo_ai' | 'graphic_ai';  // how base was produced
+  baseImageSource?: ImageMode;   // how the current base was actually produced
+  basePrompt: string;            // free-text direction for the AI base image (origin 'ai')
   textoDestaque: string;         // primary headline rendered into the image (e.g. "WORKSHOP ABM")
   textoComplementar: string;     // secondary line (e.g. "Convite exclusivo VIP")
   showTargetLogo: boolean;       // ask AI to place the target company's logo
+  format: AdFormat;              // canvas shape — front-only for now, see AdFormat
 }
 
 // Creative data — passed from CreativeStep to OrchestrationStep
@@ -156,13 +225,15 @@ export function createDefaultCreativeData(): CreativeData {
     bodyText: 'Hi there, teams at {{company.name}} are winning big deals by scaling their ABM programs with tailored 1:1 experiences across...',
     landingPageUrl: 'https://maestro.abm/p/{{account.slug}}',
     cta: 'LEARN_MORE',
-    imageMode: 'template_logo',
+    imageMode: 'upload',
     templateLogo: {
       baseImageUrl: null,
       baseImageSource: undefined,
+      basePrompt: '',
       textoDestaque: 'WORKSHOP ABM',
       textoComplementar: 'Convite exclusivo VIP',
       showTargetLogo: true,
+      format: 'banner',
     },
     overrides: {},
     brandKit: createDefaultBrandKit(),
@@ -178,7 +249,10 @@ export function createDefaultCreativeData(): CreativeData {
 export function resolveCreativeForCompany(
   data: CreativeData,
   company: { id: string; label: string; industry?: string } | null,
-): { headline: string; bodyText: string; imageUrl: string | null; imageFileName: string | null; usedOverride: boolean } {
+): {
+  headline: string; bodyText: string; imageUrl: string | null; imageFileName: string | null;
+  landingPageUrl: string; cta: string; usedOverride: boolean;
+} {
   const override = company ? data.overrides[company.id] : undefined;
   const substituted = (s: string) =>
     s
@@ -187,8 +261,14 @@ export function resolveCreativeForCompany(
   return {
     headline: override?.headline ?? substituted(data.headline),
     bodyText: override?.bodyText ?? substituted(data.bodyText),
-    imageUrl: override?.imageUrl ?? data.imageUrl,
+    // Most specific first: the composed ad, then this company's own base
+    // canvas (uploaded or generated but not composed yet), then the campaign
+    // image. Without the middle step, uploading an image for one company left
+    // the preview showing the template's — the ad it is NOT going to run.
+    imageUrl: override?.imageUrl ?? override?.baseImageUrl ?? data.imageUrl,
     imageFileName: override?.imageFileName ?? data.imageFileName,
+    landingPageUrl: override?.landingPageUrl ?? data.landingPageUrl,
+    cta: override?.cta ?? data.cta,
     usedOverride: !!override && override.status !== 'template',
   };
 }
