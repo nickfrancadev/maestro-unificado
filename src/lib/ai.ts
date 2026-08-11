@@ -74,15 +74,19 @@ export async function generateCopy(input: {
 // Generate a single reusable base image for the campaign. The same canvas
 // is reused across every target company; per-company personalisation is
 // applied later via composeLogoOverlay.
+// `prompt_brief` is what steers the look now — the UI no longer asks the user
+// to pick between "photo" and "graphic". We still send `photo_ai` because the
+// endpoint requires a mode and photography is the safer B2B default; the
+// server's style directive is scheduled to be neutralised when a prompt is
+// present (see docs/superpowers/specs/2026-08-11-criativo-texto-imagem-design.md).
 export async function generateBaseImage(input: {
-  mode: 'photo_ai' | 'graphic_ai';
   client_brand_context?: string;
   prompt_brief?: string;
-}): Promise<{ success: boolean; url: string; filename: string; mode: 'photo_ai' | 'graphic_ai' }> {
+}): Promise<{ success: boolean; url: string; filename: string }> {
   const res = await fetch(`${SERVER_BASE}/ai/generate-base-image`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, mode: 'photo_ai' }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

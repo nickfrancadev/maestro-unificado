@@ -98,13 +98,12 @@ export interface BrandBrief {
   manually_edited?: boolean;
 }
 
-// Image generation mode for an ad creative. Each mode produces a different
-// kind of asset and exposes different controls in the UI.
-//   template_logo: programmatic composition over a user-provided base image
-//                  with the target company's logo + fixed brand texts (no AI).
-//   photo_ai:      Gemini generates a realistic editorial photograph.
-//   graphic_ai:    Gemini generates an abstract/illustrative graphic.
-export type ImageMode = 'template_logo' | 'photo_ai' | 'graphic_ai';
+// Where the campaign's BASE image comes from. It is only about origin — the
+// final ad is composed the same way in both cases (texts + the target
+// company's logo painted on top by composeLogoOverlay).
+//   upload: the user uploads the base image file.
+//   ai:     Gemini generates the base image from an optional prompt.
+export type ImageMode = 'upload' | 'ai';
 
 // Per-company override on top of the template creative. status reflects how
 // far the user has pushed personalization for this company.
@@ -124,7 +123,8 @@ export interface CompanyCreativeOverride {
 // each element goes — we only declare the content.
 export interface TemplateLogoConfig {
   baseImageUrl: string | null;   // base image (uploaded OR AI-generated, signed URL)
-  baseImageSource?: 'upload' | 'photo_ai' | 'graphic_ai';  // how base was produced
+  baseImageSource?: ImageMode;   // how the current base was actually produced
+  basePrompt: string;            // free-text direction for the AI base image (origin 'ai')
   textoDestaque: string;         // primary headline rendered into the image (e.g. "WORKSHOP ABM")
   textoComplementar: string;     // secondary line (e.g. "Convite exclusivo VIP")
   showTargetLogo: boolean;       // ask AI to place the target company's logo
@@ -156,10 +156,11 @@ export function createDefaultCreativeData(): CreativeData {
     bodyText: 'Hi there, teams at {{company.name}} are winning big deals by scaling their ABM programs with tailored 1:1 experiences across...',
     landingPageUrl: 'https://maestro.abm/p/{{account.slug}}',
     cta: 'LEARN_MORE',
-    imageMode: 'template_logo',
+    imageMode: 'upload',
     templateLogo: {
       baseImageUrl: null,
       baseImageSource: undefined,
+      basePrompt: '',
       textoDestaque: 'WORKSHOP ABM',
       textoComplementar: 'Convite exclusivo VIP',
       showTargetLogo: true,
