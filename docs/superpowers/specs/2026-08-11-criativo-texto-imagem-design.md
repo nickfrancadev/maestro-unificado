@@ -127,6 +127,48 @@ cliente que devolve ocorrências do literal para `{{company.name}}`. Escreve em
 | origem = upload e sem `baseImageUrl` | `Gerar imagem` desabilitado na empresa; card 2 mostra estado vazio com `Definir no template` |
 | geração em curso | botão do card correspondente vira spinner; o do header desabilita |
 
+## Revisão 2 — bloco de imagem completo e editável nos dois níveis
+
+Após a primeira entrega, duas correções de rumo:
+
+### O card Imagem é o mesmo nos dois níveis
+
+A empresa deixa de ver um resumo somente-leitura e passa a ter **o bloco inteiro**, com as
+mesmas duas origens do template. Os campos chegam pré-preenchidos com o valor herdado; a
+primeira edição vira override daquela empresa, sinalizado por `Voltar ao template`.
+
+`CompanyCreativeOverride` ganha os campos da composição (`baseImageUrl`, `baseImageSource`,
+`basePrompt`, `textoDestaque`, `textoComplementar`, `showTargetLogo`, `fontFamily`, `format`),
+todos opcionais — `undefined` significa herdar. A leitura passa por `resolveImageConfig`, e
+`overriddenImageFields` diz o que aquela empresa de fato personalizou.
+
+Nada disso exigiu back-end: `composeLogoOverlay` e `generateBaseImage` já recebem textos,
+fonte e prompt por chamada.
+
+Consequência: um upload numa empresa passa a ser a **imagem-base dela** (que ainda é composta
+com textos + logo), não mais o anúncio final cru. Quem quiser a imagem intacta zera os textos
+e desmarca o logo.
+
+Ao gerar a base para uma empresa que não personalizou origem nem prompt, preenchemos a base
+**compartilhada** da campanha — as outras empresas aproveitam a mesma chamada. Se ela
+personalizou, ganha canvas próprio.
+
+### Campos do bloco (ordem fixa)
+
+`Origem da imagem-base` → `Prompt para imagem` (só na origem IA) → `Texto destaque` →
+`Texto complementar` → `Fonte` → `Formato` → `Aplicar logo da empresa-alvo`.
+
+### FORMATO é front-only e HOJE NÃO FUNCIONA
+
+`AdFormat = 'square' | 'banner'` é guardado e enviado em `generateBaseImage` e
+`composeLogoOverlay`, mas **o servidor ignora**: `CANVAS_W = 1200 / CANVAS_H = 628` são
+constantes ([index.ts:3007](../../../supabase/functions/make-server-a4d5bbe0/index.ts)) e o
+prompt da base pede 1.91:1 fixo. Escolher "Quadrado" ainda devolve um banner.
+
+Decisão consciente para destravar a validação visual. Para funcionar de verdade o servidor
+precisa parametrizar `CANVAS_W/H` por `format` **e** recalibrar as coordenadas do SVG
+(`TEXT_X`, posições das caixas de texto, `LOGO_CARD_W`), hoje ajustadas para 1200×628.
+
 ## Fora de escopo
 
 - [AdsPipelineDocs.tsx:287-303](../../../src/app/pages/AdsPipelineDocs.tsx) documenta os três

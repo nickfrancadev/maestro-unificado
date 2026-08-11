@@ -64,13 +64,27 @@ describe('CreativeStep — botões de geração por bloco', () => {
     renderStep();
     goTo(/Template global/);
 
-    expect(screen.queryByPlaceholderText(/mesa de reunião executiva/)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/Descreva a imagem que deseja gerar/)).not.toBeInTheDocument();
 
     goTo(/Gerar com IA/);
 
-    expect(screen.getByPlaceholderText(/mesa de reunião executiva/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Descreva a imagem que deseja gerar/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Gerar imagem-base/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Enviar arquivo/ })).not.toBeInTheDocument();
+  });
+
+  it('o modo IA expõe o conjunto completo de campos da composição', () => {
+    renderStep();
+    goTo(/Template global/);
+    goTo(/Gerar com IA/);
+
+    expect(screen.getByPlaceholderText('Descreva a imagem que deseja gerar')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Texto principal na imagem')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Texto secundário na imagem')).toBeInTheDocument();
+    expect(screen.getByText('Fonte')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Quadrado' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Banner' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Aplicar logo da empresa-alvo/)).toBeInTheDocument();
   });
 
   it('numa empresa, o header gera os dois e cada card gera a sua parte', () => {
@@ -82,24 +96,40 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByRole('button', { name: /^Gerar imagem$/ })).toBeInTheDocument();
   });
 
-  it('a config global aparece só como resumo na empresa, com atalho para o template', () => {
-    renderStep({ templateLogo: { ...createDefaultCreativeData().templateLogo, baseImageUrl: 'https://x/base.png' } });
+  it('a empresa tem as duas origens e o bloco completo, herdando o template', () => {
+    renderStep({
+      templateLogo: { ...createDefaultCreativeData().templateLogo, textoDestaque: 'WORKSHOP ABM' },
+    });
     goTo(/Nubank/);
 
-    // Os campos globais não são editáveis aqui — só o resumo e o atalho.
-    expect(screen.queryByPlaceholderText('WORKSHOP ABM')).not.toBeInTheDocument();
-    expect(screen.getByText(/WORKSHOP ABM/)).toBeInTheDocument();
-
-    goTo(/Editar no template/);
-    expect(screen.getByPlaceholderText('WORKSHOP ABM')).toBeInTheDocument();
+    // As mesmas duas origens que o template oferece.
+    expect(screen.getByRole('button', { name: /Enviar imagem/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Gerar com IA/ })).toBeInTheDocument();
+    // Campos editáveis aqui, pré-preenchidos com o valor herdado do template.
+    expect(screen.getByPlaceholderText('Texto principal na imagem')).toHaveValue('WORKSHOP ABM');
   });
 
-  it('sem imagem-base e com origem upload, a empresa bloqueia a geração no próprio card', () => {
+  it('editar um campo na empresa vira override, com volta ao template', () => {
+    renderStep();
+    goTo(/Nubank/);
+
+    expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Texto principal na imagem'), {
+      target: { value: 'SÓ DA NUBANK' },
+    });
+    expect(screen.getByPlaceholderText('Texto principal na imagem')).toHaveValue('SÓ DA NUBANK');
+
+    // O override é reversível, e voltar restaura o valor do template.
+    fireEvent.click(screen.getByRole('button', { name: /Voltar ao template/ }));
+    expect(screen.getByPlaceholderText('Texto principal na imagem')).toHaveValue('WORKSHOP ABM');
+  });
+
+  it('sem imagem-base e com origem upload, a empresa bloqueia a geração', () => {
     renderStep();
     goTo(/Nubank/);
 
     expect(screen.getByRole('button', { name: /^Gerar imagem$/ })).toBeDisabled();
-    expect(screen.getByText(/Nenhuma imagem-base definida/)).toBeInTheDocument();
     // O aviso vive dentro do card, não numa faixa no topo da página.
     expect(screen.queryByText(/Modo "Template \+ logo" selecionado/)).not.toBeInTheDocument();
   });

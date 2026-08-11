@@ -29,8 +29,8 @@ import {
   Plus,
 } from 'lucide-react';
 import { TargetAccount } from './types';
-import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode } from './types';
-import { resolveCreativeForCompany } from './types';
+import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
+import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields } from './types';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
 import { BriefPane, type BriefDraft } from './BriefPane';
@@ -92,6 +92,29 @@ const STATUS_META: Record<CompanyStatus, { label: string; color: string; dot: st
   fully_personalized: { label: 'Personalizado', color: 'text-emerald-700 bg-emerald-50', dot: 'bg-emerald-500' },
 };
 
+const DEFAULT_TEMPLATE_LOGO = {
+  baseImageUrl: null,
+  baseImageSource: undefined as ImageMode | undefined,
+  basePrompt: '',
+  textoDestaque: 'WORKSHOP ABM',
+  textoComplementar: 'Convite exclusivo VIP',
+  showTargetLogo: true,
+  format: 'banner' as AdFormat,
+};
+
+// `creativeData` reaches this component partially populated in some entry
+// points (and in tests), so every read of the image config goes through this
+// instead of touching the raw prop and blowing up on a missing sub-object.
+function withImageDefaults(d?: CreativeData): CreativeData {
+  return {
+    ...(d as CreativeData),
+    imageMode: d?.imageMode || 'upload',
+    templateLogo: d?.templateLogo || DEFAULT_TEMPLATE_LOGO,
+    brandKit: d?.brandKit || createDefaultBrandKit(),
+    overrides: d?.overrides || {},
+  };
+}
+
 function getAccountColor(name: string) {
   const colors: Record<string, string> = {
     NVIDIA: '#76b900', Revolut: '#0075EB', Datadog: '#632CA6', Figma: '#F24E1E',
@@ -137,14 +160,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const clientPersona = creativeData?.clientPersona || '';
   const clientBrandColors = brandKit.colors;
   const imageMode: ImageMode = creativeData?.imageMode || 'upload';
-  const templateLogo = creativeData?.templateLogo || {
-    baseImageUrl: null,
-    baseImageSource: undefined as ImageMode | undefined,
-    basePrompt: '',
-    textoDestaque: 'WORKSHOP ABM',
-    textoComplementar: 'Convite exclusivo VIP',
-    showTargetLogo: true,
-  };
+  const templateLogo = creativeData?.templateLogo || DEFAULT_TEMPLATE_LOGO;
 
   const editingOverride = editingCompany ? overrides[editingCompany.id] : undefined;
 
@@ -300,9 +316,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     try {
       const result = await uploadCreativeImageToStorage(file);
       if (result.success && result.url) {
-        // At the template level an upload is ALWAYS the campaign base image —
-        // the canvas the composer paints texts and the target logo onto. Only
-        // a per-company upload replaces the final ad image outright.
+        // An upload is always a BASE image — the canvas the composer paints
+        // texts and the target logo onto. At the template it is the shared
+        // campaign base; on a company it belongs to that company alone.
         if (isTemplate) {
           updateCreative({
             templateLogo: { ...templateLogo, baseImageUrl: result.url, baseImageSource: 'upload' },
@@ -310,7 +326,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             imageFileName: result.filename || file.name,
           });
         } else if (editingCompany) {
-          updateOverride(editingCompany.id, { imageUrl: result.url, imageFileName: result.filename || file.name });
+          updateOverride(editingCompany.id, { baseImageUrl: result.url, baseImageSource: 'upload' });
         }
       } else {
         setUploadError(result.error || 'Erro ao fazer upload da imagem.');
@@ -404,22 +420,30 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Returns the URL of the new base image, or null on failure.
   const [baseImageLoading, setBaseImageLoading] = useState(false);
 
-  const generateBaseImageFor = async (): Promise<string | null> => {
+  // `company` null = generate the shared campaign base. With a company, the
+  // base belongs to that company alone (it overrode the prompt or the origin).
+  const generateBaseImageFor = async (company?: FacetItem | null): Promise<string | null> => {
     setBaseImageLoading(true);
     setAiError(null);
     try {
-      const data = creativeDataRef.current!;
+      const data = withImageDefaults(creativeDataRef.current);
+      const cfg = resolveImageConfig(data, company?.id);
       const result = await generateBaseImage({
         client_brand_context: data.brandKit.context,
-        prompt_brief: data.templateLogo.basePrompt?.trim() || undefined,
+        prompt_brief: cfg.basePrompt?.trim() || undefined,
+        format: cfg.format,
       });
-      updateCreative({
-        templateLogo: { ...data.templateLogo, baseImageUrl: result.url, baseImageSource: 'ai' },
-        imageFileName: result.filename,
-      });
+      if (company) {
+        updateOverride(company.id, { baseImageUrl: result.url, baseImageSource: 'ai' });
+      } else {
+        updateCreative({
+          templateLogo: { ...data.templateLogo, baseImageUrl: result.url, baseImageSource: 'ai' },
+          imageFileName: result.filename,
+        });
+      }
       return result.url;
     } catch (err: any) {
-      setAiError(`Imagem-base: ${err.message}`);
+      setAiError(`Imagem-base${company ? ` (${company.label})` : ''}: ${err.message}`);
       return null;
     } finally {
       setBaseImageLoading(false);
@@ -478,27 +502,27 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Apply the IA composer (texts + target logo) for one company on top of the
   // shared base image. Same pipeline regardless of how the base was produced.
   const composeOverlayFor = async (company: FacetItem): Promise<boolean> => {
-    const tpl = creativeDataRef.current?.templateLogo;
-    if (!tpl?.baseImageUrl) {
-      setAiError(`Configure uma imagem-base no template antes de compor para ${company.label}.`);
+    const cfg = resolveImageConfig(withImageDefaults(creativeDataRef.current), company.id);
+    if (!cfg.baseImageUrl) {
+      setAiError(`Defina uma imagem-base antes de compor para ${company.label}.`);
       return false;
     }
     setAiImageLoading((s) => ({ ...s, [company.id]: true }));
     setAiError(null);
     try {
       const result = await composeLogoOverlay({
-        base_image_url: tpl.baseImageUrl,
+        base_image_url: cfg.baseImageUrl,
         target_company_name: company.label,
         target_company_domain: company.domain || null,
-        show_target_logo: tpl.showTargetLogo,
-        texto_destaque: tpl.textoDestaque,
-        texto_complementar: tpl.textoComplementar,
-        font_family: creativeDataRef.current?.brandKit.fontFamily,
+        show_target_logo: cfg.showTargetLogo,
+        texto_destaque: cfg.textoDestaque,
+        texto_complementar: cfg.textoComplementar,
+        font_family: cfg.fontFamily,
+        format: cfg.format,
       });
       updateOverride(company.id, {
         imageUrl: result.url,
         imageFileName: result.filename,
-        imageMode: creativeDataRef.current!.imageMode,
       });
       return true;
     } catch (err: any) {
@@ -512,14 +536,19 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Single per-company image pipeline: ensure a base image exists (generating
   // one with IA if needed) and then compose the per-company overlay on top.
   const generateImageFor = async (company: FacetItem): Promise<boolean> => {
-    const data = creativeDataRef.current!;
-    if (!data.templateLogo.baseImageUrl) {
-      if (data.imageMode === 'upload') {
-        setAiError(`Envie uma imagem-base no Template antes de gerar para ${company.label}.`);
+    const data = withImageDefaults(creativeDataRef.current);
+    const cfg = resolveImageConfig(data, company.id);
+    if (!cfg.baseImageUrl) {
+      if (cfg.imageMode === 'upload') {
+        setAiError(`Envie uma imagem-base antes de gerar para ${company.label}.`);
         return false;
       }
-      // Auto-generate the base image once for the campaign
-      const newBase = await generateBaseImageFor();
+      // Whoever owns the settings owns the base: a company that customised the
+      // origin or the prompt gets its own canvas, otherwise we fill the shared
+      // campaign one so the other companies benefit from the same call.
+      const ownsBase = overriddenImageFields(data, company.id)
+        .some((f) => f === 'imageMode' || f === 'basePrompt' || f === 'baseImageUrl');
+      const newBase = await generateBaseImageFor(ownsBase ? company : null);
       if (!newBase) return false;
     }
     return composeOverlayFor(company);
@@ -757,10 +786,44 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   );
 
   const briefForEditing = editingCompany ? overrides[editingCompany.id]?.brief : undefined;
-  // Only blocks when the base has to come from an upload that hasn't happened.
-  // With origin 'ai' the generators create the base on demand, so nothing to warn about.
-  const needsBaseImage = imageMode === 'upload' && !templateLogo.baseImageUrl;
+
+  // Image settings for whatever is being edited: the template's values, with
+  // this company's overrides on top. Both levels render the same fields from
+  // this — a company is no longer a read-only spectator of the image block.
+  const imageCfgSource = withImageDefaults(creativeData);
+  const imageCfg = resolveImageConfig(imageCfgSource, editingCompany?.id);
+  const imageOverrides = overriddenImageFields(imageCfgSource, editingCompany?.id);
+  const needsBaseImage = imageCfg.imageMode === 'upload' && !imageCfg.baseImageUrl;
   const noVoice = !clientVoice.trim();
+
+  // Routes a field edit to the right home: a company writes an override, the
+  // template writes to its own config (with the font living in the brand kit).
+  const setImageField = (patch: Partial<ResolvedImageConfig>) => {
+    if (editingCompany) {
+      updateOverride(editingCompany.id, patch);
+      return;
+    }
+    const { fontFamily, imageMode: mode, baseImageSource, ...tpl } = patch;
+    if (fontFamily !== undefined) {
+      updateCreative({ brandKit: { ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()), fontFamily } });
+    }
+    if (mode !== undefined) updateCreative({ imageMode: mode });
+    const rest = { ...tpl, ...(baseImageSource !== undefined && { baseImageSource }) };
+    if (Object.keys(rest).length) {
+      updateCreative({
+        templateLogo: { ...(creativeDataRef.current?.templateLogo || DEFAULT_TEMPLATE_LOGO), ...rest },
+      });
+    }
+  };
+
+  const resetImageOverrides = () => {
+    if (!editingCompany) return;
+    updateOverride(editingCompany.id, {
+      imageMode: undefined, baseImageUrl: undefined, baseImageSource: undefined,
+      basePrompt: undefined, textoDestaque: undefined, textoComplementar: undefined,
+      showTargetLogo: undefined, fontFamily: undefined, format: undefined,
+    });
+  };
 
   return (
     <div className="flex h-[calc(100vh-140px)] bg-slate-50 -m-8">
@@ -1067,38 +1130,39 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             </SectionCard>
 
             {/* ============ 2 · IMAGEM ============ */}
+            {/* Identical block at both levels. On a company the fields start
+                pre-filled from the template and the first edit turns into an
+                override for that company only. */}
             <SectionCard
               index={2}
               title="Imagem"
               action={
-                isTemplate ? (
-                  imageMode === 'ai' ? (
-                    <CardAction
-                      label={templateLogo.baseImageUrl && templateLogo.baseImageSource === 'ai'
+                imageCfg.imageMode === 'ai' ? (
+                  <CardAction
+                    label={editingCompany ? 'Gerar imagem' : (
+                      imageCfg.baseImageUrl && imageCfg.baseImageSource === 'ai'
                         ? 'Regerar imagem-base'
-                        : 'Gerar imagem-base'}
-                      onClick={generateBaseImageFor}
-                      loading={baseImageLoading}
-                    />
-                  ) : (
-                    <CardAction
-                      label="Enviar arquivo"
-                      icon={<Upload className="w-3 h-3" />}
-                      onClick={() => adImageInputRef.current?.click()}
-                      loading={isUploadingImage}
-                    />
-                  )
+                        : 'Gerar imagem-base'
+                    )}
+                    onClick={() => (editingCompany ? generateImageFor(editingCompany) : generateBaseImageFor(null))}
+                    loading={editingCompany ? !!aiImageLoading[editingCompany.id] : baseImageLoading}
+                  />
                 ) : editingCompany ? (
                   <CardAction
                     label="Gerar imagem"
                     onClick={() => generateImageFor(editingCompany)}
                     loading={!!aiImageLoading[editingCompany.id]}
                     disabled={needsBaseImage}
-                    title={needsBaseImage
-                      ? 'Envie uma imagem-base no Template global primeiro'
-                      : `Compor a imagem para ${editingCompany.label}`}
+                    title={needsBaseImage ? 'Envie uma imagem-base primeiro' : `Compor a imagem para ${editingCompany.label}`}
                   />
-                ) : null
+                ) : (
+                  <CardAction
+                    label="Enviar arquivo"
+                    icon={<Upload className="w-3 h-3" />}
+                    onClick={() => adImageInputRef.current?.click()}
+                    loading={isUploadingImage}
+                  />
+                )
               }
             >
               <input
@@ -1109,183 +1173,175 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 accept="image/png,image/jpeg"
               />
 
-              {isTemplate ? (
-                <>
-                  {/* Origin — the ONLY thing this control decides. Both origins
-                      end up in the same composer below. */}
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-                    Origem da imagem-base
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg mb-3">
-                    <ModeButton
-                      icon={<Upload className="w-3.5 h-3.5" />}
-                      label="Enviar imagem"
-                      sub="Você envia o arquivo"
-                      active={imageMode === 'upload'}
-                      onClick={() => updateCreative({ imageMode: 'upload' })}
-                    />
-                    <ModeButton
-                      icon={<Sparkles className="w-3.5 h-3.5" />}
-                      label="Gerar com IA"
-                      sub="A IA cria a base"
-                      active={imageMode === 'ai'}
-                      onClick={() => updateCreative({ imageMode: 'ai' })}
+              {/* Origin — available at both levels now. */}
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                  Origem da imagem-base
+                </label>
+                {editingCompany && imageOverrides.length > 0 && (
+                  <button
+                    onClick={resetImageOverrides}
+                    className="text-[10px] font-semibold text-slate-500 hover:text-red-600"
+                  >
+                    Voltar ao template
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg mb-3">
+                <ModeButton
+                  icon={<Upload className="w-3.5 h-3.5" />}
+                  label="Enviar imagem"
+                  sub="Você envia o arquivo"
+                  active={imageCfg.imageMode === 'upload'}
+                  onClick={() => setImageField({ imageMode: 'upload' })}
+                />
+                <ModeButton
+                  icon={<Sparkles className="w-3.5 h-3.5" />}
+                  label="Gerar com IA"
+                  sub="A IA cria a base"
+                  active={imageCfg.imageMode === 'ai'}
+                  onClick={() => setImageField({ imageMode: 'ai' })}
+                />
+              </div>
+
+              <div className="p-3 bg-[#FFF1ED]/50 border border-[#FFE3DA] rounded-lg space-y-2.5 mb-3">
+                <p className="text-[10px] text-[#E54A26] leading-relaxed">
+                  {editingCompany
+                    ? `Os textos e o logo são aplicados pela IA em cima da imagem-base. Alterar qualquer campo aqui vale só para ${editingCompany.label}.`
+                    : 'Os textos abaixo e o logo da empresa-alvo são aplicados pela IA em cima da imagem-base. Compartilhados entre todas as empresas da campanha.'}
+                </p>
+
+                {imageCfg.imageMode === 'ai' && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                      Prompt para imagem
+                    </label>
+                    <textarea
+                      value={imageCfg.basePrompt}
+                      onChange={(e) => setImageField({ basePrompt: e.target.value })}
+                      placeholder="Descreva a imagem que deseja gerar"
+                      className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded h-14 resize-none focus:ring-1 focus:ring-[#FF5F39] outline-none leading-relaxed"
                     />
                   </div>
+                )}
 
-                  {imageMode === 'ai' && (
-                    <div className="mb-3">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">
-                        Prompt da imagem <span className="font-medium text-slate-400 normal-case">— opcional</span>
-                      </label>
-                      <textarea
-                        value={templateLogo.basePrompt}
-                        onChange={(e) => updateCreative({ templateLogo: { ...templateLogo, basePrompt: e.target.value } })}
-                        placeholder="Ex: mesa de reunião executiva vista de cima, luz natural, tons frios, muito espaço vazio no topo"
-                        className="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-lg h-16 resize-none focus:ring-2 focus:ring-[#FF5F39] outline-none leading-relaxed"
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                        A IA não desenha texto nem logo — isso é aplicado depois, na etapa abaixo.
-                      </p>
-                    </div>
-                  )}
+                <TextField
+                  label="Texto destaque (principal)"
+                  value={imageCfg.textoDestaque}
+                  onChange={(v) => setImageField({ textoDestaque: v })}
+                  placeholder="Texto principal na imagem"
+                />
+                <TextField
+                  label="Texto complementar"
+                  value={imageCfg.textoComplementar}
+                  onChange={(v) => setImageField({ textoComplementar: v })}
+                  placeholder="Texto secundário na imagem"
+                />
 
-                  {templateLogo.baseImageUrl ? (
-                    <div className="border border-slate-200 rounded-lg overflow-hidden">
-                      <img src={templateLogo.baseImageUrl} alt="Imagem-base" className="w-full h-36 object-cover" />
-                      <div className="px-3 py-2 bg-emerald-50 border-t border-emerald-100 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span className="text-xs text-emerald-700 font-medium truncate">
-                          {adImageFileName || 'Imagem-base definida'}
-                          {templateLogo.baseImageSource === 'ai' && ' (gerada por IA)'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : imageMode === 'upload' ? (
-                    <div
-                      onDrop={handleDrop}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onClick={() => !isUploadingImage && adImageInputRef.current?.click()}
-                      className={`w-full border-2 border-dashed rounded-lg p-6 flex flex-col items-center gap-2 transition-colors cursor-pointer ${
-                        isDragging ? 'border-[#FF5F39] bg-[#FFF1ED]'
-                          : isUploadingImage ? 'border-slate-300 bg-slate-50 cursor-not-allowed'
-                          : 'border-slate-300 hover:border-[#FF7A59] hover:bg-[#FFF1ED]/30'
-                      }`}
-                    >
-                      {isUploadingImage ? (
-                        <>
-                          <Loader2 className="w-6 h-6 text-[#FF5F39] animate-spin" />
-                          <span className="text-xs text-[#FF5F39] font-medium">Fazendo upload…</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-6 h-6 text-slate-400" />
-                          <span className="text-xs text-slate-600 font-medium">Clique ou arraste uma imagem</span>
-                          <span className="text-[10px] text-slate-400 text-center">
-                            JPG ou PNG • 1200×628px ou 1200×1200px • Máx 5MB
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="w-full border-2 border-dashed border-slate-200 rounded-lg p-6 flex flex-col items-center gap-1.5 text-center">
-                      <ImageIcon className="w-6 h-6 text-slate-300" />
-                      <span className="text-xs text-slate-500 font-medium">Nenhuma imagem-base ainda</span>
-                      <span className="text-[10px] text-slate-400">
-                        Use <span className="font-semibold text-[#E54A26]">Gerar imagem-base</span> acima.
-                      </span>
-                    </div>
-                  )}
+                <FontPicker
+                  value={imageCfg.fontFamily}
+                  onChange={(v) => setImageField({ fontFamily: v })}
+                />
 
-                  {templateLogo.baseImageUrl && imageMode === 'upload' && (
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                    Formato
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <FormatButton
+                      label="Quadrado"
+                      active={imageCfg.format === 'square'}
+                      onClick={() => setImageField({ format: 'square' })}
+                    />
+                    <FormatButton
+                      label="Banner"
+                      active={imageCfg.format === 'banner'}
+                      onClick={() => setImageField({ format: 'banner' })}
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-700 font-medium pt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={imageCfg.showTargetLogo}
+                    onChange={(e) => setImageField({ showTargetLogo: e.target.checked })}
+                    className="rounded"
+                  />
+                  Aplicar logo da empresa-alvo na imagem
+                </label>
+              </div>
+
+              {/* Base image state for the current target */}
+              {imageCfg.baseImageUrl ? (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <img src={imageCfg.baseImageUrl} alt="Imagem-base" className="w-full h-36 object-cover" />
+                  <div className="px-3 py-2 bg-emerald-50 border-t border-emerald-100 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="text-xs text-emerald-700 font-medium truncate">
+                      Imagem-base {imageCfg.baseImageSource === 'ai' ? 'gerada por IA' : 'enviada'}
+                      {editingCompany && imageOverrides.includes('baseImageUrl') ? ` (só de ${editingCompany.label})` : ''}
+                    </span>
+                  </div>
+                  {imageCfg.imageMode === 'upload' && (
                     <button
                       onClick={() => adImageInputRef.current?.click()}
-                      className="w-full mt-1.5 px-3 py-2 text-xs font-medium text-[#FF5F39] hover:bg-[#FFF1ED] rounded-lg transition-colors"
+                      className="w-full px-3 py-2 text-xs font-medium text-[#FF5F39] hover:bg-[#FFF1ED] border-t border-slate-100 transition-colors"
                     >
                       Trocar imagem-base
                     </button>
                   )}
-                  {uploadError && (
-                    <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3 shrink-0" /> {uploadError}
-                    </p>
+                </div>
+              ) : imageCfg.imageMode === 'upload' ? (
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onClick={() => !isUploadingImage && adImageInputRef.current?.click()}
+                  className={`w-full border-2 border-dashed rounded-lg p-6 flex flex-col items-center gap-2 transition-colors cursor-pointer ${
+                    isDragging ? 'border-[#FF5F39] bg-[#FFF1ED]'
+                      : isUploadingImage ? 'border-slate-300 bg-slate-50 cursor-not-allowed'
+                      : 'border-slate-300 hover:border-[#FF7A59] hover:bg-[#FFF1ED]/30'
+                  }`}
+                >
+                  {isUploadingImage ? (
+                    <>
+                      <Loader2 className="w-6 h-6 text-[#FF5F39] animate-spin" />
+                      <span className="text-xs text-[#FF5F39] font-medium">Fazendo upload…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-6 h-6 text-slate-400" />
+                      <span className="text-xs text-slate-600 font-medium">Clique ou arraste uma imagem</span>
+                      <span className="text-[10px] text-slate-400 text-center">
+                        JPG ou PNG • {imageCfg.format === 'square' ? '1200×1200px' : '1200×628px'} • Máx 5MB
+                      </span>
+                    </>
                   )}
-
-                  {/* What gets painted on top — campaign-wide, every company. */}
-                  <div className="mt-4 pt-3 border-t border-dashed border-slate-200">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                      Aplicado por cima, em toda empresa
-                    </label>
-                    <p className="text-[10px] text-slate-400 mt-0.5 mb-2 leading-relaxed">
-                      Estes textos e o logo da empresa-alvo são compostos sobre a imagem-base.
-                    </p>
-                    <div className="space-y-2">
-                      <TextField
-                        label="Texto destaque (principal)"
-                        value={templateLogo.textoDestaque}
-                        onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, textoDestaque: v } })}
-                        placeholder="WORKSHOP ABM"
-                      />
-                      <TextField
-                        label="Texto complementar"
-                        value={templateLogo.textoComplementar}
-                        onChange={(v) => updateCreative({ templateLogo: { ...templateLogo, textoComplementar: v } })}
-                        placeholder="Convite exclusivo VIP"
-                      />
-                      <label className="flex items-center gap-1.5 text-[11px] text-slate-700 font-medium pt-0.5">
-                        <input
-                          type="checkbox"
-                          checked={templateLogo.showTargetLogo}
-                          onChange={(e) => updateCreative({ templateLogo: { ...templateLogo, showTargetLogo: e.target.checked } })}
-                          className="rounded"
-                        />
-                        Aplicar logo da empresa-alvo na imagem
-                      </label>
-                    </div>
-                  </div>
-                </>
+                </div>
               ) : (
-                <>
-                  {/* Read-only mirror of the campaign-wide setup. It used to be
-                      editable right here, which made template-wide edits look
-                      like edits to this one company. */}
-                  <div className="flex items-start gap-2.5 p-2.5 bg-slate-50 border border-dashed border-slate-300 rounded-lg mb-3">
-                    {templateLogo.baseImageUrl ? (
-                      <img
-                        src={templateLogo.baseImageUrl}
-                        alt="Imagem-base"
-                        className="w-12 h-8 object-cover rounded border border-slate-200 shrink-0"
-                      />
-                    ) : (
-                      <div className="w-12 h-8 bg-white rounded border border-dashed border-slate-300 flex items-center justify-center shrink-0">
-                        <ImageIcon className="w-3.5 h-3.5 text-slate-300" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0 text-[10px] text-slate-500 leading-relaxed">
-                      <div>
-                        <span className="font-bold text-slate-600">Base:</span>{' '}
-                        {templateLogo.baseImageUrl
-                          ? (templateLogo.baseImageSource === 'ai' ? 'gerada com IA' : 'enviada por upload')
-                          : 'nenhuma definida'}
-                      </div>
-                      <div className="truncate">
-                        <span className="font-bold text-slate-600">Textos:</span>{' '}
-                        “{templateLogo.textoDestaque || '—'}” + “{templateLogo.textoComplementar || '—'}”
-                      </div>
-                      <div>
-                        <span className="font-bold text-slate-600">Logo da empresa:</span>{' '}
-                        {templateLogo.showTargetLogo ? 'sim' : 'não'}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setEditingTarget(TEMPLATE_TARGET)}
-                      className="text-[10px] font-semibold text-slate-600 hover:text-[#E54A26] border border-slate-200 hover:border-[#FFD0C2] bg-white rounded px-2 py-1 shrink-0"
-                    >
-                      Editar no template
-                    </button>
-                  </div>
+                <div className="w-full border-2 border-dashed border-slate-200 rounded-lg p-6 flex flex-col items-center gap-1.5 text-center">
+                  <ImageIcon className="w-6 h-6 text-slate-300" />
+                  <span className="text-xs text-slate-500 font-medium">Nenhuma imagem-base ainda</span>
+                  <span className="text-[10px] text-slate-400">
+                    Use <span className="font-semibold text-[#E54A26]">
+                      {editingCompany ? 'Gerar imagem' : 'Gerar imagem-base'}
+                    </span> acima.
+                  </span>
+                </div>
+              )}
+              {uploadError && (
+                <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0" /> {uploadError}
+                </p>
+              )}
 
+              {/* The composed ad — only a company has one. */}
+              {editingCompany && (
+                <div className="mt-3 pt-3 border-t border-dashed border-slate-200">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
+                    Anúncio composto
+                  </label>
                   {editorImageUrl ? (
                     <div className="border border-slate-200 rounded-lg overflow-hidden">
                       <img src={editorImageUrl} alt="Ad creative" className="w-full h-40 object-cover" />
@@ -1294,57 +1350,24 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                           <span className="text-xs text-emerald-700 font-medium truncate">{editorImageFileName}</span>
                         </div>
-                        {editingCompany && (
-                          <button
-                            onClick={() => updateOverride(editingCompany.id, { imageUrl: undefined, imageFileName: undefined })}
-                            className="text-[10px] font-semibold text-slate-500 hover:text-red-600 shrink-0"
-                          >
-                            Voltar ao template
-                          </button>
-                        )}
+                        <button
+                          onClick={() => updateOverride(editingCompany.id, { imageUrl: undefined, imageFileName: undefined })}
+                          className="text-[10px] font-semibold text-slate-500 hover:text-red-600 shrink-0"
+                        >
+                          Descartar
+                        </button>
                       </div>
                     </div>
-                  ) : needsBaseImage ? (
-                    <div className="w-full border-2 border-dashed border-amber-200 bg-amber-50/50 rounded-lg p-5 flex flex-col items-center gap-2 text-center">
-                      <AlertTriangle className="w-5 h-5 text-amber-500" />
-                      <span className="text-xs text-amber-900 font-medium">Nenhuma imagem-base definida</span>
-                      <span className="text-[10px] text-amber-700 leading-relaxed">
-                        A campanha reutiliza uma imagem-base para gerar 1 anúncio por empresa.
-                      </span>
-                      <button
-                        onClick={() => setEditingTarget(TEMPLATE_TARGET)}
-                        className="mt-0.5 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold rounded"
-                      >
-                        Definir no template
-                      </button>
-                    </div>
                   ) : (
-                    <div className="w-full border-2 border-dashed border-slate-200 rounded-lg p-6 flex flex-col items-center gap-1.5 text-center">
-                      <ImageIcon className="w-6 h-6 text-slate-300" />
-                      <span className="text-xs text-slate-500 font-medium">Imagem ainda não gerada</span>
+                    <div className="w-full border-2 border-dashed border-slate-200 rounded-lg p-5 flex flex-col items-center gap-1.5 text-center">
+                      <ImageIcon className="w-5 h-5 text-slate-300" />
+                      <span className="text-[11px] text-slate-500 font-medium">Ainda não gerado</span>
                       <span className="text-[10px] text-slate-400">
-                        Use <span className="font-semibold text-[#E54A26]">Gerar imagem</span> acima.
+                        <span className="font-semibold text-[#E54A26]">Gerar imagem</span> compõe os textos e o logo sobre a base.
                       </span>
                     </div>
                   )}
-
-                  {/* Exception path, deliberately quiet: bypass the composer
-                      and pin a hand-made image to this company only. */}
-                  <button
-                    onClick={() => !isUploadingImage && adImageInputRef.current?.click()}
-                    disabled={isUploadingImage}
-                    className="w-full mt-2 flex items-center justify-center gap-1.5 text-[10px] font-semibold text-slate-500 hover:text-[#E54A26] py-1.5 disabled:opacity-50"
-                  >
-                    {isUploadingImage
-                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Enviando…</>
-                      : <><Upload className="w-3 h-3" /> Enviar imagem própria para esta empresa</>}
-                  </button>
-                  {uploadError && (
-                    <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3 shrink-0" /> {uploadError}
-                    </p>
-                  )}
-                </>
+                </div>
               )}
             </SectionCard>
 
@@ -1725,6 +1748,22 @@ function CardAction({ label, onClick, loading, disabled, title, icon }: {
       className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold rounded-md bg-[#FFF1ED] border border-[#FFD0C2] text-[#E54A26] hover:bg-[#FFE3DA] disabled:opacity-45 disabled:cursor-not-allowed shrink-0"
     >
       {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : (icon ?? <Sparkles className="w-3 h-3" />)}
+      {label}
+    </button>
+  );
+}
+
+function FormatButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-2 text-xs font-bold rounded-md border transition-colors ${
+        active
+          ? 'bg-[#FF5F39] border-[#FF5F39] text-white shadow-sm'
+          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+      }`}
+    >
       {label}
     </button>
   );

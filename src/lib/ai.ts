@@ -79,9 +79,13 @@ export async function generateCopy(input: {
 // endpoint requires a mode and photography is the safer B2B default; the
 // server's style directive is scheduled to be neutralised when a prompt is
 // present (see docs/superpowers/specs/2026-08-11-criativo-texto-imagem-design.md).
+// `format` is sent but NOT yet honoured: the endpoint hardcodes a 1.91:1
+// prompt. It travels now so the day the server learns about it, nothing on
+// the client has to change.
 export async function generateBaseImage(input: {
   client_brand_context?: string;
   prompt_brief?: string;
+  format?: 'square' | 'banner';
 }): Promise<{ success: boolean; url: string; filename: string }> {
   const res = await fetch(`${SERVER_BASE}/ai/generate-base-image`, {
     method: 'POST',
@@ -105,6 +109,9 @@ export async function composeLogoOverlay(input: {
   texto_destaque?: string;
   texto_complementar?: string;
   font_family?: string;
+  // Same caveat as generateBaseImage: the composer still renders 1200×628
+  // regardless of what is sent here.
+  format?: 'square' | 'banner';
 }): Promise<{ success: boolean; url: string; filename: string; logo_applied: boolean }> {
   const res = await fetch(`${SERVER_BASE}/ai/compose-logo-overlay`, {
     method: 'POST',
