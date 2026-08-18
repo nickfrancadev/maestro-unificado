@@ -116,12 +116,101 @@ function decodeSvgDataUri(href: string): string | null {
   }
 }
 
+// Remove tudo que só é legal no PRÓLOGO de um documento XML e nunca dentro do
+// conteúdo de um elemento: a declaração `<?xml ...?>`, comentários que vêm
+// antes da tag raiz e `<!DOCTYPE ...>` (com ou sem subset interno em `[...]`).
+// Export padrão de Illustrator/Inkscape traz os três, nessa ordem — sobrando
+// qualquer um deles dentro do `<svg>` wrapper, o parser do resvg aborta e
+// devolve 500 na composição inteira. Repete até não sobrar nenhum na frente,
+// porque a ordem entre eles não é garantida.
+function stripXmlProlog(markup: string): string {
+  let out = markup;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const trimmed = out.replace(/^\s+/, "");
+    if (trimmed !== out) {
+      out = trimmed;
+      changed = true;
+    }
+    if (/^<\?xml[^>]*\?>/i.test(out)) {
+      out = out.replace(/^<\?xml[^>]*\?>/i, "");
+      changed = true;
+      continue;
+    }
+    if (/^<!--/.test(out)) {
+      const end = out.indexOf("-->");
+      if (end !== -1) {
+        out = out.slice(end + 3);
+        changed = true;
+        continue;
+      }
+    }
+    if (/^<!DOCTYPE/i.test(out)) {
+      const bracketIdx = out.indexOf("[");
+      const firstGt = out.indexOf(">");
+      const hasSubset = bracketIdx !== -1 && (firstGt === -1 || bracketIdx < firstGt);
+      const closeIdx = hasSubset ? out.indexOf(">", out.indexOf("]", bracketIdx)) : firstGt;
+      if (closeIdx !== -1) {
+        out = out.slice(closeIdx + 1);
+        changed = true;
+        continue;
+      }
+    }
+  }
+  return out;
+}
+
+// Lê um atributo de uma tag de abertura, aceitando aspas simples OU duplas —
+// `xmlns='...'` é o idioma canônico de SVG inline em CSS/HTML (cabe dentro de
+// `url("...")`), tão comum quanto a variante com aspas duplas.
+function getAttr(tag: string, name: string): string | null {
+  const m = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+  if (!m) return null;
+  return m[1] !== undefined ? m[1] : m[2];
+}
+
+// Remove um atributo (aspas simples ou duplas) de uma tag de abertura.
+function stripAttr(tag: string, name: string): string {
+  return tag.replace(new RegExp(`\\s+${name}\\s*=\\s*(?:"[^"]*"|'[^']*')`, "i"), "");
+}
+
+// `getAttr` só devolve o texto cru; aqui validamos que é mesmo um número
+// (com "px" opcional) antes de usar para derivar o viewBox — um `width="100%"`
+// não tem tamanho intrínseco e não deve virar `viewBox="0 0 100% ..."`.
+function numericAttr(tag: string, name: string): string | null {
+  const raw = getAttr(tag, name);
+  if (raw === null) return null;
+  const trimmed = raw.trim().replace(/px$/i, "");
+  return /^\d+(\.\d+)?$/.test(trimmed) ? trimmed : null;
+}
+
+// Checagem BARATA de boa-formação — de propósito, não é um parser XML (foi
+// tentar validar SVG por regex que causou os bugs deste round). Só pega os
+// sinais mais comuns de origem não confiável — download truncado, página de
+// erro HTML servida com content-type errado, entidade não escapada — e, ao
+// encontrar qualquer um deles, desiste. O caminho seguro é o default na
+// dúvida: cair no `<image href="${escapeXml(...)}">` de sempre, que sempre
+// produz XML válido mesmo que o logo não renderize, em vez de arriscar um
+// `<svg>` aninhado malformado que derruba a composição inteira no resvg.
+function looksWellFormed(markup: string): boolean {
+  const trimmed = markup.trim();
+  if (!/^<svg\b/i.test(trimmed)) return false;
+  if (!/<\/svg>\s*$/i.test(trimmed)) return false;
+  if (/<!DOCTYPE|<\?/i.test(trimmed)) return false;
+  const opens = (trimmed.match(/</g) || []).length;
+  const closes = (trimmed.match(/>/g) || []).length;
+  if (opens !== closes) return false;
+  if (/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/.test(trimmed)) return false;
+  return true;
+}
+
 // Prepara o markup do SVG interno para ser aninhado dentro do `<svg>` wrapper
-// que carrega x/y/width/height/viewBox da caixa do logo.
-function prepareNestedSvg(rawMarkup: string): { markup: string; viewBox: string } {
-  // O prólogo `<?xml ...?>` (comum em SVG exportado de ferramentas de design)
-  // não é válido no meio de um documento SVG.
-  let markup = rawMarkup.replace(/^\s*<\?xml[^>]*\?>\s*/i, "");
+// que carrega x/y/width/height/viewBox da caixa do logo. Devolve `null`
+// quando o resultado não passa na checagem barata de boa-formação — o
+// chamador cai de volta no `<image>` de sempre nesse caso.
+function prepareNestedSvg(rawMarkup: string): { markup: string; viewBox: string } | null {
+  let markup = stripXmlProlog(rawMarkup).trim();
 
   const svgTagMatch = markup.match(/<svg\b[^>]*>/i);
   const svgTag = svgTagMatch ? svgTagMatch[0] : "";
@@ -129,13 +218,13 @@ function prepareNestedSvg(rawMarkup: string): { markup: string; viewBox: string 
   // Sintetiza o viewBox: usa o do SVG interno se existir; senão deriva de
   // width/height dele; senão cai num quadrado 100x100. Sem viewBox o
   // conteúdo não escala e o logo sai no tamanho errado dentro do wrap.
-  const viewBoxAttr = svgTag.match(/\bviewBox="([^"]*)"/i);
-  const widthAttr = svgTag.match(/\bwidth="([\d.]+)(?:px)?"/i);
-  const heightAttr = svgTag.match(/\bheight="([\d.]+)(?:px)?"/i);
+  const viewBoxAttr = getAttr(svgTag, "viewBox");
+  const widthAttr = numericAttr(svgTag, "width");
+  const heightAttr = numericAttr(svgTag, "height");
   const viewBox = viewBoxAttr
-    ? viewBoxAttr[1]
+    ? viewBoxAttr
     : widthAttr && heightAttr
-    ? `0 0 ${widthAttr[1]} ${heightAttr[1]}`
+    ? `0 0 ${widthAttr} ${heightAttr}`
     : "0 0 100 100";
 
   // `xmlns` duplicado (o documento externo já declara o namespace) e
@@ -143,12 +232,16 @@ function prepareNestedSvg(rawMarkup: string): { markup: string; viewBox: string 
   // tamanho final é o wrapper; sem isso o logo ignoraria o `sizePx`
   // escolhido no editor e renderizaria sempre no tamanho nativo do SVG.
   if (svgTag) {
-    const cleanedTag = svgTag
-      .replace(/\s+xmlns="[^"]*"/i, "")
-      .replace(/\s+width="[^"]*"/i, "")
-      .replace(/\s+height="[^"]*"/i, "");
-    markup = markup.replace(svgTag, cleanedTag);
+    const cleanedTag = stripAttr(stripAttr(stripAttr(svgTag, "xmlns"), "width"), "height");
+    // Replacement como FUNÇÃO, não string: `String.replace(str, string)`
+    // trata "$&", "$`", "$'", "$$" no segundo argumento como tokens
+    // especiais mesmo quando o primeiro argumento é uma string comum, não
+    // uma regex. Um `id="a$&b"` na tag raiz reinsere a tag inteira dentro
+    // do próprio atributo se o replacement não for uma função.
+    markup = markup.replace(svgTag, () => cleanedTag);
   }
+
+  if (!looksWellFormed(markup)) return null;
 
   return { markup, viewBox };
 }
@@ -174,7 +267,7 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
     // `text-anchor="middle"` é o que torna a centro-ancoragem honesta: se a
     // largura medida errar, a caixa fica larga ou estreita demais, mas o texto
     // nunca sai torto dentro dela.
-    const filter = t.backdrop === "shadow" ? ` filter="url(#textShadow)"` : "";
+    const filter = t.backdrop === "shadow" ? ` filter="url(#ovl-textShadow)"` : "";
     parts.push(
       `<text x="${r(t.x * CW)}" y="${r(boxY + OVERLAY_STYLE.boxPadY + t.sizePx * 0.8)}" ` +
       `text-anchor="middle" font-family="${escapeXml(opts.fontFamily)}" font-weight="${t.weight}" ` +
@@ -191,23 +284,23 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
     if (l.wrap === "circle") {
       parts.push(
         `<circle cx="${r(l.x * CW)}" cy="${r(l.y * CH)}" r="${r(boxW / 2)}" ` +
-        `fill="${OVERLAY_STYLE.logoCardFill}" filter="url(#cardShadow)"/>`,
+        `fill="${OVERLAY_STYLE.logoCardFill}" filter="url(#ovl-cardShadow)"/>`,
       );
     } else if (l.wrap !== "none") {
       parts.push(
         `<rect x="${r(boxX)}" y="${r(boxY)}" width="${r(boxW)}" height="${r(boxH)}" ` +
         `rx="${OVERLAY_STYLE.logoCardRadius}" ry="${OVERLAY_STYLE.logoCardRadius}" ` +
-        `fill="${OVERLAY_STYLE.logoCardFill}" filter="url(#cardShadow)"/>`,
+        `fill="${OVERLAY_STYLE.logoCardFill}" filter="url(#ovl-cardShadow)"/>`,
       );
     }
 
     const pad = logoInnerPadPx(l.wrap, boxW);
     const innerSvgMarkup = decodeSvgDataUri(l.href);
-    if (innerSvgMarkup !== null) {
-      const { markup, viewBox } = prepareNestedSvg(innerSvgMarkup);
+    const prepared = innerSvgMarkup !== null ? prepareNestedSvg(innerSvgMarkup) : null;
+    if (prepared) {
       parts.push(
         `<svg x="${r(boxX + pad)}" y="${r(boxY + pad)}" width="${r(boxW - pad * 2)}" ` +
-        `height="${r(boxH - pad * 2)}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${markup}</svg>`,
+        `height="${r(boxH - pad * 2)}" viewBox="${escapeXml(prepared.viewBox)}" preserveAspectRatio="xMidYMid meet">${prepared.markup}</svg>`,
       );
     } else {
       parts.push(
@@ -220,10 +313,10 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${CW}" height="${CH}" viewBox="0 0 ${CW} ${CH}">
   <defs>
-    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+    <filter id="ovl-cardShadow" x="-10%" y="-10%" width="120%" height="120%">
       <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.18"/>
     </filter>
-    <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
+    <filter id="ovl-textShadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.75"/>
     </filter>
   </defs>

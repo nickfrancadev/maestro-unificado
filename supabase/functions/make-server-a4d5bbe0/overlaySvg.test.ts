@@ -67,19 +67,19 @@ describe('buildOverlaySvg — texto', () => {
   it('backdrop "box" desenha o retângulo e não a sombra', () => {
     const svg = svgFor({ texts: [texto({ backdrop: 'box' })] });
     expect(svg).toContain('rgba(0,0,0,0.55)');
-    expect(svg).not.toContain('filter="url(#textShadow)"');
+    expect(svg).not.toContain('filter="url(#ovl-textShadow)"');
   });
 
   it('backdrop "shadow" aplica o filtro e não desenha retângulo', () => {
     const svg = svgFor({ texts: [texto({ backdrop: 'shadow' })] });
-    expect(svg).toContain('filter="url(#textShadow)"');
+    expect(svg).toContain('filter="url(#ovl-textShadow)"');
     expect(svg).not.toContain('rgba(0,0,0,0.55)');
   });
 
   it('backdrop "none" não desenha nem retângulo nem sombra', () => {
     const svg = svgFor({ texts: [texto({ backdrop: 'none' })] });
     expect(svg).not.toContain('rgba(0,0,0,0.55)');
-    expect(svg).not.toContain('filter="url(#textShadow)"');
+    expect(svg).not.toContain('filter="url(#ovl-textShadow)"');
   });
 
   it('respeita a cor escolhida', () => {
@@ -237,6 +237,97 @@ describe('buildOverlaySvg — logo SVG vira <svg> aninhado', () => {
     const svg = svgFor({ logos: [logo(href)] });
     expect(svg).toContain('<image');
     expect(svg).toContain('href="https://x.test/logo.png?token=abc&amp;Expires=123"');
+  });
+});
+
+// Fix round 1: a revisão achou que o parser por regex do bloco acima não
+// aguentava origem NÃO CONFIÁVEL de verdade — export real de ferramenta de
+// design, aspas simples, e um valor de atributo malicioso que explora o
+// `$&` do `String.replace`. A resposta não é "validar SVG por regex melhor"
+// — é degradar com segurança: quando o parser barato não reconhece o
+// formato, cai no <image href="${escapeXml(...)}"> de sempre em vez de
+// arriscar um <svg> aninhado malformado (que derruba a composição inteira
+// no resvg, exatamente o que a task 3 original queria evitar).
+describe('buildOverlaySvg — logo SVG aninhado: robustez contra origem não confiável (fix round 1)', () => {
+  const logo = (href: string, over = {}) => ({
+    href, x: 0.5, y: 0.5, sizePx: 200, wrap: 'square' as const, ...over,
+  });
+
+  // Export padrão do Illustrator/Inkscape: <?xml?> + comentário + <!DOCTYPE>
+  // antes do <svg> de verdade. DOCTYPE só é legal no prólogo do documento —
+  // sobrevivendo dentro do conteúdo do wrapper, invalida o XML inteiro (é
+  // assim que o roxmltree do resvg aborta e devolve 500 na composição).
+  it('remove <?xml?>, comentário de prólogo e <!DOCTYPE> — aninha em vez de quebrar', () => {
+    const inner = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 24.0.0, SVG Export Plug-In -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="10" height="10"/></svg>`;
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).not.toContain('DOCTYPE');
+    expect(svg).not.toContain('<?xml version="1.0" encoding="utf-8"');
+    expect(svg).toContain('viewBox="0 0 100 50"');
+    expect((svg.match(/<image /g) || []).length).toBe(1); // só a imagem-base
+  });
+
+  it('aceita atributos em aspas simples: deriva o viewBox e remove width/height internos', () => {
+    const inner = "<svg xmlns='http://www.w3.org/2000/svg' width='120' height='40'><rect width='10' height='10'/></svg>";
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('viewBox="0 0 120 40"');
+    // Nem em aspas duplas nem em simples o <svg> aninhado pode carregar seu
+    // próprio width/height fixo — isso faria o logo ignorar o sizePx do editor.
+    expect(svg).not.toMatch(/<svg[^>]*width=['"]120['"]/);
+    expect(svg).not.toMatch(/<svg[^>]*height=['"]40['"]/);
+  });
+
+  it('viewBox em aspas simples é preservado, não sobrescrito pelo default', () => {
+    const inner = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M0 0h24v24H0z'/></svg>";
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('viewBox="0 0 24 24"');
+    expect(svg).not.toContain('viewBox="0 0 100 100"');
+  });
+
+  // `String.prototype.replace(str, replacementStr)` trata "$&" no segundo
+  // argumento como token especial ("reinsira o trecho casado") mesmo quando
+  // o primeiro argumento é uma string comum, não uma regex. Sem o fix, isso
+  // reinjeta a tag <svg> inteira dentro do próprio atributo.
+  it('"$&" num atributo da tag raiz não duplica a tag inteira dentro do documento', () => {
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg" id="a$&b" width="50" height="50"><rect width="10" height="10"/></svg>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    const occurrences = (svg.match(/<svg\b/gi) || []).length;
+    // wrapper raiz (1) + no máximo o <svg> aninhado (1) — nunca mais que isso.
+    expect(occurrences).toBeLessThanOrEqual(2);
+  });
+
+  it('markup que não é SVG de verdade (ex.: página de erro HTML) cai em <image> escapado', () => {
+    const inner = '<html><body>404 Not Found</body></html>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('<image');
+    expect(svg).toContain(`href="${href}"`);
+  });
+
+  it('"&" cru dentro do SVG (não é entidade conhecida) cai em <image> em vez de invalidar o XML', () => {
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><title>Fast & Loose</title></svg>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('<image');
+    expect(svg).toContain(`href="${escapeXml(href)}"`);
+  });
+
+  // Colisão real verificada pelo revisor: um logo que define seu próprio
+  // <filter id="cardShadow"> sobrescreveria o filtro do wrapper (ids são
+  // globais no documento SVG) e mudaria a sombra de TODOS os cards, não só
+  // do logo que trouxe o filtro.
+  it('renomeia os ids dos filtros do wrapper para não colidir com filtros definidos pelo SVG do logo', () => {
+    const svg = svgFor();
+    expect(svg).toContain('id="ovl-cardShadow"');
+    expect(svg).toContain('id="ovl-textShadow"');
+    expect(svg).not.toContain('id="cardShadow"');
+    expect(svg).not.toContain('id="textShadow"');
   });
 });
 

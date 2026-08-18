@@ -3026,10 +3026,13 @@ async function renderOverlayPng(opts: {
 }): Promise<Uint8Array> {
   await ensureResvg();
 
-  // Só baixa os pesos que o SVG vai realmente usar.
+  // Só baixa os pesos que o SVG vai realmente usar. `SvgTextLayer.weight` é
+  // `number` (paridade com `overlayLayout.ts`, que não conhece a limitação
+  // do resvg), mas `loadGoogleFont` só entende 400/700 — o cast é seguro
+  // porque só chamamos com o `700`/`400` que os dois textos do compose usam.
   const weights = [...new Set(opts.texts.filter((t) => t.text).map((t) => t.weight))];
   const fontBuffers = await Promise.all(
-    (weights.length ? weights : [700]).map((w) => loadGoogleFont(opts.fontFamily, w)),
+    (weights.length ? weights : [700]).map((w) => loadGoogleFont(opts.fontFamily, w as 400 | 700)),
   );
 
   const svg = buildOverlaySvg({
@@ -3099,14 +3102,17 @@ app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
     // manda; `advertiser_domain` é o fallback via `resolveTargetLogo` — sem
     // isso o checkbox "Meu logo" nasce morto, já que `brandKit.logo` é `null`
     // por padrão. `fetchAsBase64` atende URL e data: URI ao mesmo tempo — o
-    // fetch do Deno resolve `data:` nativamente. Nenhum dos dois caminhos que
-    // falha é erro: `advertiser_logo_applied` só vira `false`.
+    // fetch do Deno resolve `data:` nativamente. Tenta o domínio também
+    // quando a URL existe mas falha (não só quando ela está ausente) — os
+    // dois caminhos falhando não é erro: `advertiser_logo_applied` só vira
+    // `false`.
     let advertiserLogoApplied = false;
     if (layout.advertiserLogo?.enabled) {
       let img: { base64: string; mime: string } | null = null;
       if (advertiser_logo_url) {
         img = await fetchAsBase64(advertiser_logo_url);
-      } else if (advertiser_domain) {
+      }
+      if (!img && advertiser_domain) {
         img = await resolveTargetLogo(advertiser_domain, advertiser_domain);
       }
       if (img) {
