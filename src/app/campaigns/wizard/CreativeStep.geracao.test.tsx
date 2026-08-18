@@ -131,18 +131,27 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('o editor não repete o anúncio — quem renderiza o resultado é o preview', () => {
     renderStep({
       overrides: {
-        c1: { status: 'fully_personalized', imageUrl: 'https://x/composto.png', imageFileName: 'composto.png' },
+        c1: {
+          status: 'fully_personalized',
+          baseImageUrl: 'https://x/base-nubank.png',
+          imageUrl: 'https://x/composto.png',
+          imageFileName: 'composto.png',
+        },
       },
     });
     goTo(/Nubank/);
 
     // Nada de um segundo slot para o mesmo anúncio dentro do formulário.
-    expect(screen.queryByText('Anúncio composto')).not.toBeInTheDocument();
-    expect(screen.getByAltText('Ad creative')).toHaveAttribute('src', 'https://x/composto.png');
+    expect(screen.queryByAltText('Anúncio composto')).not.toBeInTheDocument();
+
+    // O composto só aparece no preview quando o toggle "Composto" é acionado
+    // — por padrão o preview mostra o editor ao vivo.
+    fireEvent.click(screen.getByRole('button', { name: /Composto/ }));
+    expect(screen.getByAltText('Anúncio composto')).toHaveAttribute('src', 'https://x/composto.png');
   });
 
   it('a imagem-base da própria empresa aparece no preview antes de compor', () => {
-    renderStep({
+    const { container } = renderStep({
       imageUrl: 'https://x/template.png',
       overrides: {
         c1: { status: 'fully_personalized', baseImageUrl: 'https://x/base-nubank.png' },
@@ -151,8 +160,10 @@ describe('CreativeStep — botões de geração por bloco', () => {
     goTo(/Nubank/);
 
     // Sem a base da empresa na cadeia, o preview mostraria o anúncio do
-    // template — que não é o que essa empresa vai rodar.
-    expect(screen.getByAltText('Ad creative')).toHaveAttribute('src', 'https://x/base-nubank.png');
+    // template — que não é o que essa empresa vai rodar. Escopado ao canvas
+    // do preview porque o card 2 também tem uma miniatura com o mesmo alt.
+    const preview = container.querySelector('[data-testid="overlay-canvas"] img');
+    expect(preview).toHaveAttribute('src', 'https://x/base-nubank.png');
   });
 
   it('sem imagem-base e com origem upload, a empresa bloqueia a geração', () => {

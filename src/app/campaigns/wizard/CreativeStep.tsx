@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Smartphone,
   Monitor,
-  Image as ImageIcon,
   Layout,
   Info,
   MoreHorizontal,
@@ -32,12 +31,14 @@ import {
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
 import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields } from './types';
-import { createDefaultOverlayLayout, withLayoutDefaults } from './overlayLayout';
+import { createDefaultOverlayLayout, withLayoutDefaults, type OverlayLayout } from './overlayLayout';
+import { OverlayCanvas, type OverlayLayerId } from './OverlayCanvas';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
 import { BriefPane, type BriefDraft } from './BriefPane';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
+import { logoDevUrl } from '@/lib/linkedin/logo';
 import {
   fetchBrandBrief,
   generateCopy,
@@ -131,6 +132,11 @@ function getAccountColor(name: string) {
 export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId }: CreativeStepProps) {
   const navigate = useNavigate();
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+  // Camada selecionada no editor — é ela que os controles do card 2 editam.
+  const [selectedLayer, setSelectedLayer] = useState<OverlayLayerId | null>(null);
+  // O editor ao vivo é o default; "Composto" existe só para conferir que o
+  // resvg bateu com o que estava na tela.
+  const [previewMode, setPreviewMode] = useState<'editor' | 'composed'>('editor');
   const companies: FacetItem[] = targetingData?.companies?.included || [];
   const [editingTarget, setEditingTarget] = useState<string>(BRIEF_TARGET);
   const [briefDrawerOpen, setBriefDrawerOpen] = useState(false);
@@ -795,6 +801,16 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const needsBaseImage = imageCfg.imageMode === 'upload' && !imageCfg.baseImageUrl;
   const noVoice = !clientVoice.trim();
 
+  // Logo do anunciante vem do Brand Kit. Logo da conta usa o que a segmentação
+  // já trouxe e cai no logo.dev quando ela não trouxe nada. No Template global
+  // não há empresa-alvo, então o preview usa `previewCompany` (companies[0])
+  // como stand-in — mesma escolha que o resto do preview já faz.
+  const advertiserLogoUrl = imageCfgSource.brandKit.logo;
+  const targetLogoUrl = previewCompany
+    ? (previewCompany.logoUrl || logoDevUrl(previewCompany.domain) || null)
+    : null;
+  const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
+
   // Routes a field edit to the right home: a company writes an override, the
   // template writes to its own config (with the font living in the brand kit).
   const setImageField = (patch: Partial<ResolvedImageConfig>) => {
@@ -814,6 +830,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       });
     }
   };
+
+  // O layout é sobrescrito como objeto inteiro; `setImageField` já sabe mandar
+  // para o override certo, então isto é só um atalho tipado.
+  const setLayout = (next: OverlayLayout) => setImageField({ layout: next });
 
   // Destination follows the same inherit-then-override rule as the image block.
   const editorLandingPageUrl = editingOverride?.landingPageUrl ?? landingPageUrl;
@@ -1441,13 +1461,31 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   <span className="text-slate-400">— como aparece para <span className="font-semibold text-slate-700">{previewCompany.label}</span></span>
                 )}
               </div>
-              <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                <button onClick={() => setDevice('desktop')} className={`p-1.5 rounded ${device === 'desktop' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
-                  <Monitor className="w-4 h-4" />
-                </button>
-                <button onClick={() => setDevice('mobile')} className={`p-1.5 rounded ${device === 'mobile' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
-                  <Smartphone className="w-4 h-4" />
-                </button>
+              <div className="flex items-center">
+                {composedImageUrl && (
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 mr-2">
+                    <button
+                      onClick={() => setPreviewMode('editor')}
+                      className={`px-2 py-1 text-[10px] font-bold rounded ${previewMode === 'editor' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      Editor
+                    </button>
+                    <button
+                      onClick={() => setPreviewMode('composed')}
+                      className={`px-2 py-1 text-[10px] font-bold rounded ${previewMode === 'composed' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      Composto
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                  <button onClick={() => setDevice('desktop')} className={`p-1.5 rounded ${device === 'desktop' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
+                    <Monitor className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setDevice('mobile')} className={`p-1.5 rounded ${device === 'mobile' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
+                    <Smartphone className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1486,16 +1524,25 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   )}
                 </div>
 
-                <div className="relative aspect-[1200/628] bg-slate-100 overflow-hidden">
-                  {resolved.imageUrl ? (
-                    <img src={resolved.imageUrl} alt="Ad creative" className="absolute inset-0 w-full h-full object-cover" />
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
-                      <ImageIcon className="w-10 h-10 mb-1.5" />
-                      <span className="text-xs font-medium">Imagem aparecerá aqui</span>
-                    </div>
-                  )}
-                </div>
+                {previewMode === 'composed' && composedImageUrl ? (
+                  <div className={imageCfg.format === 'square' ? 'aspect-[1200/1200]' : 'aspect-[1200/628]'}>
+                    <img src={composedImageUrl} alt="Anúncio composto" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <OverlayCanvas
+                    format={imageCfg.format}
+                    baseImageUrl={imageCfg.baseImageUrl}
+                    layout={imageCfg.layout}
+                    fontFamily={imageCfg.fontFamily}
+                    destaque={imageCfg.textoDestaque}
+                    complementar={imageCfg.textoComplementar}
+                    advertiserLogoUrl={advertiserLogoUrl}
+                    targetLogoUrl={targetLogoUrl}
+                    selected={selectedLayer}
+                    onSelect={setSelectedLayer}
+                    onLayoutChange={setLayout}
+                  />
+                )}
 
                 <div className="bg-slate-50 px-4 py-3 flex justify-between items-center border-t border-slate-100">
                   <div className="min-w-0 flex-1">
