@@ -458,12 +458,12 @@ describe('CreativeStep — payload da composição', () => {
 
     expect(payload.format).toBe('square');
     // jsdom não implementa canvas.getContext('2d') — measureTextWidthPx cai no
-    // fallback de largura 0, o teto vivo fica no máximo (160) e o valor
-    // gravado (56, default de createDefaultOverlayLayout) passa por
-    // effectiveLayout sem ser encolhido. O número aqui é o que a função
-    // devolveu, não o cru "por coincidência" — a cobertura de que o teto de
-    // verdade encolhe o valor já existe em `overlayLayout.test.ts` e no
-    // describe "o teto vivo deriva o valor efetivo" acima.
+    // fallback de largura 0, e `maxTextSizePx` devolve o teto duro quando a
+    // largura medida é <= 0 (nunca clampa). Por isso este número (56, default
+    // de createDefaultOverlayLayout) é IGUAL ao gravado mesmo passando por
+    // `effectiveLayout` — aqui é coincidência mesmo, não prova que o payload
+    // manda o efetivo e não o cru. Quem prova isso é o describe abaixo, que
+    // stuba a medição para forçar um clamp de verdade.
     expect(payload.layout.destaque.sizePx).toBe(56);
     expect(payload.layout.complementar.sizePx).toBe(28);
     expect(payload.advertiser_logo_url).toBe('data:image/png;base64,AAAA');
@@ -493,6 +493,104 @@ describe('CreativeStep — payload da composição', () => {
 
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0][0].advertiser_domain).toBeNull();
+
+    spy.mockRestore();
+  });
+
+  // Fix round 1: o teste "manda o layout efetivo..." acima NÃO distinguia
+  // layout efetivo de cru — em jsdom a largura medida é sempre 0 e o teto
+  // nunca clampa, então `effectiveLayout(...)` devolve os mesmos números que
+  // `cfg.layout` já tinha. Uma mutação que trocasse `layout` por `cfg.layout`
+  // cru em `composeOverlayFor` passaria pela suíte inteira sem ser detectada
+  // — e esse acordo preview↔PNG é a razão de a feature existir. Este describe
+  // stuba a medição (mesmo padrão do describe "o teto vivo deriva o valor
+  // efetivo" mais acima) para forçar um clamp de verdade.
+  describe('com um clamp de verdade (canvas stubado)', () => {
+    let getContextSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    afterEach(() => {
+      getContextSpy?.mockRestore();
+      getContextSpy = undefined;
+    });
+
+    // A largura escala com o `px` do `ctx.font` — 14.45px de largura por px
+    // de fonte dá teto de 80 (1156px úteis do canvas / 14.45), igual ao
+    // describe do teto vivo mais acima.
+    function stubLinearCanvasMeasure() {
+      getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => {
+        const ctx = {
+          font: '',
+          measureText(_text: string) {
+            const sizePx = parseFloat(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? '0');
+            return { width: sizePx * 14.45 };
+          },
+        };
+        return ctx as unknown as CanvasRenderingContext2D;
+      });
+    }
+
+    it('o layout mandado é o CLAMPADO (não o gravado), e a largura da caixa é medida no tamanho EFETIVO', async () => {
+      stubLinearCanvasMeasure();
+
+      const ai = await import('@/lib/ai');
+      const spy = vi.spyOn(ai, 'composeLogoOverlay').mockResolvedValue({
+        success: true, url: 'https://exemplo/ad.png', filename: 'ad.png',
+        logo_applied: true, advertiser_logo_applied: false,
+      });
+
+      const d = withBaseImage();
+      // Gravado em 160 (acima do teto de 80 com este stub) — de propósito,
+      // para o clamp disparar de verdade.
+      d.templateLogo.layout = {
+        ...d.templateLogo.layout,
+        destaque: { ...d.templateLogo.layout.destaque, sizePx: 160 },
+      };
+      renderStep(d);
+      goTo(/Nubank/);
+      fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
+
+      await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+      const payload = spy.mock.calls[0][0];
+
+      // Clampado (80), não o gravado (160). Se `composeOverlayFor` mandasse
+      // `cfg.layout` cru em vez do resultado de `effectiveLayout`, este
+      // número seria 160 — foi exatamente essa mutação que motivou o achado.
+      expect(payload.layout.destaque.sizePx).toBe(80);
+      expect(payload.layout.destaque.sizePx).not.toBe(160);
+
+      // A largura da caixa tem que ser medida NO TAMANHO EFETIVO (80): com o
+      // stub linear, largura(80px) = 80 × 14.45 = 1156. Se a segunda medição
+      // caísse de volta pro tamanho gravado (160px), sairia 2312 — bem
+      // diferente, o que prova que a remedição usa `layout.destaque.sizePx`
+      // (efetivo) e não `cfg.layout.destaque.sizePx` (gravado).
+      expect(payload.destaque_width_px).toBe(1156);
+      expect(payload.destaque_width_px).not.toBe(Math.ceil(160 * 14.45));
+
+      spy.mockRestore();
+    });
+  });
+
+  // Fix round 1, achado 2: a única via de UI para logo próprio (`LogoGallery.pick()`
+  // em BriefPane.tsx) grava um `blob:` em `brandKit.logo` — um esquema que só
+  // resolve dentro desta aba. O servidor busca a URL com `fetch()` puro e
+  // nunca alcança um `blob:`; sem este guard a composição degradava pro
+  // fallback por domínio em silêncio (ou pior, sem fallback nenhum se não
+  // houver `websiteUrl`), fazendo "Meu logo" sumir do PNG sem aviso algum.
+  it('logo do anunciante em blob: não é mandado — o servidor não alcança um blob: da aba', async () => {
+    const ai = await import('@/lib/ai');
+    const spy = vi.spyOn(ai, 'composeLogoOverlay').mockResolvedValue({
+      success: true, url: 'https://exemplo/ad.png', filename: 'ad.png',
+      logo_applied: true, advertiser_logo_applied: false,
+    });
+
+    const d = withBaseImage();
+    d.brandKit = { ...d.brandKit, logo: 'blob:https://exemplo.com/1234-5678-90ab' };
+    renderStep(d);
+    goTo(/Nubank/);
+    fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
+
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0].advertiser_logo_url).toBeNull();
 
     spy.mockRestore();
   });

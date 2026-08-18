@@ -152,6 +152,19 @@ function deriveWebsiteDomain(websiteUrl: string): string | null {
   }
 }
 
+// `brandKit.logo` pode ser um `blob:` — a única via de UI para logo próprio
+// (`LogoGallery.pick()` em `BriefPane.tsx`) usa `URL.createObjectURL(file)`,
+// e esse esquema só resolve dentro desta aba/sessão. O servidor busca a URL
+// com `fetch()` puro (`fetchAsBase64`), nunca alcança um `blob:`, cai no
+// catch e devolve `null` em silêncio — a composição degradaria pro fallback
+// por domínio sem avisar ninguém. Filtrar aqui torna esse fallback uma
+// escolha deliberada, não um acidente silencioso. Resolver de verdade (subir
+// o logo pro Storage, como já se faz com a imagem-base) fica fora do escopo
+// desta task.
+function sendableAdvertiserLogoUrl(logo: string | null): string | null {
+  return logo && logo.startsWith('blob:') ? null : logo;
+}
+
 function getAccountColor(name: string) {
   const colors: Record<string, string> = {
     NVIDIA: '#76b900', Revolut: '#0075EB', Datadog: '#632CA6', Figma: '#F24E1E',
@@ -580,7 +593,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         base_image_url: cfg.baseImageUrl,
         target_company_name: company.label,
         target_company_domain: company.domain || null,
-        advertiser_logo_url: data.brandKit.logo,
+        advertiser_logo_url: sendableAdvertiserLogoUrl(data.brandKit.logo),
         // Fallback quando o Brand Kit não tem logo enviado: sem isto o
         // checkbox "Meu logo" nunca renderiza nada no PNG, já que
         // `brandKit.logo` nasce `null` (o servidor resolve o logo pelo
