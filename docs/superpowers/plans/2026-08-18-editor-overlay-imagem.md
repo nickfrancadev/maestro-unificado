@@ -40,7 +40,7 @@
 | `supabase/functions/make-server-a4d5bbe0/overlaySvg.ts` **(criar)** | Construção pura do SVG do overlay. Zero Deno, zero `npm:`. |
 | `supabase/functions/make-server-a4d5bbe0/overlaySvg.test.ts` **(criar)** | Testes do SVG gerado. |
 | `supabase/functions/make-server-a4d5bbe0/index.ts` | Passa a usar `overlaySvg.ts`, resolve o logo do anunciante, parametriza o canvas. |
-| `src/app/campaigns/wizard/brandKit.ts` | Só se a verificação da Task 5 exigir trocar o `MOCK_LOGO`. |
+| `src/app/campaigns/wizard/brandKit.ts` | Nenhuma task o modifica. Se a verificação da **Task 3** falhar, o fallback dela resolve em `overlaySvg.ts` + handler, sem tocar aqui. |
 
 A ordem das tasks põe o **servidor antes da UI** de propósito: o risco de o resvg não renderizar o logo do anunciante (spec §5) mata metade da feature, e precisa ser descoberto cedo.
 
@@ -1657,7 +1657,13 @@ vi.mock('@/lib/ai', async (orig) => ({
 }));
 
 const targeting = {
-  companies: { included: [{ id: 'c1', label: 'Nubank', domain: 'nubank.com.br' }], excluded: [] },
+  // `logoUrl` está aqui porque é o que a segmentação real entrega. Sem ele
+  // `targetLogoUrl` cairia no logo.dev, que depende de VITE_LOGO_DEV_KEY e é
+  // undefined em teste — e o logo da conta sumiria do preview.
+  companies: {
+    included: [{ id: 'c1', label: 'Nubank', domain: 'nubank.com.br', logoUrl: 'https://exemplo/nubank.png' }],
+    excluded: [],
+  },
   defaultTargeting: {
     locations: { included: [], excluded: [] }, seniorities: { included: [], excluded: [] },
     jobFunctions: { included: [], excluded: [] }, jobTitles: { included: [], excluded: [] },
@@ -1854,7 +1860,10 @@ describe('CreativeStep — ordem do card Imagem', () => {
   it('formato vem antes da origem, que vem antes dos textos', () => {
     const { container } = renderStep();
     goTo(/Template global/);
-    const card = container.querySelectorAll('section')[1];
+    // Busca pelo conteúdo e não por índice: a posição do <section> muda toda
+    // vez que alguém acrescenta um card, e o teste passaria a medir outra coisa.
+    const card = Array.from(container.querySelectorAll('section'))
+      .find((sec) => (sec.textContent || '').includes('ORIGEM DA IMAGEM-BASE'))!;
     const texto = card.textContent || '';
     expect(texto.indexOf('FORMATO')).toBeLessThan(texto.indexOf('ORIGEM DA IMAGEM-BASE'));
     expect(texto.indexOf('ORIGEM DA IMAGEM-BASE')).toBeLessThan(texto.indexOf('TEXTO DESTAQUE'));
@@ -1863,20 +1872,25 @@ describe('CreativeStep — ordem do card Imagem', () => {
   it('a dropzone anuncia a dimensão do formato escolhido', () => {
     renderStep();
     goTo(/Template global/);
-    expect(screen.getByText(/1200 × 628 px/)).toBeInTheDocument();
+    // `getAllByText`: o rótulo aparece DUAS vezes — no FormatButton e na
+    // dropzone —, e `getByText` estouraria com "found multiple elements".
+    expect(screen.getAllByText(/1200 × 628 px/).length).toBeGreaterThan(1);
     fireEvent.click(screen.getByRole('button', { name: /Quadrado/ }));
-    expect(screen.getByText(/1200 × 1200 px/)).toBeInTheDocument();
+    expect(screen.getAllByText(/1200 × 1200 px/).length).toBeGreaterThan(1);
+    expect(screen.queryByText(/1200 × 628 px/)).not.toBeInTheDocument();
   });
 });
 
 describe('CreativeStep — controles de camada', () => {
-  it('mudar o tamanho do destaque grava no layout e reflete no preview', () => {
+  it('mudar o tamanho do destaque grava no layout', () => {
     renderStep(comBase());
     goTo(/Template global/);
-    const slider = screen.getByLabelText(/Tamanho do texto destaque/);
+    const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
+    expect(slider.value).toBe('56');
     fireEvent.change(slider, { target: { value: '90' } });
-    expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ fontWeight: '700' });
-    expect((slider as HTMLInputElement).value).toBe('90');
+    // Só volta 90 se tiver dado a volta inteira: setLayout → updateCreative →
+    // prop → imageCfg.layout. É esse circuito que o teste tranca.
+    expect(slider.value).toBe('90');
   });
 
   // jsdom não implementa canvas.measureText, então `measureTextWidthPx` devolve 0
@@ -1894,7 +1908,7 @@ describe('CreativeStep — controles de camada', () => {
     renderStep(comBase());
     goTo(/Template global/);
     fireEvent.click(screen.getAllByRole('button', { name: /^Nenhum$/ })[0]);
-    expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ background: 'transparent' });
+    expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ backgroundColor: 'transparent' });
   });
 });
 
@@ -2210,9 +2224,12 @@ Importar o que os controles usam:
 
 ```tsx
 import type { AdFormat, LogoLayer, LogoWrap, TextLayer } from './overlayLayout';
-import { maxTextSizePx, MIN_TEXT_SIZE_PX } from './overlayLayout';
+import { AD_FORMAT_SIZE, maxTextSizePx, MIN_TEXT_SIZE_PX } from './overlayLayout';
 import { measureTextWidthPx } from './OverlayCanvas';
 ```
+
+`AD_FORMAT_SIZE` vem de `./overlayLayout`, **nunca** do módulo do servidor — o cliente não
+importa de `supabase/functions/` fora de teste.
 
 - [ ] **Step 6: Rodar os testes e confirmar que passam**
 
@@ -2238,7 +2255,6 @@ git commit -m "feat(criativo): card na nova ordem, com controles de camada e doi
 **Files:**
 - Modify: `src/lib/ai.ts:74-125` (`generateBaseImage` e `composeLogoOverlay`)
 - Modify: `src/app/campaigns/wizard/CreativeStep.tsx:498-530` (`composeOverlayFor`)
-- Modify: `src/app/campaigns/wizard/types.ts:107-112` (comentário obsoleto de `AdFormat`, se ainda restar)
 
 **Interfaces:**
 - Consumes: `measureTextWidthPx` de `./OverlayCanvas`; `effectiveLayout` de `./overlayLayout`.
@@ -2364,7 +2380,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/ai.ts src/app/campaigns/wizard/CreativeStep.tsx src/app/campaigns/wizard/CreativeStep.overlay.test.tsx src/app/campaigns/wizard/types.ts
+git add src/lib/ai.ts src/app/campaigns/wizard/CreativeStep.tsx src/app/campaigns/wizard/CreativeStep.overlay.test.tsx
 git commit -m "feat(criativo): composição envia layout, formato e larguras medidas"
 ```
 
