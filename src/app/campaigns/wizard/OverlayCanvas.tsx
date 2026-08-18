@@ -40,12 +40,18 @@ export interface OverlayCanvasProps {
 // Mede a largura real do texto na fonte carregada. O servidor usa este número
 // para dimensionar a caixa de fundo — sem ele cairia num estimador por
 // contagem de caracteres, e a caixa do preview não bateria com a do PNG.
-export function measureTextWidthPx(text: string, sizePx: number, fontFamily: string): number {
+//
+// `weight` é obrigatório (não tem default): negrito é visivelmente mais largo
+// que regular no mesmo tamanho, e o destaque renderiza em 700 enquanto o
+// complementar renderiza em 400 — medir sem o peso subestima a largura do
+// destaque, o teto do slider fica frouxo demais, e a caixa de fundo que o
+// servidor desenha no PNG final sai estreita atrás do texto em negrito.
+export function measureTextWidthPx(text: string, sizePx: number, fontFamily: string, weight: number): number {
   if (typeof document === 'undefined' || !text) return 0;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) return 0;
-  ctx.font = `${sizePx}px "${fontFamily}", sans-serif`;
+  ctx.font = `${weight} ${sizePx}px "${fontFamily}", sans-serif`;
   return Math.ceil(ctx.measureText(text).width);
 }
 
@@ -166,7 +172,7 @@ export function OverlayCanvas({
   const textLayer = (id: 'destaque' | 'complementar', text: string, weight: number) => {
     if (!text) return null;
     const l = eff[id];
-    const widthPx = measureTextWidthPx(text, l.sizePx, fontFamily);
+    const widthPx = measureTextWidthPx(text, l.sizePx, fontFamily, weight);
     // Mesma conta que o servidor usa para a caixa de fundo (`overlaySvg.ts`
     // espelha `textLayerRect`) — reusar a função em vez de reimplementar a
     // aritmética à mão é o que garante que os dois nunca divirjam.

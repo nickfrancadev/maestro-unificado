@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useState } from 'react';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { CreativeStep } from './CreativeStep';
 import { createDefaultCreativeData, type CreativeData } from './types';
@@ -144,7 +144,7 @@ describe('CreativeStep — "Voltar ao template" também restaura o layout', () =
 describe('CreativeStep — ordem do card Imagem', () => {
   // O pedido: upload antes dos textos. E formato antes do upload, porque é ele
   // que define as dimensões que a dropzone pede.
-  it('formato vem antes da origem, que vem antes dos textos', () => {
+  it('formato vem antes da origem, que vem antes da imagem-base, que vem antes dos textos', () => {
     const { container } = renderStep();
     goTo(/Template global/);
     // Busca pelo conteúdo e não por índice: a posição do <section> muda toda
@@ -155,9 +155,29 @@ describe('CreativeStep — ordem do card Imagem', () => {
     // caixa alta visualmente via CSS `uppercase`), e `.textContent` não é
     // afetado por CSS — comparar em maiúsculas é o que torna a checagem
     // insensível a essa diferença puramente visual.
-    const texto = (card.textContent || '').toUpperCase();
-    expect(texto.indexOf('FORMATO')).toBeLessThan(texto.indexOf('ORIGEM DA IMAGEM-BASE'));
-    expect(texto.indexOf('ORIGEM DA IMAGEM-BASE')).toBeLessThan(texto.indexOf('TEXTO DESTAQUE'));
+    const cardText = (card.textContent || '').toUpperCase();
+
+    const formatoIdx = cardText.indexOf('FORMATO');
+    const origemIdx = cardText.indexOf('ORIGEM DA IMAGEM-BASE');
+    const dropzoneIdx = cardText.indexOf('CLIQUE OU ARRASTE A IMAGEM-BASE');
+    const textoDestaqueIdx = cardText.indexOf('TEXTO DESTAQUE');
+
+    // `indexOf` devolve -1 quando não acha o marcador, e `-1 < N` passa como
+    // se a ordem estivesse certa mesmo com o bloco inteiro sumido do card —
+    // foi assim que a checagem anterior ficou vácua sob um teste de mutação
+    // que só renomeou o rótulo "Formato". Garantir presença antes de comparar
+    // ordem é o que fecha esse buraco.
+    expect(formatoIdx).toBeGreaterThanOrEqual(0);
+    expect(origemIdx).toBeGreaterThanOrEqual(0);
+    expect(dropzoneIdx).toBeGreaterThanOrEqual(0);
+    expect(textoDestaqueIdx).toBeGreaterThanOrEqual(0);
+
+    expect(formatoIdx).toBeLessThan(origemIdx);
+    // Upload da imagem-base antes dos textos é literalmente o pedido que
+    // motivou esta task — sem esta linha, mover o box de Textos+Fonte para
+    // cima do bloco de Imagem-base não quebra teste nenhum.
+    expect(origemIdx).toBeLessThan(dropzoneIdx);
+    expect(dropzoneIdx).toBeLessThan(textoDestaqueIdx);
   });
 
   it('a dropzone anuncia a dimensão do formato escolhido', () => {
@@ -201,6 +221,62 @@ describe('CreativeStep — controles de camada', () => {
     expect(Number(slider.max)).toBeGreaterThan(0);
   });
 
+  // O teto vivo precisa travar o valor GRAVADO, não só a exibição do slider.
+  // Stuba `canvas.getContext('2d')` para controlar a medição de verdade — sem
+  // isso jsdom devolve null e `measureTextWidthPx` sempre cai no fallback de
+  // 0, o que mascara qualquer teto abaixo do máximo duro (160).
+  describe('o teto vivo trava o valor gravado, não só a exibição', () => {
+    let getContextSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    afterEach(() => {
+      getContextSpy?.mockRestore();
+      getContextSpy = undefined;
+    });
+
+    it('quando o teto cai abaixo do tamanho gravado, o layout é reescrito e o badge mostra o valor efetivo', () => {
+      // A largura mockada ESCALA com o `px` do `ctx.font`, igual à medição
+      // real (a largura de um texto é linear no tamanho da fonte) — uma
+      // largura fixa, independente do tamanho pedido, faria o teto colapsar
+      // em cascata a cada re-render (160→80→40→…) em vez de estabilizar.
+      // 14.45px de largura por px de fonte dá teto de 80: largura útil do
+      // canvas (1156px) / 14.45 = 80.
+      getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => {
+        const ctx = {
+          font: '',
+          measureText(_text: string) {
+            const sizePx = parseFloat(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? '0');
+            return { width: sizePx * 14.45 };
+          },
+        };
+        return ctx as unknown as CanvasRenderingContext2D;
+      });
+
+      const d = withBaseImage();
+      d.templateLogo.layout = {
+        ...d.templateLogo.layout,
+        destaque: { ...d.templateLogo.layout.destaque, sizePx: 160 },
+      };
+      renderStep(d);
+      goTo(/Template global/);
+
+      const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
+      expect(Number(slider.max)).toBe(80);
+
+      // O badge tem que mostrar o valor EFETIVO (80), não o cru (160) — se o
+      // clamp fosse só de exibição no slider, o badge continuaria em 160px,
+      // exatamente como o revisor reproduziu.
+      const row = slider.closest('div')!;
+      expect(within(row).getByText('80px')).toBeInTheDocument();
+      expect(within(row).queryByText('160px')).not.toBeInTheDocument();
+
+      // O preview lê `layout.destaque.sizePx` direto — se o clamp fosse só de
+      // exibição no controle, o preview continuaria renderizando 160px e o
+      // texto vazaria do canvas, que é exatamente o que o teto existe para
+      // impedir.
+      expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ fontSize: '80px' });
+    });
+  });
+
   it('trocar o fundo para Nenhum tira a caixa do preview', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
@@ -241,5 +317,64 @@ describe('CreativeStep — logos', () => {
     fireEvent.click(screen.getByRole('button', { name: /Agrupar como par/ }));
     expect(screen.getByAltText('Meu logo')).toBeInTheDocument();
     expect(screen.getByAltText('Logo da conta')).toBeInTheDocument();
+  });
+
+  // Regressão: `effectiveLayout` costumava forçar `enabled: true` nos dois
+  // logos sempre que `paired` fosse true. Desmarcar "Logo da conta" desmarcava
+  // o checkbox e escondia wrap/tamanho do card, mas o logo continuava preso
+  // no preview — o mesmo defeito que esta task foi encarregada de eliminar
+  // no `showTargetLogo`.
+  it('depois de "Agrupar como par", desmarcar "Logo da conta" tira ele do preview de verdade', () => {
+    const d = withBaseImage();
+    d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
+    renderStep(d);
+    goTo(/Template global/);
+    fireEvent.click(screen.getByRole('button', { name: /Agrupar como par/ }));
+    expect(screen.getByAltText('Logo da conta')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Logo da conta'));
+    expect(screen.queryByAltText('Logo da conta')).not.toBeInTheDocument();
+    // O anunciante continua no ar — desligar um não desliga o outro.
+    expect(screen.getByAltText('Meu logo')).toBeInTheDocument();
+  });
+
+  // Irmão do bug acima: "Desagrupar" reusa o mesmo botão/onClick de "Agrupar
+  // como par", e a versão antiga forçava `enabled: true` nos dois em QUALQUER
+  // clique — inclusive o de desagrupar, religando em silêncio um logo que o
+  // usuário tinha acabado de desligar.
+  it('"Desagrupar" não religa um logo que o usuário desligou', () => {
+    const d = withBaseImage();
+    d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
+    renderStep(d);
+    goTo(/Template global/);
+
+    const pairButton = screen.getByRole('button', { name: /Agrupar como par/ });
+    fireEvent.click(pairButton); // agrupa
+    fireEvent.click(screen.getByLabelText('Logo da conta')); // usuário desliga
+    expect(screen.queryByAltText('Logo da conta')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Desagrupar/ })); // desagrupa
+    expect(screen.queryByAltText('Logo da conta')).not.toBeInTheDocument();
+  });
+});
+
+// Sem teste nenhum até esta rodada — uma regressão no wrap ou no tamanho do
+// logo passava silenciosa.
+describe('CreativeStep — wrap e tamanho do logo', () => {
+  it('trocar o wrap do logo da conta para Círculo arredonda o cartão no preview', () => {
+    renderStep(withBaseImage());
+    goTo(/Template global/);
+    fireEvent.click(screen.getByRole('button', { name: /Círculo para Logo da conta/ }));
+    const wrap = screen.getByAltText('Logo da conta').parentElement!;
+    expect(wrap).toHaveStyle({ borderRadius: '9999px' });
+  });
+
+  it('mudar o tamanho do logo da conta muda a largura do cartão no preview', () => {
+    renderStep(withBaseImage());
+    goTo(/Template global/);
+    const slider = screen.getByLabelText(/Tamanho do Logo da conta/) as HTMLInputElement;
+    fireEvent.change(slider, { target: { value: '300' } });
+    const wrap = screen.getByAltText('Logo da conta').parentElement!;
+    expect(wrap).toHaveStyle({ width: '300px' });
   });
 });

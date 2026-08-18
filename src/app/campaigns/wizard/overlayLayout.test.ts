@@ -111,14 +111,36 @@ describe('effectiveLayout', () => {
     expect(effectiveLayout(l, 'banner')).toBe(l);
   });
 
-  // No modo par o logo da conta deixa de ser independente: quem arrasta é o
-  // anunciante e o outro é derivado. Preview e payload chamam isto, nunca o cru.
-  it('com par, deriva o logo da conta e força os dois ligados', () => {
-    const l = { ...createDefaultOverlayLayout(false), paired: true };
+  // No modo par o logo da conta deixa de ter GEOMETRIA independente: quem
+  // arrasta é o anunciante e a posição/tamanho/wrap do outro são derivados
+  // dele. `enabled`, porém, continua sendo de cada camada — "Agrupar como
+  // par" liga os dois no clique (pedido explícito do usuário), mas depois
+  // disso um checkbox desmarcado tem que desligar o logo de verdade, mesmo
+  // com paired=true. Preview e payload chamam isto, nunca o cru.
+  //
+  // Corrigido nesta rodada: a versão anterior forçava `enabled: true` nos
+  // dois incondicionalmente, e desmarcar "Logo da conta" com paired=true não
+  // tinha efeito nenhum no preview — o mesmo defeito que esta task foi
+  // encarregada de eliminar no `showTargetLogo`.
+  it('com par, deriva a geometria do logo da conta e preserva o enabled de cada camada', () => {
+    const base = createDefaultOverlayLayout(true);
+    const l = {
+      ...base,
+      paired: true,
+      advertiserLogo: { ...base.advertiserLogo, enabled: true, wrap: 'circle' as const, sizePx: 200 },
+      targetLogo: { ...base.targetLogo, enabled: false }, // desmarcado pelo usuário
+    };
     const e = effectiveLayout(l, 'banner');
-    expect(e.advertiserLogo.enabled).toBe(true);
-    expect(e.targetLogo.enabled).toBe(true);
+
+    // Geometria segue o anunciante.
     expect(e.targetLogo.y).toBe(e.advertiserLogo.y);
+    expect(e.targetLogo.sizePx).toBe(200);
+    expect(e.targetLogo.wrap).toBe('circle');
+
+    // `paired` não força `enabled`: o anunciante mantém o que já era true, e
+    // o da conta continua desligado porque o usuário desmarcou.
+    expect(e.advertiserLogo.enabled).toBe(true);
+    expect(e.targetLogo.enabled).toBe(false);
   });
 });
 

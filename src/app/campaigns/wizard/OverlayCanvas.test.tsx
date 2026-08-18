@@ -158,11 +158,31 @@ describe('OverlayCanvas — arrasto', () => {
 
 describe('OverlayCanvas — modo par', () => {
   // No par o logo da conta é derivado: uma alça só, dois logos na tela.
+  // `paired` sozinho não liga o logo do anunciante — quem liga os dois é o
+  // clique em "Agrupar como par" (CreativeStep.tsx), daí o fixture ligar
+  // `advertiserLogo.enabled` explicitamente, do jeito que a produção faz.
   it('mostra os dois logos com uma alça só', () => {
-    const layout = { ...createDefaultOverlayLayout(true), paired: true };
+    const base = createDefaultOverlayLayout(true);
+    const layout = { ...base, paired: true, advertiserLogo: { ...base.advertiserLogo, enabled: true } };
     render(<OverlayCanvas {...baseProps} layout={layout} />);
     expect(screen.getByAltText('Meu logo')).toBeInTheDocument();
     expect(screen.getByAltText('Logo da conta')).toBeInTheDocument();
     expect(screen.getByAltText('Logo da conta').closest('[data-draggable="true"]')).toBeNull();
+  });
+
+  // Regressão: `effectiveLayout` costumava forçar `enabled: true` nos dois
+  // logos sempre que `paired` fosse true, e desmarcar "Logo da conta" no card
+  // não tinha efeito nenhum no preview — o logo ficava preso na tela.
+  it('com par, desligar o logo da conta tira ele da tela mesmo com a geometria seguindo o anunciante', () => {
+    const base = createDefaultOverlayLayout(true);
+    const layout = {
+      ...base,
+      paired: true,
+      advertiserLogo: { ...base.advertiserLogo, enabled: true },
+      targetLogo: { ...base.targetLogo, enabled: false },
+    };
+    render(<OverlayCanvas {...baseProps} layout={layout} />);
+    expect(screen.getByAltText('Meu logo')).toBeInTheDocument();
+    expect(screen.queryByAltText('Logo da conta')).not.toBeInTheDocument();
   });
 });

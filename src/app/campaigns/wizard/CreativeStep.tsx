@@ -1244,7 +1244,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 </div>
               </div>
 
-              {/* 2 · Origem da imagem-base — available at both levels now. */}
+              {/* 2 · Origem da imagem-base — disponível nos dois níveis agora. */}
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
                   Origem da imagem-base
@@ -1385,6 +1385,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   text={imageCfg.textoDestaque}
                   fontFamily={imageCfg.fontFamily}
                   format={imageCfg.format}
+                  weight={700}
                   palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
                   selected={selectedLayer === 'destaque'}
                   onSelect={() => setSelectedLayer('destaque')}
@@ -1404,6 +1405,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   text={imageCfg.textoComplementar}
                   fontFamily={imageCfg.fontFamily}
                   format={imageCfg.format}
+                  weight={400}
                   palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
                   selected={selectedLayer === 'complementar'}
                   onSelect={() => setSelectedLayer('complementar')}
@@ -1423,12 +1425,22 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Logos</label>
                 <button
                   type="button"
-                  onClick={() => setLayout({
-                    ...imageCfg.layout,
-                    paired: !imageCfg.layout.paired,
-                    advertiserLogo: { ...imageCfg.layout.advertiserLogo, enabled: true },
-                    targetLogo: { ...imageCfg.layout.targetLogo, enabled: true },
-                  })}
+                  onClick={() => {
+                    const pairing = !imageCfg.layout.paired;
+                    setLayout({
+                      ...imageCfg.layout,
+                      paired: pairing,
+                      // Ligar os dois é intenção explícita do clique em
+                      // "Agrupar como par". "Desagrupar" só solta a geometria
+                      // — não mexe em `enabled`, senão religaria em silêncio
+                      // um logo que o usuário tivesse desligado enquanto
+                      // pareado.
+                      ...(pairing && {
+                        advertiserLogo: { ...imageCfg.layout.advertiserLogo, enabled: true },
+                        targetLogo: { ...imageCfg.layout.targetLogo, enabled: true },
+                      }),
+                    });
+                  }}
                   disabled={!advertiserLogoUrl}
                   title={advertiserLogoUrl ? undefined : 'Defina o logo no Brand Kit primeiro'}
                   className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26] disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1916,23 +1928,40 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
 
 // Controles de uma camada de texto. Ficam no card e não flutuando sobre a
 // imagem: o preview é para arrastar e olhar, o card é onde se ajusta número.
-function TextLayerControls({ id, label, layer, text, fontFamily, format, palette, selected, onSelect, onChange }: {
+function TextLayerControls({ id, label, layer, text, fontFamily, format, weight, palette, selected, onSelect, onChange }: {
   id: string;
   label: string;
   layer: TextLayer;
   text: string;
   fontFamily: string;
   format: AdFormat;
+  weight: number;
   palette: string[];
   selected: boolean;
   onSelect: () => void;
   onChange: (next: TextLayer) => void;
 }) {
   // Teto vivo: um destaque longo não pode chegar aos 160px, senão vaza do
-  // canvas e o PNG sai cortado. Mede uma vez no tamanho atual e escala.
+  // canvas e o PNG sai cortado. Mede uma vez no tamanho atual e escala. Passa
+  // `weight` porque negrito é mais largo que regular no mesmo tamanho — medir
+  // sem peso subestima a largura e o teto fica frouxo demais.
   const maxSize = maxTextSizePx(
-    measureTextWidthPx(text, layer.sizePx, fontFamily), layer.sizePx, format,
+    measureTextWidthPx(text, layer.sizePx, fontFamily, weight), layer.sizePx, format,
   );
+  // Valor efetivo: o que o slider mostra, o que o badge anuncia e o que
+  // acaba gravado — os três TÊM que concordar. `Math.min` sozinho só
+  // resolvia a exibição; a chamada abaixo é o que resolve a gravação.
+  const effectiveSize = Math.min(layer.sizePx, maxSize);
+
+  // Clampa na ESCRITA, não só na exibição: se o teto cair abaixo do tamanho
+  // gravado (o texto ficou mais largo, por exemplo), o layout tem que
+  // refletir o novo teto — senão o controle mente (mostra 29px no slider
+  // enquanto o badge e o preview continuam nos 160px antigos) e o texto vaza
+  // do canvas, exatamente o que o teto existia para impedir.
+  useEffect(() => {
+    if (layer.sizePx > maxSize) onChange({ ...layer, sizePx: maxSize });
+  }, [layer.sizePx, maxSize, onChange]);
+
   return (
     <div
       onFocus={onSelect}
@@ -1947,19 +1976,19 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, palette
           type="range"
           min={MIN_TEXT_SIZE_PX}
           max={maxSize}
-          step={2}
-          value={Math.min(layer.sizePx, maxSize)}
+          step={1}
+          value={effectiveSize}
           onChange={(e) => onChange({ ...layer, sizePx: Number(e.target.value) })}
           className="flex-1 accent-[#FF5F39]"
         />
-        <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{layer.sizePx}px</span>
+        <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{effectiveSize}px</span>
       </div>
 
       <div className="flex items-center gap-2 mt-1">
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Cor</span>
-        {palette.filter(Boolean).map((c) => (
+        {palette.filter(Boolean).map((c, i) => (
           <button
-            key={c}
+            key={`${c}-${i}`}
             type="button"
             aria-label={`Cor ${c} para ${label}`}
             onClick={() => onChange({ ...layer, color: c })}

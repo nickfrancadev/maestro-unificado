@@ -169,14 +169,17 @@ export function pairedTargetLayer(advertiser: LogoLayer, format: AdFormat): Logo
   };
 }
 
-// Layout EFETIVO: no modo par o logo da conta deixa de ser independente e passa
-// a ser derivado do anunciante. Preview e payload chamam isto, nunca o layout
-// cru — é o que garante que a imagem gerada seja a que estava na tela.
+// Layout EFETIVO: no modo par a GEOMETRIA do logo da conta deixa de ser
+// independente (x/y/sizePx/wrap seguem o anunciante). `enabled` continua
+// sendo de cada camada — "Agrupar como par" liga os dois no clique porque é
+// um pedido explícito do usuário, mas depois disso desmarcar um checkbox tem
+// que desligar o logo de verdade, mesmo com paired=true. Preview e payload
+// chamam isto, nunca o layout cru — é o que garante que a imagem gerada seja
+// a que estava na tela.
 export function effectiveLayout(layout: OverlayLayout, format: AdFormat): OverlayLayout {
   if (!layout.paired) return layout;
   return {
     ...layout,
-    advertiserLogo: { ...layout.advertiserLogo, enabled: true },
-    targetLogo: pairedTargetLayer(layout.advertiserLogo, format),
+    targetLogo: { ...pairedTargetLayer(layout.advertiserLogo, format), enabled: layout.targetLogo.enabled },
   };
 }
