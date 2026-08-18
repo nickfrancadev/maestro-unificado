@@ -31,7 +31,7 @@ import {
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
 import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields } from './types';
-import { createDefaultOverlayLayout, withLayoutDefaults, type OverlayLayout } from './overlayLayout';
+import { createDefaultOverlayLayout, withLayoutDefaults, aspectClass, type OverlayLayout } from './overlayLayout';
 import { OverlayCanvas, type OverlayLayerId } from './OverlayCanvas';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
@@ -857,6 +857,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       imageMode: undefined, baseImageUrl: undefined, baseImageSource: undefined,
       basePrompt: undefined, textoDestaque: undefined, textoComplementar: undefined,
       showTargetLogo: undefined, fontFamily: undefined, format: undefined,
+      // `layout` também é um campo de IMAGE_OVERRIDE_FIELDS — faltando aqui,
+      // um arrasto na empresa nunca voltava ao template mesmo depois deste
+      // reset (o botão "Voltar ao template" ficava preso ligado para sempre).
+      layout: undefined,
     });
   };
 
@@ -1525,7 +1529,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 </div>
 
                 {previewMode === 'composed' && composedImageUrl ? (
-                  <div className={imageCfg.format === 'square' ? 'aspect-[1200/1200]' : 'aspect-[1200/628]'}>
+                  <div className={aspectClass(imageCfg.format)}>
                     <img src={composedImageUrl} alt="Anúncio composto" className="w-full h-full object-cover" />
                   </div>
                 ) : (

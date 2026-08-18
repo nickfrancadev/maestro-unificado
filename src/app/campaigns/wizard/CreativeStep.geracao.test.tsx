@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useState } from 'react';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { CreativeStep } from './CreativeStep';
 import { createDefaultCreativeData, type CreativeData } from './types';
@@ -141,7 +141,10 @@ describe('CreativeStep — botões de geração por bloco', () => {
     });
     goTo(/Nubank/);
 
-    // Nada de um segundo slot para o mesmo anúncio dentro do formulário.
+    // Nada de um segundo slot para o mesmo anúncio dentro do formulário — o
+    // guard original é por TEXTO, não por alt: ele travava o <label> que
+    // envolvia o segundo slot do formulário, não o <img> do preview.
+    expect(screen.queryByText('Anúncio composto')).not.toBeInTheDocument();
     expect(screen.queryByAltText('Anúncio composto')).not.toBeInTheDocument();
 
     // O composto só aparece no preview quando o toggle "Composto" é acionado
@@ -162,8 +165,8 @@ describe('CreativeStep — botões de geração por bloco', () => {
     // Sem a base da empresa na cadeia, o preview mostraria o anúncio do
     // template — que não é o que essa empresa vai rodar. Escopado ao canvas
     // do preview porque o card 2 também tem uma miniatura com o mesmo alt.
-    const preview = container.querySelector('[data-testid="overlay-canvas"] img');
-    expect(preview).toHaveAttribute('src', 'https://x/base-nubank.png');
+    const canvas = container.querySelector('[data-testid="overlay-canvas"]') as HTMLElement;
+    expect(within(canvas).getByAltText('Imagem-base')).toHaveAttribute('src', 'https://x/base-nubank.png');
   });
 
   it('sem imagem-base e com origem upload, a empresa bloqueia a geração', () => {

@@ -11,6 +11,7 @@ import {
   AD_FORMAT_SIZE,
   OVERLAY_STYLE,
   LOGO_WRAP_ASPECT,
+  aspectClass,
   clampCenter,
   effectiveLayout,
   logoInnerPadPx,
@@ -146,7 +147,7 @@ export function OverlayCanvas({
     return (
       <div
         data-testid="overlay-canvas"
-        className={`relative bg-slate-100 overflow-hidden ${format === 'square' ? 'aspect-[1200/1200]' : 'aspect-[1200/628]'}`}
+        className={`relative bg-slate-100 overflow-hidden ${aspectClass(format)}`}
       >
         <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
           <ImageIcon className="w-10 h-10 mb-1.5" />
@@ -237,7 +238,7 @@ export function OverlayCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      className={`relative bg-slate-100 overflow-hidden touch-none ${format === 'square' ? 'aspect-[1200/1200]' : 'aspect-[1200/628]'}`}
+      className={`relative bg-slate-100 overflow-hidden touch-none ${aspectClass(format)}`}
     >
       <img src={baseImageUrl} alt="Imagem-base" className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
       {textLayer('destaque', destaque, 700)}

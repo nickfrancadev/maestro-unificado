@@ -42,7 +42,7 @@ function Host({ initial }: { initial?: Partial<CreativeData> }) {
   );
 }
 
-const comBase = () => {
+const withBaseImage = () => {
   const d = createDefaultCreativeData();
   d.templateLogo.baseImageUrl = 'https://exemplo/base.png';
   d.templateLogo.baseImageSource = 'upload';
@@ -54,9 +54,19 @@ const renderStep = (initial?: Partial<CreativeData>) =>
 
 const goTo = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
 
+// jsdom devolve zero em todo getBoundingClientRect; sem um retângulo real o
+// arrasto não teria escala para converter px em fração (mesmo padrão de
+// OverlayCanvas.test.tsx).
+function stubRect(el: Element, w: number, h: number) {
+  vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+    x: 0, y: 0, left: 0, top: 0, right: w, bottom: h, width: w, height: h,
+    toJSON: () => ({}),
+  } as DOMRect);
+}
+
 describe('CreativeStep — formato reflete no preview', () => {
   it('banner mantém o preview em 1.91:1', () => {
-    const { container } = renderStep(comBase());
+    const { container } = renderStep(withBaseImage());
     goTo(/Template global/);
     expect(container.querySelector('[data-testid="overlay-canvas"]')).toHaveClass('aspect-[1200/628]');
   });
@@ -64,7 +74,7 @@ describe('CreativeStep — formato reflete no preview', () => {
   // A regressão trancada aqui: o preview tinha aspect-[1200/628] hardcoded e
   // escolher Quadrado não mudava nada na tela.
   it('escolher Quadrado deixa o preview 1:1', () => {
-    const { container } = renderStep(comBase());
+    const { container } = renderStep(withBaseImage());
     goTo(/Template global/);
     fireEvent.click(screen.getByRole('button', { name: /Quadrado/ }));
     expect(container.querySelector('[data-testid="overlay-canvas"]')).toHaveClass('aspect-[1200/1200]');
@@ -73,7 +83,7 @@ describe('CreativeStep — formato reflete no preview', () => {
 
 describe('CreativeStep — editor no lugar da imagem', () => {
   it('com imagem-base, o preview mostra os textos do overlay como camadas', () => {
-    renderStep(comBase());
+    renderStep(withBaseImage());
     goTo(/Template global/);
     expect(screen.getByText('WORKSHOP ABM')).toBeInTheDocument();
   });
@@ -86,8 +96,43 @@ describe('CreativeStep — editor no lugar da imagem', () => {
 
   // Sem PNG composto não há o que comparar, então o toggle não aparece.
   it('o toggle Composto só existe quando há imagem composta', () => {
-    renderStep(comBase());
+    renderStep(withBaseImage());
     goTo(/Template global/);
     expect(screen.queryByRole('button', { name: /Composto/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('CreativeStep — "Voltar ao template" também restaura o layout', () => {
+  // Regressão: `setLayout` grava `layout` no override da empresa (primeiro
+  // caminho de código que escreve esse campo), mas `resetImageOverrides` não
+  // sabia limpá-lo. Como `layout` está em IMAGE_OVERRIDE_FIELDS, o botão
+  // "Voltar ao template" nunca sumia e o layout arrastado ficava preso na
+  // empresa para sempre, sem caminho de volta.
+  it('arrastar uma camada na empresa e depois resetar restaura a posição do template e some com o botão', () => {
+    const { container } = renderStep(withBaseImage());
+    goTo(/Nubank/);
+
+    const canvas = container.querySelector('[data-testid="overlay-canvas"]')!;
+    stubRect(canvas, 600, 314); // metade do canvas de referência (banner: 1200×628)
+
+    // Posição default do destaque é x=0.30 → left: 30%.
+    expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ left: '30%' });
+    expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByText('WORKSHOP ABM'), { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+    // 60px de 600 = 0.1 do canvas, somado ao x default de 0.30 → left: 40%.
+    // O arrasto virou override, e o botão de reset aparece.
+    expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ left: '40%' });
+    const resetButton = screen.getByRole('button', { name: /Voltar ao template/ });
+
+    fireEvent.click(resetButton);
+
+    // O layout volta ao do template e o botão some — sem os dois, a empresa
+    // fica com um layout descolado do template e sem caminho de volta.
+    expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ left: '30%' });
+    expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
   });
 });

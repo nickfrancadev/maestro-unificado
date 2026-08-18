@@ -47,6 +47,16 @@ export const AD_FORMAT_SIZE: Record<AdFormat, { w: number; h: number }> = {
   banner: { w: 1200, h: 628 },
 };
 
+// Classe Tailwind do aspect-ratio do canvas, por formato — usada no preview
+// (CreativeStep.tsx) e nos dois branches do OverlayCanvas (com e sem
+// imagem-base). Strings literais de propósito, não montadas a partir de
+// `AD_FORMAT_SIZE`: o scanner do Tailwind lê o texto-fonte, não executa JS,
+// então uma classe arbitrária construída em runtime (`aspect-[${w}/${h}]`)
+// não seria encontrada e o CSS não seria gerado.
+export function aspectClass(format: AdFormat): string {
+  return format === 'square' ? 'aspect-[1200/1200]' : 'aspect-[1200/628]';
+}
+
 // ESPELHADO em `supabase/functions/make-server-a4d5bbe0/overlaySvg.ts`.
 // O edge function roda em Deno e não pode importar de `src/`, então a
 // duplicação é inevitável — `overlayLayout.test.ts` importa os dois módulos e
