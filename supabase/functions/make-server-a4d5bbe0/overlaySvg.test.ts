@@ -158,6 +158,88 @@ describe('buildOverlaySvg — logos', () => {
   });
 });
 
+describe('buildOverlaySvg — logo SVG vira <svg> aninhado', () => {
+  // Mesmo SVG em dois encodings, para provar que a detecção funciona nos dois
+  // e que o resultado final é idêntico — só a transmissão muda, não a saída.
+  const SVG_COM_VIEWBOX =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50"><rect x="5" y="5" width="10" height="10" fill="#FF5F39"/></svg>';
+
+  const logo = (href: string, over = {}) => ({
+    href, x: 0.5, y: 0.5, sizePx: 200, wrap: 'square' as const, ...over,
+  });
+
+  it('SVG data-URI URL-encoded vira <svg> aninhado e não deixa <image> para aquele logo', () => {
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(SVG_COM_VIEWBOX)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).not.toContain('href="data:image/svg+xml');
+    // Só a imagem-base deve continuar usando <image>.
+    expect((svg.match(/<image /g) || []).length).toBe(1);
+    expect(svg).toContain('viewBox="0 0 50 50"');
+  });
+
+  it('SVG data-URI base64 produz o mesmo <svg> aninhado que o URL-encoded', () => {
+    const hrefEncoded = `data:image/svg+xml;utf8,${encodeURIComponent(SVG_COM_VIEWBOX)}`;
+    const hrefBase64 = `data:image/svg+xml;base64,${btoa(SVG_COM_VIEWBOX)}`;
+    const svgEncoded = svgFor({ logos: [logo(hrefEncoded)] });
+    const svgBase64 = svgFor({ logos: [logo(hrefBase64)] });
+    expect(svgBase64).not.toContain('href="data:image/svg+xml');
+    expect(svgBase64).toContain('viewBox="0 0 50 50"');
+    expect(svgBase64).toBe(svgEncoded);
+  });
+
+  it('preserva o viewBox próprio do SVG interno em vez de sobrescrevê-lo', () => {
+    // Tem viewBox E width/height — se a derivação vencesse por engano, o
+    // teste pegaria (o viewBox derivado seria "0 0 80 80", não "0 0 24 24").
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="80" height="80">' +
+      '<path d="M0 0h24v24H0z" fill="#111"/></svg>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('viewBox="0 0 24 24"');
+    expect(svg).not.toContain('viewBox="0 0 80 80"');
+  });
+
+  it('sem viewBox, deriva de width/height do SVG interno', () => {
+    // O fixture do mock do Brand Kit: sem viewBox, com width/height.
+    const href =
+      'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22120%22%20height%3D%2240%22%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%2216%22%20height%3D%2216%22%20rx%3D%223%22%20fill%3D%22%23FF5F39%22%2F%3E%3C%2Fsvg%3E';
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('viewBox="0 0 120 40"');
+  });
+
+  it('sem viewBox e sem width/height, cai no quadrado 0 0 100 100', () => {
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('viewBox="0 0 100 100"');
+  });
+
+  it('não reemite width/height internos do SVG — o wrapper é quem manda no tamanho', () => {
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><rect width="10" height="10"/></svg>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    // O <svg> aninhado não pode carregar seu próprio width="120"/height="40"
+    // fixos — isso faria o logo ignorar o sizePx escolhido no editor.
+    expect(svg).not.toMatch(/<svg[^>]*width="120"/);
+    expect(svg).not.toMatch(/<svg[^>]*height="40"/);
+  });
+
+  // Não-regressão: PNG continua indo por <image>, comportamento inalterado.
+  it('PNG data-URI continua usando <image>, não é afetado pela detecção de SVG', () => {
+    const svg = svgFor({ logos: [logo('data:image/png;base64,BBBB')] });
+    expect(svg).toContain('<image');
+    expect(svg).toContain('href="data:image/png;base64,BBBB"');
+  });
+
+  // Não-regressão do fix de escaping: URL absoluta com "&" continua <image> e
+  // continua escapada.
+  it('URL absoluta com "&" continua usando <image> e continua escapada', () => {
+    const href = 'https://x.test/logo.png?token=abc&Expires=123';
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('<image');
+    expect(svg).toContain('href="https://x.test/logo.png?token=abc&amp;Expires=123"');
+  });
+});
+
 describe('buildOverlaySvg — href da imagem-base', () => {
   // Mesma classe de bug do href dos logos, só que na imagem de fundo: URL
   // assinada com "&" na query quebra o XML se o href não for escapado.

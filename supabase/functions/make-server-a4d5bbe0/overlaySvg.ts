@@ -90,6 +90,69 @@ function logoInnerPadPx(wrap: LogoWrap, boxW: number): number {
   return boxW * ratio;
 }
 
+// O resvg tem suporte irregular a SVG referenciado por `<image href="data:...">`.
+// Para não apostar nisso, todo logo que chega como SVG vira `<svg>` ANINHADO —
+// isso é núcleo do formato, o resvg renderiza com certeza. `href` só cai aqui
+// quando é um data-URI `image/svg+xml`; qualquer outra coisa (raster, URL
+// absoluta) continua pelo caminho `<image>` de sempre.
+//
+// Cobre os dois encodings comuns de data-URI: `;base64,` e o URL-encoded cru
+// (`,` sem `;base64`) que é o formato do MOCK_LOGO em `src/app/campaigns/wizard/brandKit.ts`.
+function decodeSvgDataUri(href: string): string | null {
+  const match = href.match(/^data:image\/svg\+xml(;[^,]*)?,(.*)$/s);
+  if (!match) return null;
+  const params = match[1] ?? "";
+  const payload = match[2];
+  try {
+    if (params.includes("base64")) {
+      // `atob` devolve uma string "binária" (um char por byte); decodificar
+      // como UTF-8 de verdade evita mojibake se o SVG tiver acento.
+      const bytes = Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+    return decodeURIComponent(payload);
+  } catch {
+    return null;
+  }
+}
+
+// Prepara o markup do SVG interno para ser aninhado dentro do `<svg>` wrapper
+// que carrega x/y/width/height/viewBox da caixa do logo.
+function prepareNestedSvg(rawMarkup: string): { markup: string; viewBox: string } {
+  // O prólogo `<?xml ...?>` (comum em SVG exportado de ferramentas de design)
+  // não é válido no meio de um documento SVG.
+  let markup = rawMarkup.replace(/^\s*<\?xml[^>]*\?>\s*/i, "");
+
+  const svgTagMatch = markup.match(/<svg\b[^>]*>/i);
+  const svgTag = svgTagMatch ? svgTagMatch[0] : "";
+
+  // Sintetiza o viewBox: usa o do SVG interno se existir; senão deriva de
+  // width/height dele; senão cai num quadrado 100x100. Sem viewBox o
+  // conteúdo não escala e o logo sai no tamanho errado dentro do wrap.
+  const viewBoxAttr = svgTag.match(/\bviewBox="([^"]*)"/i);
+  const widthAttr = svgTag.match(/\bwidth="([\d.]+)(?:px)?"/i);
+  const heightAttr = svgTag.match(/\bheight="([\d.]+)(?:px)?"/i);
+  const viewBox = viewBoxAttr
+    ? viewBoxAttr[1]
+    : widthAttr && heightAttr
+    ? `0 0 ${widthAttr[1]} ${heightAttr[1]}`
+    : "0 0 100 100";
+
+  // `xmlns` duplicado (o documento externo já declara o namespace) e
+  // `width`/`height` internos saem da tag <svg> interna — quem manda no
+  // tamanho final é o wrapper; sem isso o logo ignoraria o `sizePx`
+  // escolhido no editor e renderizaria sempre no tamanho nativo do SVG.
+  if (svgTag) {
+    const cleanedTag = svgTag
+      .replace(/\s+xmlns="[^"]*"/i, "")
+      .replace(/\s+width="[^"]*"/i, "")
+      .replace(/\s+height="[^"]*"/i, "");
+    markup = markup.replace(svgTag, cleanedTag);
+  }
+
+  return { markup, viewBox };
+}
+
 export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
   const { w: CW, h: CH } = AD_FORMAT_SIZE[opts.format];
   const parts: string[] = [];
@@ -139,10 +202,19 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
     }
 
     const pad = logoInnerPadPx(l.wrap, boxW);
-    parts.push(
-      `<image x="${r(boxX + pad)}" y="${r(boxY + pad)}" width="${r(boxW - pad * 2)}" ` +
-      `height="${r(boxH - pad * 2)}" href="${escapeXml(l.href)}" preserveAspectRatio="xMidYMid meet"/>`,
-    );
+    const innerSvgMarkup = decodeSvgDataUri(l.href);
+    if (innerSvgMarkup !== null) {
+      const { markup, viewBox } = prepareNestedSvg(innerSvgMarkup);
+      parts.push(
+        `<svg x="${r(boxX + pad)}" y="${r(boxY + pad)}" width="${r(boxW - pad * 2)}" ` +
+        `height="${r(boxH - pad * 2)}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">${markup}</svg>`,
+      );
+    } else {
+      parts.push(
+        `<image x="${r(boxX + pad)}" y="${r(boxY + pad)}" width="${r(boxW - pad * 2)}" ` +
+        `height="${r(boxH - pad * 2)}" href="${escapeXml(l.href)}" preserveAspectRatio="xMidYMid meet"/>`,
+      );
+    }
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
