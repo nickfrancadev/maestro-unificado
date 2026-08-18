@@ -152,3 +152,27 @@ describe('AD_FORMAT_SIZE', () => {
     expect(AD_FORMAT_SIZE.banner.w).toBe(1200);
   });
 });
+
+// O edge function roda em Deno e não pode importar de `src/`, então as
+// constantes de estilo existem duas vezes. Este teste é o que impede que
+// divirjam — sem ele, mudar o padding num lado só faz o preview mentir sobre o
+// PNG que vai rodar no LinkedIn, e ninguém percebe até olhar o anúncio.
+import {
+  OVERLAY_STYLE as SERVER_STYLE,
+  AD_FORMAT_SIZE as SERVER_SIZE,
+  LOGO_WRAP_ASPECT as SERVER_ASPECT,
+} from '../../../../supabase/functions/make-server-a4d5bbe0/overlaySvg';
+
+describe('paridade cliente ↔ servidor', () => {
+  it('OVERLAY_STYLE é idêntico nos dois módulos', () => {
+    expect({ ...OVERLAY_STYLE }).toEqual({ ...SERVER_STYLE });
+  });
+
+  it('AD_FORMAT_SIZE é idêntico nos dois módulos', () => {
+    expect(AD_FORMAT_SIZE).toEqual(SERVER_SIZE);
+  });
+
+  it('LOGO_WRAP_ASPECT é idêntico nos dois módulos', () => {
+    expect(LOGO_WRAP_ASPECT).toEqual(SERVER_ASPECT);
+  });
+});
