@@ -5,8 +5,14 @@
 // rasterização com resvg fica em `index.ts`, que é quem tem as dependências.
 //
 // As constantes abaixo ESPELHAM `src/app/campaigns/wizard/overlayLayout.ts`.
-// O edge function não pode importar de `src/`, então a paridade é garantida por
-// `overlayLayout.test.ts`, que importa os dois módulos e compara.
+// O edge function não pode importar de `src/`, então a duplicação é
+// inevitável. `overlayLayout.test.ts` (bloco "paridade cliente ↔ servidor")
+// compara essas constantes com o cliente E, à parte, a geometria que este
+// arquivo reescreve à mão dentro de `buildOverlaySvg` — boxW/boxH/x/y de
+// texto e de logo — contra o `Rect` que `textLayerRect`/`logoLayerRect`
+// devolvem no cliente. NÃO cobre tudo: o círculo do logo (cx/cy/r, sem
+// `<rect>`), a baseline do `<text>`, o padding interno do wrap e o viewBox
+// seguem sem checagem cruzada.
 
 export type AdFormat = "square" | "banner";
 export type LogoWrap = "circle" | "square" | "rect" | "none";

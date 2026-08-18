@@ -167,6 +167,7 @@ export interface ResolvedImageConfig {
 export function resolveImageConfig(data: CreativeData, companyId?: string): ResolvedImageConfig {
   const tpl = data.templateLogo;
   const ovr = companyId ? data.overrides[companyId] : undefined;
+  const showTargetLogo = ovr?.showTargetLogo ?? tpl.showTargetLogo;
   return {
     imageMode: ovr?.imageMode ?? data.imageMode,
     baseImageUrl: ovr?.baseImageUrl ?? tpl.baseImageUrl,
@@ -174,13 +175,15 @@ export function resolveImageConfig(data: CreativeData, companyId?: string): Reso
     basePrompt: ovr?.basePrompt ?? tpl.basePrompt,
     textoDestaque: ovr?.textoDestaque ?? tpl.textoDestaque,
     textoComplementar: ovr?.textoComplementar ?? tpl.textoComplementar,
-    showTargetLogo: ovr?.showTargetLogo ?? tpl.showTargetLogo,
+    showTargetLogo,
     fontFamily: ovr?.fontFamily ?? data.brandKit.fontFamily,
     format: ovr?.format ?? tpl.format,
     // `withLayoutDefaults` é o degrau da migração: campanhas salvas antes do
     // editor não têm `layout`, e `showTargetLogo` era a única expressão de
-    // "leva logo da conta?".
-    layout: ovr?.layout ?? withLayoutDefaults(tpl.layout, tpl.showTargetLogo),
+    // "leva logo da conta?". Usa o showTargetLogo JÁ RESOLVIDO (da empresa,
+    // se houver override; do template, senão) — nunca o do template puro,
+    // ou o fallback reintroduz o logo que a empresa desligou.
+    layout: ovr?.layout ?? withLayoutDefaults(tpl.layout, showTargetLogo),
   };
 }
 

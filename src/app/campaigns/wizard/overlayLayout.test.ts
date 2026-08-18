@@ -227,6 +227,7 @@ import {
   OVERLAY_STYLE as SERVER_STYLE,
   AD_FORMAT_SIZE as SERVER_SIZE,
   LOGO_WRAP_ASPECT as SERVER_ASPECT,
+  buildOverlaySvg,
 } from '../../../../supabase/functions/make-server-a4d5bbe0/overlaySvg';
 
 describe('paridade cliente ↔ servidor', () => {
@@ -241,4 +242,70 @@ describe('paridade cliente ↔ servidor', () => {
   it('LOGO_WRAP_ASPECT é idêntico nos dois módulos', () => {
     expect(LOGO_WRAP_ASPECT).toEqual(SERVER_ASPECT);
   });
+
+  // As três comparações acima só travam as CONSTANTES. A geometria de
+  // verdade — `textLayerRect`/`logoLayerRect`, aqui — é reescrita à mão,
+  // inline, dentro de `buildOverlaySvg` no servidor (boxW/boxH/x/y do texto e
+  // do logo). Nada impedia essas duas aritméticas de divergirem mesmo com as
+  // constantes idênticas — ex.: um padding extra somado só de um lado. Os
+  // testes abaixo comparam o `Rect` que as funções do cliente devolvem contra
+  // os atributos x/y/width/height que o servidor de fato escreve no `<rect>`
+  // do SVG gerado, extraídos com uma regex simples da tag.
+  function firstRectAttrs(svg: string): { x: number; y: number; w: number; h: number } {
+    const tag = svg.match(/<rect\b[^>]*>/)?.[0];
+    if (!tag) throw new Error('nenhum <rect> encontrado no SVG gerado pelo servidor');
+    const attr = (name: string) => {
+      const m = tag.match(new RegExp(`${name}="([^"]*)"`));
+      if (!m) throw new Error(`atributo "${name}" ausente na tag <rect>`);
+      return Number(m[1]);
+    };
+    return { x: attr('x'), y: attr('y'), w: attr('width'), h: attr('height') };
+  }
+
+  it.each(['square', 'banner'] as const)(
+    'textLayerRect bate com o <rect> da caixa de texto que o servidor gera (%s)',
+    (format) => {
+      const layer = { x: 0.37, y: 0.62, sizePx: 44, color: '#FFFFFF', backdrop: 'box' as const };
+      const widthPx = 173; // simula a medição real que o editor manda (widthPx)
+      const expected = textLayerRect(layer, widthPx, format);
+
+      const svg = buildOverlaySvg({
+        format,
+        baseHref: 'data:image/png;base64,',
+        fontFamily: 'Arial',
+        texts: [{ text: 'Rótulo', ...layer, weight: 700, widthPx }],
+        logos: [],
+      });
+      const got = firstRectAttrs(svg);
+
+      expect(got.x).toBeCloseTo(expected.x, 2);
+      expect(got.y).toBeCloseTo(expected.y, 2);
+      expect(got.w).toBeCloseTo(expected.w, 2);
+      expect(got.h).toBeCloseTo(expected.h, 2);
+    },
+  );
+
+  // Wrap 'rect' de propósito, não 'square': é o único wrap não-1:1, então é o
+  // que de fato exercita LOGO_WRAP_ASPECT na derivação da altura.
+  it.each(['square', 'banner'] as const)(
+    'logoLayerRect bate com o <rect> do wrap "rect" que o servidor gera (%s)',
+    (format) => {
+      const layer = { enabled: true, x: 0.2, y: 0.75, sizePx: 250, wrap: 'rect' as const };
+      const expected = logoLayerRect(layer, format);
+
+      const svg = buildOverlaySvg({
+        format,
+        baseHref: 'data:image/png;base64,',
+        fontFamily: 'Arial',
+        texts: [],
+        logos: [{ href: 'https://example.com/logo.png', x: layer.x, y: layer.y, sizePx: layer.sizePx, wrap: layer.wrap }],
+      });
+      const got = firstRectAttrs(svg);
+
+      expect(got.x).toBeCloseTo(expected.x, 2);
+      expect(got.y).toBeCloseTo(expected.y, 2);
+      expect(got.w).toBeCloseTo(expected.w, 2);
+      expect(got.h).toBeCloseTo(expected.h, 2);
+    },
+  );
 });

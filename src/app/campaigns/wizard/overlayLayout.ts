@@ -59,8 +59,10 @@ export function aspectClass(format: AdFormat): string {
 
 // ESPELHADO em `supabase/functions/make-server-a4d5bbe0/overlaySvg.ts`.
 // O edge function roda em Deno e não pode importar de `src/`, então a
-// duplicação é inevitável — `overlayLayout.test.ts` importa os dois módulos e
-// falha se algum número divergir.
+// duplicação é inevitável — `overlayLayout.test.ts` (bloco "paridade cliente
+// ↔ servidor") importa os dois módulos, falha se algum número aqui divergir
+// do espelho, e compara também a geometria de `textLayerRect`/`logoLayerRect`
+// contra o `<rect>` que `buildOverlaySvg` de fato escreve no SVG do servidor.
 export const OVERLAY_STYLE = {
   boxPadX: 22,
   boxPadY: 12,

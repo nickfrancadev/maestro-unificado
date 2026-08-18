@@ -57,4 +57,17 @@ describe('showTargetLogo legado', () => {
     delete (data.templateLogo as Partial<typeof data.templateLogo>).layout;
     expect(resolveImageConfig(data).layout.targetLogo.enabled).toBe(false);
   });
+
+  // Mesma migração, mas na ponta da empresa: ela desligou o logo da conta
+  // (`overrides.c1.showTargetLogo = false`) antes de o campo `layout` existir,
+  // então não tem `overrides.c1.layout`. O fallback tem de nascer do
+  // showTargetLogo RESOLVIDO (o da empresa), não do template — senão o logo
+  // que a empresa desligou reaparece no anúncio dela.
+  it('uma empresa antiga sem layout, mas com showTargetLogo=false, não herda o showTargetLogo do template', () => {
+    const data = createDefaultCreativeData();
+    data.templateLogo.showTargetLogo = true;
+    delete (data.templateLogo as Partial<typeof data.templateLogo>).layout;
+    data.overrides.c1 = { status: 'template', showTargetLogo: false };
+    expect(resolveImageConfig(data, 'c1').layout.targetLogo.enabled).toBe(false);
+  });
 });
