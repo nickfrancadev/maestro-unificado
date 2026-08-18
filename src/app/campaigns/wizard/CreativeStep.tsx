@@ -38,6 +38,7 @@ import {
   aspectClass,
   AD_FORMAT_SIZE,
   maxTextSizePx,
+  effectiveTextSize,
   MIN_TEXT_SIZE_PX,
   type OverlayLayout,
   type LogoLayer,
@@ -1464,6 +1465,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 id="targetLogo"
                 label="Logo da conta"
                 layer={imageCfg.layout.targetLogo}
+                geometryLocked={imageCfg.layout.paired}
+                geometryLockedHint="Segue o wrap e o tamanho do Meu logo enquanto estiverem agrupados"
                 selected={selectedLayer === 'targetLogo'}
                 onSelect={() => setSelectedLayer('targetLogo')}
                 onChange={(next) => setLayout({ ...imageCfg.layout, targetLogo: next })}
@@ -1945,22 +1948,17 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
   // canvas e o PNG sai cortado. Mede uma vez no tamanho atual e escala. Passa
   // `weight` porque negrito é mais largo que regular no mesmo tamanho — medir
   // sem peso subestima a largura e o teto fica frouxo demais.
-  const maxSize = maxTextSizePx(
-    measureTextWidthPx(text, layer.sizePx, fontFamily, weight), layer.sizePx, format,
-  );
-  // Valor efetivo: o que o slider mostra, o que o badge anuncia e o que
-  // acaba gravado — os três TÊM que concordar. `Math.min` sozinho só
-  // resolvia a exibição; a chamada abaixo é o que resolve a gravação.
-  const effectiveSize = Math.min(layer.sizePx, maxSize);
-
-  // Clampa na ESCRITA, não só na exibição: se o teto cair abaixo do tamanho
-  // gravado (o texto ficou mais largo, por exemplo), o layout tem que
-  // refletir o novo teto — senão o controle mente (mostra 29px no slider
-  // enquanto o badge e o preview continuam nos 160px antigos) e o texto vaza
-  // do canvas, exatamente o que o teto existia para impedir.
-  useEffect(() => {
-    if (layer.sizePx > maxSize) onChange({ ...layer, sizePx: maxSize });
-  }, [layer.sizePx, maxSize, onChange]);
+  const measuredWidthPx = measureTextWidthPx(text, layer.sizePx, fontFamily, weight);
+  const maxSize = maxTextSizePx(measuredWidthPx, layer.sizePx, format);
+  // Valor efetivo: DERIVADO a cada render pela mesma função que o preview usa
+  // (`effectiveTextSize`), nunca gravado. Uma versão anterior clampava na
+  // escrita via `useEffect` — e abrir uma empresa cujo layout herdado do
+  // template já estava acima do teto criava um override sozinho, sem ação
+  // nenhuma do usuário, porque o próprio efeito reescrevia `layer.sizePx` no
+  // primeiro render. Derivar elimina a escrita: o valor gravado nunca muda
+  // aqui, só o que a tela mostra. "Pedi 160; a 160 este texto renderiza 80;
+  // encurto o texto e recupero os 160" — sem perder o que foi escolhido.
+  const effectiveSize = effectiveTextSize(layer, measuredWidthPx, format);
 
   return (
     <div
@@ -2031,12 +2029,18 @@ const WRAP_LABEL: Record<LogoWrap, string> = {
   circle: 'Círculo', square: 'Quadrado', rect: 'Retângulo', none: 'Sem fundo',
 };
 
-function LogoLayerControls({ id, label, layer, disabled, disabledHint, selected, onSelect, onChange }: {
+function LogoLayerControls({ id, label, layer, disabled, disabledHint, geometryLocked, geometryLockedHint, selected, onSelect, onChange }: {
   id: string;
   label: string;
   layer: LogoLayer;
   disabled?: boolean;
   disabledHint?: string;
+  // No modo par, a geometria (wrap/tamanho) do logo da conta é DERIVADA da do
+  // anunciante (ver `effectiveLayout`) — editar aqui não tem efeito nenhum no
+  // preview nem no PNG final. `enabled` continua sendo desta camada, então só
+  // Wrap e Tamanho ficam bloqueados, não o checkbox inteiro.
+  geometryLocked?: boolean;
+  geometryLockedHint?: string;
   selected: boolean;
   onSelect: () => void;
   onChange: (next: LogoLayer) => void;
@@ -2061,16 +2065,17 @@ function LogoLayerControls({ id, label, layer, disabled, disabledHint, selected,
 
       {layer.enabled && !disabled && (
         <>
-          <div className="flex items-center gap-1.5 mt-1">
+          <div className="flex items-center gap-1.5 mt-1" title={geometryLocked ? geometryLockedHint : undefined}>
             <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Wrap</span>
             {(['circle', 'square', 'rect', 'none'] as const).map((w) => (
               <button
                 key={w}
                 type="button"
+                disabled={geometryLocked}
                 aria-pressed={layer.wrap === w}
                 aria-label={`${WRAP_LABEL[w]} para ${label}`}
                 onClick={() => { onSelect(); onChange({ ...layer, wrap: w }); }}
-                className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${
+                className={`px-2 py-0.5 text-[10px] font-semibold rounded border disabled:opacity-40 disabled:cursor-not-allowed ${
                   layer.wrap === w
                     ? 'bg-[#FF5F39] border-[#FF5F39] text-white'
                     : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
@@ -2081,7 +2086,7 @@ function LogoLayerControls({ id, label, layer, disabled, disabledHint, selected,
             ))}
           </div>
 
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1" title={geometryLocked ? geometryLockedHint : undefined}>
             <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
               Tamanho do {label}
             </label>
@@ -2091,12 +2096,16 @@ function LogoLayerControls({ id, label, layer, disabled, disabledHint, selected,
               min={60}
               max={420}
               step={10}
+              disabled={geometryLocked}
               value={layer.sizePx}
               onChange={(e) => { onSelect(); onChange({ ...layer, sizePx: Number(e.target.value) }); }}
-              className="flex-1 accent-[#FF5F39]"
+              className="flex-1 accent-[#FF5F39] disabled:opacity-40 disabled:cursor-not-allowed"
             />
             <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{layer.sizePx}px</span>
           </div>
+          {geometryLocked && (
+            <p className="text-[9px] text-slate-400 mt-0.5">{geometryLockedHint}</p>
+          )}
         </>
       )}
     </div>

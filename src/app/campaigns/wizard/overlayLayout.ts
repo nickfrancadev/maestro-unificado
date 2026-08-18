@@ -169,17 +169,67 @@ export function pairedTargetLayer(advertiser: LogoLayer, format: AdFormat): Logo
   };
 }
 
+// Larguras medidas dos dois textos, NO TAMANHO GRAVADO (`layer.sizePx`, não
+// o efetivo — seria circular). Quem mede é sempre quem vai desenhar (preview
+// em DOM, resvg no servidor), porque a medição depende da fonte carregada.
+export interface MeasuredTextWidths {
+  destaqueWidthPx: number;
+  complementarWidthPx: number;
+}
+
+// Tamanho efetivo de UMA camada de texto: o valor gravado, clampado pelo teto
+// vivo dado quanto o texto mede nesse tamanho. Puramente derivado — não
+// escreve nada em lugar nenhum. É a peça que o card (badge/slider) e o
+// preview/payload (via `effectiveLayout` abaixo) compartilham, para nunca
+// divergirem sobre "que tamanho isso realmente renderiza".
+//
+// Escolhido DERIVAR em vez de gravar depois que persistir o clamp (numa
+// versão anterior, via efeito) se mostrou destrutivo: abrir uma empresa cujo
+// layout herdado do template já estava acima do teto criava um override
+// SOZINHO, sem nenhuma ação do usuário — e como o clamp reaparecia a cada
+// render, "Voltar ao template" nunca conseguia limpar o override que ele
+// mesmo recriava. Derivar elimina a escrita: "pedi 160; com este texto
+// renderiza 80; encurto o texto e recupero 160" — sem perder o valor que o
+// usuário escolheu.
+export function effectiveTextSize(layer: TextLayer, measuredWidthPx: number, format: AdFormat): number {
+  return Math.min(layer.sizePx, maxTextSizePx(measuredWidthPx, layer.sizePx, format));
+}
+
 // Layout EFETIVO: no modo par a GEOMETRIA do logo da conta deixa de ser
 // independente (x/y/sizePx/wrap seguem o anunciante). `enabled` continua
 // sendo de cada camada — "Agrupar como par" liga os dois no clique porque é
 // um pedido explícito do usuário, mas depois disso desmarcar um checkbox tem
-// que desligar o logo de verdade, mesmo com paired=true. Preview e payload
-// chamam isto, nunca o layout cru — é o que garante que a imagem gerada seja
-// a que estava na tela.
-export function effectiveLayout(layout: OverlayLayout, format: AdFormat): OverlayLayout {
-  if (!layout.paired) return layout;
-  return {
-    ...layout,
-    targetLogo: { ...pairedTargetLayer(layout.advertiserLogo, format), enabled: layout.targetLogo.enabled },
-  };
+// que desligar o logo de verdade, mesmo com paired=true.
+//
+// `measured`, se vier, também deriva `destaque.sizePx`/`complementar.sizePx`
+// pelo teto vivo (ver `effectiveTextSize`). Omitido, os dois textos saem como
+// estão gravados — quem não mede (ainda) não quebra.
+//
+// Preview e payload chamam isto, nunca o layout cru — é o que garante que a
+// imagem gerada seja a que estava na tela.
+export function effectiveLayout(
+  layout: OverlayLayout,
+  format: AdFormat,
+  measured?: MeasuredTextWidths,
+): OverlayLayout {
+  if (!layout.paired && !measured) return layout;
+
+  let result = layout;
+
+  if (layout.paired) {
+    result = {
+      ...result,
+      targetLogo: { ...pairedTargetLayer(layout.advertiserLogo, format), enabled: layout.targetLogo.enabled },
+    };
+  }
+
+  if (measured) {
+    result = {
+      ...result,
+      destaque: { ...result.destaque, sizePx: effectiveTextSize(layout.destaque, measured.destaqueWidthPx, format) },
+      complementar: { ...result.complementar, sizePx: effectiveTextSize(layout.complementar, measured.complementarWidthPx, format) },
+    };
+  }
+
+  return result;
 }

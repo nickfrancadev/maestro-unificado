@@ -221,11 +221,15 @@ describe('CreativeStep — controles de camada', () => {
     expect(Number(slider.max)).toBeGreaterThan(0);
   });
 
-  // O teto vivo precisa travar o valor GRAVADO, não só a exibição do slider.
-  // Stuba `canvas.getContext('2d')` para controlar a medição de verdade — sem
-  // isso jsdom devolve null e `measureTextWidthPx` sempre cai no fallback de
-  // 0, o que mascara qualquer teto abaixo do máximo duro (160).
-  describe('o teto vivo trava o valor gravado, não só a exibição', () => {
+  // O teto vivo precisa aparecer no badge e no preview SEM gravar nada — é
+  // um valor DERIVADO a cada render (`effectiveTextSize`), não escrito de
+  // volta no layout. Fix round 1 tentou gravar via `useEffect`; fix round 2
+  // reverteu isso porque a escrita criava um override de empresa sozinha
+  // (ver describe abaixo). Stuba `canvas.getContext('2d')` para controlar a
+  // medição de verdade — sem isso jsdom devolve null e `measureTextWidthPx`
+  // sempre cai no fallback de 0, o que mascara qualquer teto abaixo do
+  // máximo duro (160).
+  describe('o teto vivo deriva o valor efetivo, sem gravar nada', () => {
     let getContextSpy: ReturnType<typeof vi.spyOn> | undefined;
 
     afterEach(() => {
@@ -233,13 +237,11 @@ describe('CreativeStep — controles de camada', () => {
       getContextSpy = undefined;
     });
 
-    it('quando o teto cai abaixo do tamanho gravado, o layout é reescrito e o badge mostra o valor efetivo', () => {
-      // A largura mockada ESCALA com o `px` do `ctx.font`, igual à medição
-      // real (a largura de um texto é linear no tamanho da fonte) — uma
-      // largura fixa, independente do tamanho pedido, faria o teto colapsar
-      // em cascata a cada re-render (160→80→40→…) em vez de estabilizar.
-      // 14.45px de largura por px de fonte dá teto de 80: largura útil do
-      // canvas (1156px) / 14.45 = 80.
+    // A largura mockada ESCALA com o `px` do `ctx.font`, igual à medição real
+    // (a largura de um texto é linear no tamanho da fonte). 14.45px de
+    // largura por px de fonte dá teto de 80: largura útil do canvas (1156px)
+    // / 14.45 = 80.
+    function stubLinearCanvasMeasure() {
       getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => {
         const ctx = {
           font: '',
@@ -250,6 +252,10 @@ describe('CreativeStep — controles de camada', () => {
         };
         return ctx as unknown as CanvasRenderingContext2D;
       });
+    }
+
+    it('quando o teto cai abaixo do tamanho gravado, o badge e o preview mostram o valor efetivo', () => {
+      stubLinearCanvasMeasure();
 
       const d = withBaseImage();
       d.templateLogo.layout = {
@@ -264,16 +270,47 @@ describe('CreativeStep — controles de camada', () => {
 
       // O badge tem que mostrar o valor EFETIVO (80), não o cru (160) — se o
       // clamp fosse só de exibição no slider, o badge continuaria em 160px,
-      // exatamente como o revisor reproduziu.
+      // exatamente como o revisor reproduziu no round 1.
       const row = slider.closest('div')!;
       expect(within(row).getByText('80px')).toBeInTheDocument();
       expect(within(row).queryByText('160px')).not.toBeInTheDocument();
 
-      // O preview lê `layout.destaque.sizePx` direto — se o clamp fosse só de
-      // exibição no controle, o preview continuaria renderizando 160px e o
-      // texto vazaria do canvas, que é exatamente o que o teto existe para
-      // impedir.
+      // O preview mede com a mesma função (`effectiveLayout` recebe as
+      // larguras medidas) — se divergisse, o preview continuaria
+      // renderizando 160px e o texto vazaria do canvas, que é exatamente o
+      // que o teto existe para impedir.
       expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ fontSize: '80px' });
+    });
+
+    // Regressão do round 2: a versão que GRAVAVA o clamp (via `useEffect`)
+    // escrevia em `layout.destaque.sizePx` assim que uma empresa herdava um
+    // layout de template já acima do teto — sem NENHUMA ação do usuário além
+    // de abrir a empresa. Isso criava um override permanente (a empresa
+    // parava de herdar edições futuras do template) e ressuscitava "Voltar
+    // ao template" como um botão que nunca conseguia limpar o próprio
+    // override que ele mesmo recriava a cada render.
+    it('abrir uma empresa com o layout do template acima do teto não cria override nenhum', () => {
+      stubLinearCanvasMeasure();
+
+      const d = withBaseImage();
+      d.templateLogo.layout = {
+        ...d.templateLogo.layout,
+        destaque: { ...d.templateLogo.layout.destaque, sizePx: 160 },
+      };
+      renderStep(d);
+
+      // Só abre a empresa. Nenhuma outra interação.
+      goTo(/Nubank/);
+
+      // A empresa deriva o mesmo teto (herda o layout cru do template, sem
+      // override) — prova que a ausência de override não é por acidente de
+      // não ter clampado nada.
+      const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
+      expect(Number(slider.max)).toBe(80);
+      expect(within(slider.closest('div')!).getByText('80px')).toBeInTheDocument();
+
+      // E nenhum override foi criado: "Voltar ao template" não existe.
+      expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
     });
   });
 
@@ -355,6 +392,24 @@ describe('CreativeStep — logos', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Desagrupar/ })); // desagrupa
     expect(screen.queryByAltText('Logo da conta')).not.toBeInTheDocument();
+  });
+
+  // Mesma família de controle morto que o round 1 limpou no checkbox: com
+  // `paired` ligado, a geometria (wrap/tamanho) do "Logo da conta" é DERIVADA
+  // da do anunciante (`effectiveLayout`) — editar aqui não muda nada no
+  // preview nem no PNG final. Ficar editável sem efeito nenhum é enganoso.
+  it('com "Agrupar como par" ligado, Wrap e Tamanho do "Logo da conta" ficam desabilitados', () => {
+    const d = withBaseImage();
+    d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
+    renderStep(d);
+    goTo(/Template global/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Agrupar como par/ }));
+
+    expect(screen.getByRole('button', { name: /Círculo para Logo da conta/ })).toBeDisabled();
+    expect(screen.getByLabelText(/Tamanho do Logo da conta/)).toBeDisabled();
+    // O checkbox continua funcional — só a geometria fica travada.
+    expect(screen.getByLabelText('Logo da conta')).not.toBeDisabled();
   });
 });
 

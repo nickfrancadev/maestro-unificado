@@ -83,7 +83,6 @@ export function OverlayCanvas({
   const [measuredWidth, setMeasuredWidth] = useState(0);
 
   const { w: CW } = AD_FORMAT_SIZE[format];
-  const eff = effectiveLayout(layout, format);
 
   useEffect(() => {
     if (typeof document === 'undefined' || !document.fonts) return;
@@ -162,6 +161,17 @@ export function OverlayCanvas({
       </div>
     );
   }
+
+  // Medido no tamanho GRAVADO (`layout.destaque.sizePx`), não no efetivo —
+  // seria circular. É a entrada que `effectiveLayout` usa para derivar o
+  // tamanho que realmente cabe, sem escrever nada de volta no layout. Task 8:
+  // o payload da composição precisa medir do MESMO jeito (mesmo texto, mesma
+  // fonte, mesmo peso) antes de desenhar o PNG, senão o resultado final
+  // diverge do que esta tela mostrou.
+  const eff = effectiveLayout(layout, format, {
+    destaqueWidthPx: measureTextWidthPx(destaque, layout.destaque.sizePx, fontFamily, 700),
+    complementarWidthPx: measureTextWidthPx(complementar, layout.complementar.sizePx, fontFamily, 400),
+  });
 
   // `measuredWidth` só é 0 antes da primeira medição (ver `useLayoutEffect`
   // acima); a partir daí segue a largura real do container.

@@ -8,6 +8,7 @@ import {
   clampCenter,
   pairedTargetLayer,
   effectiveLayout,
+  effectiveTextSize,
   maxTextSizePx,
   OVERLAY_STYLE,
   LOGO_WRAP_ASPECT,
@@ -141,6 +142,49 @@ describe('effectiveLayout', () => {
     // o da conta continua desligado porque o usuário desmarcou.
     expect(e.advertiserLogo.enabled).toBe(true);
     expect(e.targetLogo.enabled).toBe(false);
+  });
+
+  // Fix round 2: o clamp do teto vivo deixou de ser gravado (era um
+  // `useEffect` que reescrevia `layer.sizePx` — destrutivo, e criava overrides
+  // de empresa sozinho). Agora `measured` é opcional e só DERIVA o tamanho
+  // efetivo; sem ele, o layout sai intacto, e o `sizePx` gravado nunca muda.
+  it('sem measured, os textos saem como estão gravados — não deriva nada', () => {
+    const l = createDefaultOverlayLayout();
+    const e = effectiveLayout(l, 'banner');
+    expect(e.destaque.sizePx).toBe(l.destaque.sizePx);
+    expect(e.complementar.sizePx).toBe(l.complementar.sizePx);
+  });
+
+  it('com measured, deriva o tamanho efetivo dos dois textos sem tocar no gravado', () => {
+    const l = { ...createDefaultOverlayLayout(), destaque: { ...createDefaultOverlayLayout().destaque, sizePx: 160 } };
+    // 1156 (largura útil) / 2312 = 0.5 → a 160px gravados, o teto vivo é 80.
+    const e = effectiveLayout(l, 'banner', { destaqueWidthPx: 2312, complementarWidthPx: 0 });
+    expect(e.destaque.sizePx).toBe(80);
+    // O gravado não muda — é o que garante que "encurtar o texto e recuperar
+    // o tamanho pedido" funcione sem reescrita nenhuma.
+    expect(l.destaque.sizePx).toBe(160);
+    // Sem largura medida (0), o complementar não é limitado — cai no teto duro.
+    expect(e.complementar.sizePx).toBe(l.complementar.sizePx);
+  });
+});
+
+describe('effectiveTextSize', () => {
+  it('sem medição confiável (0), devolve o próprio gravado', () => {
+    const layer = { x: 0.3, y: 0.14, sizePx: 56, color: '#FFFFFF', backdrop: 'box' as const };
+    expect(effectiveTextSize(layer, 0, 'banner')).toBe(56);
+  });
+
+  it('com o gravado acima do teto medido, deriva o teto — sem alterar o objeto de entrada', () => {
+    const layer = { x: 0.3, y: 0.14, sizePx: 160, color: '#FFFFFF', backdrop: 'box' as const };
+    expect(effectiveTextSize(layer, 2312, 'banner')).toBe(80);
+    expect(layer.sizePx).toBe(160); // puro: não muta o argumento
+  });
+
+  it('com o gravado abaixo do teto medido, devolve o gravado — nunca ENGORDA sozinho', () => {
+    // 200px medidos a 40px de fonte cabem várias vezes na largura útil
+    // (1156px); o teto vem do máximo duro (160), bem acima do gravado.
+    const layer = { x: 0.3, y: 0.14, sizePx: 40, color: '#FFFFFF', backdrop: 'box' as const };
+    expect(effectiveTextSize(layer, 200, 'banner')).toBe(40);
   });
 });
 
