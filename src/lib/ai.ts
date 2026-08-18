@@ -2,6 +2,7 @@
 // Supabase Edge Function so GEMINI_API_KEY stays server-side.
 
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import type { OverlayLayout } from '@/app/campaigns/wizard/overlayLayout';
 
 const SERVER_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-a4d5bbe0`;
 const headers = () => ({
@@ -79,9 +80,7 @@ export async function generateCopy(input: {
 // endpoint requires a mode and photography is the safer B2B default; the
 // server's style directive is scheduled to be neutralised when a prompt is
 // present (see docs/superpowers/specs/2026-08-11-criativo-texto-imagem-design.md).
-// `format` is sent but NOT yet honoured: the endpoint hardcodes a 1.91:1
-// prompt. It travels now so the day the server learns about it, nothing on
-// the client has to change.
+// `format` define a proporção pedida no prompt (1:1 ou 1.91:1) desde 2026-08-18.
 export async function generateBaseImage(input: {
   client_brand_context?: string;
   prompt_brief?: string;
@@ -99,20 +98,34 @@ export async function generateBaseImage(input: {
   return res.json();
 }
 
-// Ask the IA composer to paint two text lines + the target company's logo
-// on top of a base image. Layout decisions are made by the model.
+// Compõe o anúncio final: os dois textos e os logos habilitados sobre a
+// imagem-base, nas posições que o usuário arrastou. NÃO usa IA — o servidor
+// monta um SVG a partir do layout e rasteriza com resvg.
 export async function composeLogoOverlay(input: {
   base_image_url: string;
   target_company_name: string;
   target_company_domain?: string | null;
-  show_target_logo: boolean;
+  advertiser_logo_url?: string | null;
+  // Fallback quando `advertiser_logo_url` está ausente: `brandKit.logo` é
+  // `null` por padrão, então sem isto o checkbox "Meu logo" não teria de
+  // onde tirar imagem nenhuma. O servidor resolve o logo a partir do domínio
+  // do mesmo jeito que já faz para `target_company_domain`.
+  advertiser_domain?: string | null;
   texto_destaque?: string;
   texto_complementar?: string;
   font_family?: string;
-  // Same caveat as generateBaseImage: the composer still renders 1200×628
-  // regardless of what is sent here.
   format?: 'square' | 'banner';
-}): Promise<{ success: boolean; url: string; filename: string; logo_applied: boolean }> {
+  layout: OverlayLayout;
+  // Larguras medidas no cliente com a fonte real, no tamanho EFETIVO (já
+  // depois do teto vivo) — é nesse tamanho que o servidor desenha a caixa de
+  // fundo do texto. Sem elas o servidor cai num estimador por contagem de
+  // caracteres e a caixa não bate com o preview.
+  destaque_width_px?: number;
+  complementar_width_px?: number;
+}): Promise<{
+  success: boolean; url: string; filename: string;
+  logo_applied: boolean; advertiser_logo_applied: boolean;
+}> {
   const res = await fetch(`${SERVER_BASE}/ai/compose-logo-overlay`, {
     method: 'POST',
     headers: headers(),
