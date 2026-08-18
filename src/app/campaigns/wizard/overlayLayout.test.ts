@@ -1,0 +1,154 @@
+import { describe, it, expect } from 'vitest';
+import {
+  AD_FORMAT_SIZE,
+  createDefaultOverlayLayout,
+  withLayoutDefaults,
+  textLayerRect,
+  logoLayerRect,
+  clampCenter,
+  pairedTargetLayer,
+  effectiveLayout,
+  maxTextSizePx,
+  OVERLAY_STYLE,
+  LOGO_WRAP_ASPECT,
+  PAIR_GAP_PX,
+} from './overlayLayout';
+
+describe('createDefaultOverlayLayout', () => {
+  it('nasce com o logo do anunciante DESLIGADO — brandKit.logo é null por default, e ligá-lo mostraria um buraco', () => {
+    expect(createDefaultOverlayLayout().advertiserLogo.enabled).toBe(false);
+  });
+
+  it('herda o "leva logo da conta?" do showTargetLogo legado', () => {
+    expect(createDefaultOverlayLayout(true).targetLogo.enabled).toBe(true);
+    expect(createDefaultOverlayLayout(false).targetLogo.enabled).toBe(false);
+  });
+
+  it('põe destaque e complementar no mesmo x, para empilharem alinhados', () => {
+    const l = createDefaultOverlayLayout();
+    expect(l.destaque.x).toBe(l.complementar.x);
+    expect(l.destaque.y).toBeLessThan(l.complementar.y);
+  });
+});
+
+describe('withLayoutDefaults', () => {
+  it('devolve o layout salvo quando existe', () => {
+    const saved = createDefaultOverlayLayout();
+    saved.destaque.sizePx = 99;
+    expect(withLayoutDefaults(saved, true).destaque.sizePx).toBe(99);
+  });
+
+  // Campanhas salvas antes do editor não têm `layout`; `showTargetLogo` era a
+  // única expressão de "leva logo da conta?" e não pode ser perdida.
+  it('migra showTargetLogo=false de campanha antiga', () => {
+    expect(withLayoutDefaults(undefined, false).targetLogo.enabled).toBe(false);
+  });
+
+  it('assume que leva logo quando nem layout nem showTargetLogo existem', () => {
+    expect(withLayoutDefaults(undefined, undefined).targetLogo.enabled).toBe(true);
+  });
+});
+
+describe('textLayerRect', () => {
+  it('centraliza a caixa no ponto da camada, com o padding dos dois lados', () => {
+    const layer = { x: 0.5, y: 0.5, sizePx: 50, color: '#FFF', backdrop: 'box' as const };
+    const r = textLayerRect(layer, 200, 'banner');
+    expect(r.w).toBe(200 + OVERLAY_STYLE.boxPadX * 2);
+    expect(r.h).toBe(50 + OVERLAY_STYLE.boxPadY * 2);
+    expect(r.x).toBe(600 - r.w / 2);
+    expect(r.y).toBe(314 - r.h / 2);
+  });
+});
+
+describe('logoLayerRect', () => {
+  it('wrap quadrado e circular são 1:1', () => {
+    const base = { enabled: true, x: 0.5, y: 0.5, sizePx: 140 };
+    expect(logoLayerRect({ ...base, wrap: 'square' }, 'square').h).toBe(140);
+    expect(logoLayerRect({ ...base, wrap: 'circle' }, 'square').h).toBe(140);
+  });
+
+  it('wrap retangular usa sizePx como LARGURA e deriva a altura', () => {
+    const r = logoLayerRect({ enabled: true, x: 0.5, y: 0.5, sizePx: 250, wrap: 'rect' }, 'square');
+    expect(r.w).toBe(250);
+    expect(r.h).toBe(100); // 250 / 2.5
+  });
+});
+
+describe('clampCenter', () => {
+  it('trava a caixa dentro do canvas nas quatro bordas', () => {
+    // Caixa de 200×100 no banner (1200×628): meio-lado = 100/1200 e 50/628.
+    expect(clampCenter(-1, 0.5, 200, 100, 'banner').x).toBeCloseTo(100 / 1200);
+    expect(clampCenter(2, 0.5, 200, 100, 'banner').x).toBeCloseTo(1 - 100 / 1200);
+    expect(clampCenter(0.5, -1, 200, 100, 'banner').y).toBeCloseTo(50 / 628);
+    expect(clampCenter(0.5, 2, 200, 100, 'banner').y).toBeCloseTo(1 - 50 / 628);
+  });
+
+  it('não mexe em quem já está dentro', () => {
+    expect(clampCenter(0.5, 0.5, 200, 100, 'banner')).toEqual({ x: 0.5, y: 0.5 });
+  });
+
+  // Sem esta guarda o clamp produziria min > max e devolveria NaN/valor invertido.
+  it('centraliza quando a caixa é maior que o canvas', () => {
+    expect(clampCenter(0.1, 0.5, 2000, 100, 'banner').x).toBe(0.5);
+  });
+});
+
+describe('pairedTargetLayer', () => {
+  it('põe o logo da conta à direita do anunciante, mesmo tamanho e mesmo wrap', () => {
+    const adv = { enabled: true, x: 0.2, y: 0.8, sizePx: 140, wrap: 'rect' as const };
+    const t = pairedTargetLayer(adv, 'banner');
+    expect(t.y).toBe(0.8);
+    expect(t.sizePx).toBe(140);
+    expect(t.wrap).toBe('rect');
+    expect(t.enabled).toBe(true);
+    expect(t.x).toBeCloseTo(0.2 + (140 + PAIR_GAP_PX) / 1200);
+  });
+});
+
+describe('effectiveLayout', () => {
+  it('sem par, devolve o layout intacto', () => {
+    const l = createDefaultOverlayLayout();
+    expect(effectiveLayout(l, 'banner')).toBe(l);
+  });
+
+  // No modo par o logo da conta deixa de ser independente: quem arrasta é o
+  // anunciante e o outro é derivado. Preview e payload chamam isto, nunca o cru.
+  it('com par, deriva o logo da conta e força os dois ligados', () => {
+    const l = { ...createDefaultOverlayLayout(false), paired: true };
+    const e = effectiveLayout(l, 'banner');
+    expect(e.advertiserLogo.enabled).toBe(true);
+    expect(e.targetLogo.enabled).toBe(true);
+    expect(e.targetLogo.y).toBe(e.advertiserLogo.y);
+  });
+});
+
+describe('maxTextSizePx', () => {
+  it('texto curto pode ir até o teto duro', () => {
+    // 40px de largura a 50px de fonte cabe muitas vezes na linha; o teto vem antes.
+    expect(maxTextSizePx(40, 50, 'banner')).toBe(160);
+  });
+
+  // A regressão que este teste tranca: um destaque longo com a fonte no talo
+  // vazava para fora do canvas e o PNG saía com o texto cortado.
+  it('texto largo derruba o teto para caber no canvas', () => {
+    // Úteis = 1200 - 22*2 = 1156. A 50px o texto mede 1000 → cabe até 57px.
+    expect(maxTextSizePx(1000, 50, 'banner')).toBe(57);
+  });
+
+  it('nunca desce abaixo do mínimo, mesmo com texto absurdo', () => {
+    expect(maxTextSizePx(50000, 50, 'banner')).toBe(16);
+  });
+
+  // jsdom e o primeiro render (fonte ainda carregando) devolvem 0 na medição.
+  // Travar o slider nesse caso puniria o usuário por um detalhe de timing.
+  it('sem medição confiável, libera o teto em vez de travar o slider', () => {
+    expect(maxTextSizePx(0, 50, 'banner')).toBe(160);
+  });
+});
+
+describe('AD_FORMAT_SIZE', () => {
+  it('os dois formatos têm 1200 de largura — é o que faz sizePx ser absoluto', () => {
+    expect(AD_FORMAT_SIZE.square.w).toBe(1200);
+    expect(AD_FORMAT_SIZE.banner.w).toBe(1200);
+  });
+});
