@@ -433,3 +433,67 @@ describe('CreativeStep — wrap e tamanho do logo', () => {
     expect(wrap).toHaveStyle({ width: '300px' });
   });
 });
+
+// Task 8: o fluxo de composição estava morto na branch desde a Task 3 — o
+// handler passou a exigir `layout` e o cliente continuava mandando o payload
+// antigo (com `show_target_logo`, sem `layout`), então toda chamada voltava
+// 400. Este describe tranca o payload novo.
+describe('CreativeStep — payload da composição', () => {
+  it('manda o layout efetivo (não o cru), formato, logo do anunciante e as larguras medidas', async () => {
+    const ai = await import('@/lib/ai');
+    const spy = vi.spyOn(ai, 'composeLogoOverlay').mockResolvedValue({
+      success: true, url: 'https://exemplo/ad.png', filename: 'ad.png',
+      logo_applied: true, advertiser_logo_applied: false,
+    });
+
+    const d = withBaseImage();
+    d.templateLogo.format = 'square';
+    d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA', websiteUrl: 'https://acme.com/pricing' };
+    renderStep(d);
+    goTo(/Nubank/);
+    fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
+
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    const payload = spy.mock.calls[0][0];
+
+    expect(payload.format).toBe('square');
+    // jsdom não implementa canvas.getContext('2d') — measureTextWidthPx cai no
+    // fallback de largura 0, o teto vivo fica no máximo (160) e o valor
+    // gravado (56, default de createDefaultOverlayLayout) passa por
+    // effectiveLayout sem ser encolhido. O número aqui é o que a função
+    // devolveu, não o cru "por coincidência" — a cobertura de que o teto de
+    // verdade encolhe o valor já existe em `overlayLayout.test.ts` e no
+    // describe "o teto vivo deriva o valor efetivo" acima.
+    expect(payload.layout.destaque.sizePx).toBe(56);
+    expect(payload.layout.complementar.sizePx).toBe(28);
+    expect(payload.advertiser_logo_url).toBe('data:image/png;base64,AAAA');
+    // "acme.com", sem protocolo nem path — é o formato que o handler espera
+    // para resolver o logo a partir do domínio.
+    expect(payload.advertiser_domain).toBe('acme.com');
+    expect(typeof payload.destaque_width_px).toBe('number');
+    expect(typeof payload.complementar_width_px).toBe('number');
+    // `show_target_logo` saiu do contrato nesta task — o handler já lê
+    // `layout.targetLogo.enabled`, e mandar o campo legado só engana quem lê
+    // o payload.
+    expect(payload).not.toHaveProperty('show_target_logo');
+
+    spy.mockRestore();
+  });
+
+  it('sem websiteUrl no Brand Kit, advertiser_domain sai null em vez de string vazia ou lixo', async () => {
+    const ai = await import('@/lib/ai');
+    const spy = vi.spyOn(ai, 'composeLogoOverlay').mockResolvedValue({
+      success: true, url: 'https://exemplo/ad.png', filename: 'ad.png',
+      logo_applied: true, advertiser_logo_applied: false,
+    });
+
+    renderStep(withBaseImage());
+    goTo(/Nubank/);
+    fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
+
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0].advertiser_domain).toBeNull();
+
+    spy.mockRestore();
+  });
+});

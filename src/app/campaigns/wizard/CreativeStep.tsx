@@ -39,6 +39,7 @@ import {
   AD_FORMAT_SIZE,
   maxTextSizePx,
   effectiveTextSize,
+  effectiveLayout,
   MIN_TEXT_SIZE_PX,
   type OverlayLayout,
   type LogoLayer,
@@ -132,6 +133,23 @@ function withImageDefaults(d?: CreativeData): CreativeData {
     brandKit: d?.brandKit || createDefaultBrandKit(),
     overrides: d?.overrides || {},
   };
+}
+
+// Deriva um domínio nu (sem protocolo/path) de `brandKit.websiteUrl` para
+// mandar como `advertiser_domain` na composição — o handler usa isso como
+// fallback de "Meu logo" quando `advertiser_logo_url` está ausente ou falha,
+// e `brandKit.logo` nasce `null` por padrão. Aceita tanto "https://acme.com"
+// quanto um domínio avulso como "acme.com" (sem protocolo o `new URL` direto
+// lançaria).
+function deriveWebsiteDomain(websiteUrl: string): string | null {
+  const trimmed = websiteUrl.trim();
+  if (!trimmed) return null;
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withProtocol).hostname.replace(/^www\./, '') || null;
+  } catch {
+    return null;
+  }
 }
 
 function getAccountColor(name: string) {
@@ -523,7 +541,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Apply the IA composer (texts + target logo) for one company on top of the
   // shared base image. Same pipeline regardless of how the base was produced.
   const composeOverlayFor = async (company: FacetItem): Promise<boolean> => {
-    const cfg = resolveImageConfig(withImageDefaults(creativeDataRef.current), company.id);
+    const data = withImageDefaults(creativeDataRef.current);
+    const cfg = resolveImageConfig(data, company.id);
     if (!cfg.baseImageUrl) {
       setAiError(`Defina uma imagem-base antes de compor para ${company.label}.`);
       return false;
@@ -531,15 +550,49 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     setAiImageLoading((s) => ({ ...s, [company.id]: true }));
     setAiError(null);
     try {
+      // 1) Mede no tamanho GRAVADO (`cfg.layout.*.sizePx`) — medir no efetivo
+      // seria circular, já que o efetivo É o clamp derivado desta medição
+      // (mesma regra do teto vivo, ver `effectiveTextSize`). Peso 700 no
+      // destaque, 400 no complementar: são os pesos com que o preview e o
+      // servidor desenham cada um — sem eles o teto subestima a largura do
+      // texto em negrito.
+      const measuredAtRecorded = {
+        destaqueWidthPx: measureTextWidthPx(cfg.textoDestaque, cfg.layout.destaque.sizePx, cfg.fontFamily, 700),
+        complementarWidthPx: measureTextWidthPx(cfg.textoComplementar, cfg.layout.complementar.sizePx, cfg.fontFamily, 400),
+      };
+      // 2) `effectiveLayout` resolve o teto vivo (tamanho efetivo dos dois
+      // textos) e o modo par (geometria do logo da conta segue o
+      // anunciante) ANTES de enviar. O payload manda SEMPRE este resultado,
+      // nunca `cfg.layout` cru — é esse acordo preview↔PNG que esta task
+      // existe para fechar: mandar o valor gravado faria o texto vazar do
+      // canvas no PNG final sempre que o teto tivesse encolhido o que a tela
+      // mostrou.
+      const layout = effectiveLayout(cfg.layout, cfg.format, measuredAtRecorded);
+      // 3) Remede no tamanho EFETIVO (pós-teto) para mandar a largura da
+      // caixa de fundo: é NESSE tamanho — não no gravado — que o servidor
+      // vai de fato desenhar o texto e a caixa atrás dele. Quando o teto não
+      // encolheu nada, `layout.*.sizePx` é igual ao gravado e esta segunda
+      // medição repete a primeira; quando encolheu, é a única largura
+      // correta para a caixa que vai malhar de verdade.
+      const destaqueWidthPx = measureTextWidthPx(cfg.textoDestaque, layout.destaque.sizePx, cfg.fontFamily, 700);
+      const complementarWidthPx = measureTextWidthPx(cfg.textoComplementar, layout.complementar.sizePx, cfg.fontFamily, 400);
       const result = await composeLogoOverlay({
         base_image_url: cfg.baseImageUrl,
         target_company_name: company.label,
         target_company_domain: company.domain || null,
-        show_target_logo: cfg.showTargetLogo,
+        advertiser_logo_url: data.brandKit.logo,
+        // Fallback quando o Brand Kit não tem logo enviado: sem isto o
+        // checkbox "Meu logo" nunca renderiza nada no PNG, já que
+        // `brandKit.logo` nasce `null` (o servidor resolve o logo pelo
+        // domínio do jeito que já faz para a empresa-alvo).
+        advertiser_domain: deriveWebsiteDomain(data.brandKit.websiteUrl),
         texto_destaque: cfg.textoDestaque,
         texto_complementar: cfg.textoComplementar,
         font_family: cfg.fontFamily,
         format: cfg.format,
+        layout,
+        destaque_width_px: destaqueWidthPx,
+        complementar_width_px: complementarWidthPx,
       });
       updateOverride(company.id, {
         imageUrl: result.url,
