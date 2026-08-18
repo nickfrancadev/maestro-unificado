@@ -32,6 +32,7 @@ import {
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
 import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields } from './types';
+import { createDefaultOverlayLayout, withLayoutDefaults } from './overlayLayout';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
 import { BriefPane, type BriefDraft } from './BriefPane';
@@ -100,16 +101,20 @@ const DEFAULT_TEMPLATE_LOGO = {
   textoComplementar: 'Convite exclusivo VIP',
   showTargetLogo: true,
   format: 'banner' as AdFormat,
+  layout: createDefaultOverlayLayout(true),
 };
 
 // `creativeData` reaches this component partially populated in some entry
 // points (and in tests), so every read of the image config goes through this
 // instead of touching the raw prop and blowing up on a missing sub-object.
 function withImageDefaults(d?: CreativeData): CreativeData {
+  const tpl = d?.templateLogo || DEFAULT_TEMPLATE_LOGO;
   return {
     ...(d as CreativeData),
     imageMode: d?.imageMode || 'upload',
-    templateLogo: d?.templateLogo || DEFAULT_TEMPLATE_LOGO,
+    // O layout entra aqui e não só no default porque campanhas persistidas
+    // antes do editor têm `templateLogo` sem `layout`.
+    templateLogo: { ...tpl, layout: withLayoutDefaults(tpl.layout, tpl.showTargetLogo) },
     brandKit: d?.brandKit || createDefaultBrandKit(),
     overrides: d?.overrides || {},
   };

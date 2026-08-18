@@ -1,6 +1,8 @@
 // Shared types for the Campaign Wizard flow
 import type { BrandKit } from './brandKit';
 import { createDefaultBrandKit } from './brandKit';
+import type { OverlayLayout, AdFormat } from './overlayLayout';
+import { createDefaultOverlayLayout, withLayoutDefaults } from './overlayLayout';
 
 export interface BuyingCommitteeContact {
   id: number;
@@ -105,12 +107,9 @@ export interface BrandBrief {
 //   ai:     Gemini generates the base image from an optional prompt.
 export type ImageMode = 'upload' | 'ai';
 
-// Ad canvas format.
-// ATENÇÃO: hoje isto é só front. O composer do servidor renderiza 1200×628
-// fixo (CANVAS_W/CANVAS_H em supabase/functions/make-server-a4d5bbe0/index.ts)
-// e o prompt da imagem-base pede 1.91:1, então escolher 'square' ainda devolve
-// um banner. Parametrizar o servidor é tarefa pendente.
-export type AdFormat = 'square' | 'banner';
+// `AdFormat` mora em `overlayLayout.ts`, junto das dimensões que ele nomeia.
+// Re-exportado aqui porque é daqui que o resto do wizard sempre importou.
+export type { AdFormat };
 
 // Per-company override on top of the template creative. status reflects how
 // far the user has pushed personalization for this company.
@@ -132,6 +131,9 @@ export interface CompanyCreativeOverride {
   showTargetLogo?: boolean;
   fontFamily?: string;
   format?: AdFormat;
+  // Layout do overlay, sobrescrito por empresa. Objeto INTEIRO, não campo a
+  // campo: um layout meio-herdado não tem leitura possível na UI.
+  layout?: OverlayLayout;
   // Destination, overridden for this company only. Same rule: undefined inherits.
   landingPageUrl?: string;
   cta?: string;
@@ -142,7 +144,7 @@ export interface CompanyCreativeOverride {
 // UI can tell the user exactly what it changed for this company.
 export const IMAGE_OVERRIDE_FIELDS = [
   'imageMode', 'baseImageUrl', 'basePrompt', 'textoDestaque',
-  'textoComplementar', 'showTargetLogo', 'fontFamily', 'format',
+  'textoComplementar', 'showTargetLogo', 'fontFamily', 'format', 'layout',
 ] as const;
 
 export type ImageOverrideField = typeof IMAGE_OVERRIDE_FIELDS[number];
@@ -157,6 +159,7 @@ export interface ResolvedImageConfig {
   showTargetLogo: boolean;
   fontFamily: string;
   format: AdFormat;
+  layout: OverlayLayout;
 }
 
 // Effective image settings for a target — the template's values, with any
@@ -174,6 +177,10 @@ export function resolveImageConfig(data: CreativeData, companyId?: string): Reso
     showTargetLogo: ovr?.showTargetLogo ?? tpl.showTargetLogo,
     fontFamily: ovr?.fontFamily ?? data.brandKit.fontFamily,
     format: ovr?.format ?? tpl.format,
+    // `withLayoutDefaults` é o degrau da migração: campanhas salvas antes do
+    // editor não têm `layout`, e `showTargetLogo` era a única expressão de
+    // "leva logo da conta?".
+    layout: ovr?.layout ?? withLayoutDefaults(tpl.layout, tpl.showTargetLogo),
   };
 }
 
@@ -195,8 +202,9 @@ export interface TemplateLogoConfig {
   basePrompt: string;            // free-text direction for the AI base image (origin 'ai')
   textoDestaque: string;         // primary headline rendered into the image (e.g. "WORKSHOP ABM")
   textoComplementar: string;     // secondary line (e.g. "Convite exclusivo VIP")
-  showTargetLogo: boolean;       // ask AI to place the target company's logo
-  format: AdFormat;              // canvas shape — front-only for now, see AdFormat
+  showTargetLogo: boolean;       // LEGADO: semeia layout.targetLogo.enabled na migração
+  format: AdFormat;              // formato do canvas — honrado no servidor desde 2026-08-18
+  layout: OverlayLayout;         // posições, tamanhos e wraps do overlay
 }
 
 // Creative data — passed from CreativeStep to OrchestrationStep
@@ -234,6 +242,7 @@ export function createDefaultCreativeData(): CreativeData {
       textoComplementar: 'Convite exclusivo VIP',
       showTargetLogo: true,
       format: 'banner',
+      layout: createDefaultOverlayLayout(true),
     },
     overrides: {},
     brandKit: createDefaultBrandKit(),
