@@ -78,6 +78,15 @@ export interface BuildOverlaySvgOptions {
   fontFamily: string;
   texts: SvgTextLayer[];
   logos: SvgLogoLayer[];
+  // Desliga o caminho de `<svg>` aninhado inteiro — todo logo vai por
+  // `<image href="${escapeXml(...)}">`, mesmo que seja um SVG que passaria
+  // em `looksWellFormed`. `looksWellFormed` é uma checagem barata, não um
+  // parser XML; pode deixar passar má-formação que só o resvg detecta de
+  // verdade (ex.: prefixo de namespace não declarado). `index.ts` usa esta
+  // opção como segunda camada de defesa: se a rasterização com SVG aninhado
+  // lançar, recompõe com `forceImageLogos: true` e tenta de novo — sempre
+  // produz XML válido, mesmo que algum logo específico não renderize.
+  forceImageLogos?: boolean;
 }
 
 // Arredonda para 2 casas: SVG aceita decimais, mas números redondos deixam os
@@ -163,9 +172,12 @@ function stripXmlProlog(markup: string): string {
 
 // Lê um atributo de uma tag de abertura, aceitando aspas simples OU duplas —
 // `xmlns='...'` é o idioma canônico de SVG inline em CSS/HTML (cabe dentro de
-// `url("...")`), tão comum quanto a variante com aspas duplas.
+// `url("...")`), tão comum quanto a variante com aspas duplas. Exige espaço
+// (não só "limite de palavra") antes do nome: `\b` casava dentro de
+// `stroke-width` ou `data-width` (o "-" já é limite de palavra), lendo o
+// valor errado e derivando um viewBox absurdo — mesmo critério de `stripAttr`.
 function getAttr(tag: string, name: string): string | null {
-  const m = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+  const m = tag.match(new RegExp(`\\s+${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
   if (!m) return null;
   return m[1] !== undefined ? m[1] : m[2];
 }
@@ -185,23 +197,142 @@ function numericAttr(tag: string, name: string): string | null {
   return /^\d+(\.\d+)?$/.test(trimmed) ? trimmed : null;
 }
 
+// Um token de tag encontrado por `scanTags`.
+interface ScannedTag {
+  name: string;
+  kind: "open" | "close" | "self";
+  raw: string;
+}
+
+// Percorre o markup tag a tag, pulando comentários e CDATA e respeitando
+// aspas dentro de atributos (para não confundir um '>' de um valor de
+// atributo com o fim da tag). NÃO é um parser XML completo — não entende
+// namespace nem DTD — mas é o suficiente para as checagens estruturais logo
+// abaixo. Devolve `null` se achar uma tag/comentário/CDATA sem fechamento,
+// em vez de adivinhar; nunca fica presa (cada ramo avança `i` para frente).
+function scanTags(markup: string): ScannedTag[] | null {
+  const tags: ScannedTag[] = [];
+  let i = 0;
+  const n = markup.length;
+  while (i < n) {
+    const lt = markup.indexOf("<", i);
+    if (lt === -1) break;
+    if (markup.startsWith("<!--", lt)) {
+      const end = markup.indexOf("-->", lt);
+      if (end === -1) return null;
+      i = end + 3;
+      continue;
+    }
+    if (markup.startsWith("<![CDATA[", lt)) {
+      const end = markup.indexOf("]]>", lt);
+      if (end === -1) return null;
+      i = end + 3;
+      continue;
+    }
+    let j = lt + 1;
+    let quote: string | null = null;
+    let gt = -1;
+    while (j < n) {
+      const ch = markup[j];
+      if (quote) {
+        if (ch === quote) quote = null;
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === ">") {
+        gt = j;
+        break;
+      }
+      j++;
+    }
+    if (gt === -1) return null;
+    const raw = markup.slice(lt, gt + 1);
+    const isClose = raw[1] === "/";
+    const isSelf = !isClose && raw[raw.length - 2] === "/";
+    const nameMatch = raw.match(isClose ? /^<\/\s*([^\s>/]+)/ : /^<\s*([^\s>/]+)/);
+    if (!nameMatch) return null;
+    tags.push({ name: nameMatch[1], kind: isClose ? "close" : isSelf ? "self" : "open", raw });
+    i = gt + 1;
+  }
+  return tags;
+}
+
+// Um "=" fora de aspas que não é seguido por aspas é valor sem aspas
+// (`width=10`) — o resvg rejeita.
+function hasUnquotedAttr(raw: string): boolean {
+  let quote: string | null = null;
+  for (let k = 0; k < raw.length; k++) {
+    const ch = raw[k];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "=" && raw[k + 1] !== '"' && raw[k + 1] !== "'") return true;
+  }
+  return false;
+}
+
+// O mesmo atributo não pode aparecer duas vezes na mesma tag.
+function hasDuplicateAttr(raw: string): boolean {
+  const names: string[] = [];
+  const re = /\s([a-zA-Z_:][\w:.-]*)\s*=\s*(?:"[^"]*"|'[^']*')/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw))) names.push(m[1].toLowerCase());
+  return new Set(names).size !== names.length;
+}
+
+// Checagem estrutural: profundidade de abertura/fechamento com o NOME
+// batendo. Fecha o furo do round 1 — `opens === closes` (contagem crua de
+// "<"/">") se CANCELA: uma tag de abertura a mais e uma de fechamento a
+// menos dão a mesma contagem total, mas são documentos diferentes (tag que
+// nunca fecha, fecha com nome errado, fecha algo que nunca abriu). Também
+// pega atributo sem aspas e atributo duplicado, que não mudam a contagem de
+// tags mas também invalidam o XML.
+//
+// NÃO cobre tudo — prefixo de namespace não declarado (`<foo:bar/>`), por
+// exemplo, passa por aqui sem ser pego. Esse resíduo é aceito de propósito:
+// tentar prever mais casos por regex foi o que causou os furos anteriores.
+// A segunda camada de defesa (retry com `forceImageLogos` em `index.ts`
+// quando o resvg rejeita o documento de verdade) cobre o que esta função
+// não prevê.
+function structureLooksSane(markup: string): boolean {
+  const tags = scanTags(markup);
+  if (!tags) return false;
+  const stack: string[] = [];
+  for (const tag of tags) {
+    if (tag.kind !== "close" && (hasUnquotedAttr(tag.raw) || hasDuplicateAttr(tag.raw))) {
+      return false;
+    }
+    if (tag.kind === "self") continue;
+    if (tag.kind === "open") {
+      stack.push(tag.name);
+    } else if (stack.pop() !== tag.name) {
+      return false;
+    }
+  }
+  return stack.length === 0;
+}
+
 // Checagem BARATA de boa-formação — de propósito, não é um parser XML (foi
-// tentar validar SVG por regex que causou os bugs deste round). Só pega os
-// sinais mais comuns de origem não confiável — download truncado, página de
-// erro HTML servida com content-type errado, entidade não escapada — e, ao
-// encontrar qualquer um deles, desiste. O caminho seguro é o default na
-// dúvida: cair no `<image href="${escapeXml(...)}">` de sempre, que sempre
-// produz XML válido mesmo que o logo não renderize, em vez de arriscar um
-// `<svg>` aninhado malformado que derruba a composição inteira no resvg.
+// tentar validar SVG por regex que causou os bugs dos rounds anteriores). Só
+// pega os sinais mais comuns de origem não confiável — download truncado,
+// página de erro HTML servida com content-type errado, entidade não
+// escapada, tag mal-fechada/mal-aninhada, atributo duplicado ou sem aspas —
+// e, ao encontrar qualquer um deles, desiste. O caminho seguro é o default
+// na dúvida: cair no `<image href="${escapeXml(...)}">` de sempre, que
+// sempre produz XML válido mesmo que o logo não renderize, em vez de
+// arriscar um `<svg>` aninhado malformado que derruba a composição inteira
+// no resvg.
 function looksWellFormed(markup: string): boolean {
   const trimmed = markup.trim();
   if (!/^<svg\b/i.test(trimmed)) return false;
   if (!/<\/svg>\s*$/i.test(trimmed)) return false;
   if (/<!DOCTYPE|<\?/i.test(trimmed)) return false;
-  const opens = (trimmed.match(/</g) || []).length;
-  const closes = (trimmed.match(/>/g) || []).length;
-  if (opens !== closes) return false;
   if (/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/.test(trimmed)) return false;
+  if (!structureLooksSane(trimmed)) return false;
   return true;
 }
 
@@ -295,7 +426,7 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
     }
 
     const pad = logoInnerPadPx(l.wrap, boxW);
-    const innerSvgMarkup = decodeSvgDataUri(l.href);
+    const innerSvgMarkup = opts.forceImageLogos ? null : decodeSvgDataUri(l.href);
     const prepared = innerSvgMarkup !== null ? prepareNestedSvg(innerSvgMarkup) : null;
     if (prepared) {
       parts.push(

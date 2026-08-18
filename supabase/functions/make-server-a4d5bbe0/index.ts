@@ -3013,6 +3013,17 @@ async function loadGoogleFont(family: string, weight: 400 | 700): Promise<Uint8A
   return bytes;
 }
 
+// Roda o resvg de verdade sobre um SVG já montado. Extraído para ser
+// chamado duas vezes por `renderOverlayPng` — uma normal, uma de retry.
+function rasterizeSvg(svg: string, fontBuffers: Uint8Array[], fontFamily: string, widthPx: number): Uint8Array {
+  const resvg = new Resvg(svg, {
+    font: { fontBuffers, defaultFontFamily: fontFamily, loadSystemFonts: false },
+    background: "rgba(255,255,255,0)",
+    fitTo: { mode: "width", value: widthPx },
+  });
+  return resvg.render().asPng();
+}
+
 // Rasteriza o overlay. A GEOMETRIA toda vive em `overlaySvg.ts`, que é puro e
 // testado; aqui fica só o que precisa de rede e wasm: baixar as fontes e rodar
 // o resvg.
@@ -3035,20 +3046,38 @@ async function renderOverlayPng(opts: {
     (weights.length ? weights : [700]).map((w) => loadGoogleFont(opts.fontFamily, w as 400 | 700)),
   );
 
-  const svg = buildOverlaySvg({
+  const baseHref = `data:${opts.baseImageMime};base64,${opts.baseImageBase64}`;
+  const widthPx = AD_FORMAT_SIZE[opts.format].w;
+  const buildOpts = {
     format: opts.format,
-    baseHref: `data:${opts.baseImageMime};base64,${opts.baseImageBase64}`,
+    baseHref,
     fontFamily: opts.fontFamily,
     texts: opts.texts,
     logos: opts.logos,
-  });
+  };
 
-  const resvg = new Resvg(svg, {
-    font: { fontBuffers, defaultFontFamily: opts.fontFamily, loadSystemFonts: false },
-    background: "rgba(255,255,255,0)",
-    fitTo: { mode: "width", value: AD_FORMAT_SIZE[opts.format].w },
-  });
-  return resvg.render().asPng();
+  try {
+    return rasterizeSvg(buildOverlaySvg(buildOpts), fontBuffers, opts.fontFamily, widthPx);
+  } catch (err) {
+    // `looksWellFormed` (em overlaySvg.ts) é uma checagem barata, não um
+    // parser XML — pode deixar passar má-formação que só o resvg detecta de
+    // verdade (ex.: prefixo de namespace não declarado num logo SVG). Em vez
+    // de tentar prever mais casos por regex e arriscar outro furo, sobrevive
+    // ao que não previu: recompõe com TODO logo forçado pelo
+    // `<image href="${escapeXml(...)}">` (sempre XML válido, mesmo que o
+    // logo específico não renderize) e tenta de novo. Se isso também
+    // falhar, propaga — não sobra mais fallback depois do <image>.
+    console.log(
+      "[Compose Overlay] SVG aninhado falhou na rasterização, tentando de novo com <image>:",
+      (err as Error)?.message,
+    );
+    return rasterizeSvg(
+      buildOverlaySvg({ ...buildOpts, forceImageLogos: true }),
+      fontBuffers,
+      opts.fontFamily,
+      widthPx,
+    );
+  }
 }
 
 app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {

@@ -331,6 +331,113 @@ describe('buildOverlaySvg — logo SVG aninhado: robustez contra origem não con
   });
 });
 
+// Fix round 2: a re-revisão achou que `opens === closes` (a contagem crua de
+// round 1) se CANCELA — um "<" de abertura a mais e um "</...>" de fechamento
+// a menos dão a mesma contagem total, então documentos com tag mal-fechada,
+// mal-aninhada, atributo duplicado ou sem aspas passavam pelo gate e viravam
+// <svg> aninhado malformado — o 500-na-composição-toda que o fix existia
+// para eliminar, por outra porta de novo. A resposta não foi "escrever um
+// validador melhor" (a terceira tentativa provavelmente também teria furo) —
+// foi profundidade de tag com nome batendo (fecha os 4 casos de
+// aninhamento/nome errado) mais duas checagens baratas adicionais (atributo
+// sem aspas, atributo duplicado). O que sobra (prefixo de namespace não
+// declarado) fica para a segunda camada de defesa: `index.ts` tenta
+// rasterizar, e se o resvg rejeitar mesmo assim, recompõe com
+// `forceImageLogos` e tenta de novo — ver task-3-report.md.
+describe('buildOverlaySvg — logo SVG aninhado: má-formação ESTRUTURAL cai em <image> (fix round 2)', () => {
+  const logo = (href: string, over = {}) => ({
+    href, x: 0.5, y: 0.5, sizePx: 200, wrap: 'square' as const, ...over,
+  });
+
+  // As sete entradas da tabela do revisor (cada uma validada contra
+  // `xmllint` pelo revisor antes de reportar). Todas devem cair em <image>.
+  const casosMalformados: Array<[string, string]> = [
+    [
+      'tag <g> aberta nunca fecha antes do </svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g><rect width="1" height="1"/></svg>',
+    ],
+    [
+      '<rect> pareado (sem /) nunca fecha',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect></svg>',
+    ],
+    [
+      'fecha com o nome errado (</rect> para um <g> aberto)',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g></rect></svg>',
+    ],
+    [
+      'fecha um </g> que nunca abriu',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"></g><rect/></svg>',
+    ],
+    [
+      'atributo "fill" redefinido na mesma tag',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect fill="a" fill="b"/></svg>',
+    ],
+    [
+      'valor de atributo sem aspas',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width=10/></svg>',
+    ],
+    [
+      '"<" cru dentro de texto (não é entidade escapada)',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>a < b > c</title></svg>',
+    ],
+  ];
+
+  it.each(casosMalformados)('%s → cai em <image>, não vira <svg> aninhado', (_descricao, inner) => {
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('<image');
+    expect(svg).toContain(`href="${href}"`);
+    // Só o <svg> raiz do documento inteiro — nenhum <svg> aninhado do logo.
+    expect((svg.match(/<svg\b/gi) || []).length).toBe(1);
+  });
+
+  // Não-regressão: o fix não pode virar "nunca aninha nada". SVG
+  // estruturalmente são continua sendo aninhado normalmente.
+  it('SVG bem-formado (tags balanceadas, sem atributo duplicado/sem aspas) continua sendo aninhado', () => {
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g><rect width="10" height="10"/></g></svg>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('viewBox="0 0 24 24"');
+    expect((svg.match(/<image /g) || []).length).toBe(1); // só a imagem-base
+  });
+
+  // O one-liner do revisor: `\bwidth` casava dentro de "stroke-width" ou
+  // "data-width" (limite de palavra depois de um "-" ainda é limite de
+  // palavra), lendo o valor errado e derivando um viewBox absurdo — logo em
+  // zoom de 60×. `getAttr`/`numericAttr` agora exigem espaço antes do nome,
+  // igual `stripAttr` já exigia.
+  it('não deriva o viewBox de um atributo composto (stroke-width/data-width) — só do width/height reais', () => {
+    const inner = '<svg xmlns="http://www.w3.org/2000/svg" data-width="7" stroke-width="2" width="120" height="40"><rect width="10" height="10"/></svg>';
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(inner)}`;
+    const svg = svgFor({ logos: [logo(href)] });
+    expect(svg).toContain('viewBox="0 0 120 40"');
+    expect(svg).not.toContain('viewBox="0 0 7 40"');
+    expect(svg).not.toContain('viewBox="0 0 2 40"');
+  });
+});
+
+describe('buildOverlaySvg — opção forceImageLogos (retry de index.ts quando a rasterização do <svg> aninhado falha)', () => {
+  const logo = (href: string, over = {}) => ({
+    href, x: 0.5, y: 0.5, sizePx: 200, wrap: 'square' as const, ...over,
+  });
+  const SVG_BOM = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>',
+  );
+
+  it('com forceImageLogos: true, um SVG que normalmente seria aninhado vai por <image> escapado', () => {
+    const svg = svgFor({ logos: [logo(SVG_BOM)], forceImageLogos: true });
+    expect(svg).not.toContain('viewBox="0 0 24 24"'); // não decodifica o SVG
+    expect(svg).toContain(`href="${SVG_BOM}"`);
+    expect((svg.match(/<image /g) || []).length).toBe(2); // base + logo forçado
+  });
+
+  it('sem forceImageLogos (ou com false), o comportamento padrão continua aninhando SVG bom', () => {
+    const svg = svgFor({ logos: [logo(SVG_BOM)] });
+    expect(svg).toContain('viewBox="0 0 24 24"');
+    expect((svg.match(/<image /g) || []).length).toBe(1); // só a imagem-base
+  });
+});
+
 describe('buildOverlaySvg — href da imagem-base', () => {
   // Mesma classe de bug do href dos logos, só que na imagem de fundo: URL
   // assinada com "&" na query quebra o XML se o href não for escapado.
