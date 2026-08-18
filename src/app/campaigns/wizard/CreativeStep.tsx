@@ -27,12 +27,24 @@ import {
   Plus,
   Square,
   RectangleHorizontal,
+  Copy,
 } from 'lucide-react';
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
 import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields } from './types';
-import { createDefaultOverlayLayout, withLayoutDefaults, aspectClass, type OverlayLayout } from './overlayLayout';
-import { OverlayCanvas, type OverlayLayerId } from './OverlayCanvas';
+import {
+  createDefaultOverlayLayout,
+  withLayoutDefaults,
+  aspectClass,
+  AD_FORMAT_SIZE,
+  maxTextSizePx,
+  MIN_TEXT_SIZE_PX,
+  type OverlayLayout,
+  type LogoLayer,
+  type LogoWrap,
+  type TextLayer,
+} from './overlayLayout';
+import { OverlayCanvas, type OverlayLayerId, measureTextWidthPx } from './OverlayCanvas';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { BrandKit } from './brandKit';
 import { BriefPane, type BriefDraft } from './BriefPane';
@@ -1212,7 +1224,27 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 accept="image/png,image/jpeg"
               />
 
-              {/* Origin — available at both levels now. */}
+              {/* 1 · Formato — primeiro porque é ele que decide as dimensões
+                  que a Origem/Imagem-base logo abaixo respeitam. */}
+              <div className="mb-3">
+                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                  Formato
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <FormatButton
+                    format="square"
+                    active={imageCfg.format === 'square'}
+                    onClick={() => setImageField({ format: 'square' })}
+                  />
+                  <FormatButton
+                    format="banner"
+                    active={imageCfg.format === 'banner'}
+                    onClick={() => setImageField({ format: 'banner' })}
+                  />
+                </div>
+              </div>
+
+              {/* 2 · Origem da imagem-base — available at both levels now. */}
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
                   Origem da imagem-base
@@ -1243,73 +1275,21 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 />
               </div>
 
-              <div className="p-3 bg-[#FFF1ED]/50 border border-[#FFE3DA] rounded-lg space-y-2.5 mb-3">
-                <p className="text-[10px] text-[#E54A26] leading-relaxed">
-                  {editingCompany
-                    ? `Os textos e o logo são aplicados pela IA em cima da imagem-base. Alterar qualquer campo aqui vale só para ${editingCompany.label}.`
-                    : 'Os textos abaixo e o logo da empresa-alvo são aplicados pela IA em cima da imagem-base. Compartilhados entre todas as empresas da campanha.'}
-                </p>
-
-                {imageCfg.imageMode === 'ai' && (
-                  <div>
-                    <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
-                      Prompt para imagem
-                    </label>
-                    <textarea
-                      value={imageCfg.basePrompt}
-                      onChange={(e) => setImageField({ basePrompt: e.target.value })}
-                      placeholder="Descreva a imagem que deseja gerar"
-                      className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded h-14 resize-none focus:ring-1 focus:ring-[#FF5F39] outline-none leading-relaxed"
-                    />
-                  </div>
-                )}
-
-                <TextField
-                  label="Texto destaque (principal)"
-                  value={imageCfg.textoDestaque}
-                  onChange={(v) => setImageField({ textoDestaque: v })}
-                  placeholder="Texto principal na imagem"
-                />
-                <TextField
-                  label="Texto complementar"
-                  value={imageCfg.textoComplementar}
-                  onChange={(v) => setImageField({ textoComplementar: v })}
-                  placeholder="Texto secundário na imagem"
-                />
-
-                <FontPicker
-                  value={imageCfg.fontFamily}
-                  onChange={(v) => setImageField({ fontFamily: v })}
-                />
-
-                <div>
+              {/* 3 · Imagem-base — o prompt (origem IA) vem logo acima do
+                  bloco que mostra/recebe a imagem em si. */}
+              {imageCfg.imageMode === 'ai' && (
+                <div className="mb-3">
                   <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
-                    Formato
+                    Prompt para imagem
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <FormatButton
-                      format="square"
-                      active={imageCfg.format === 'square'}
-                      onClick={() => setImageField({ format: 'square' })}
-                    />
-                    <FormatButton
-                      format="banner"
-                      active={imageCfg.format === 'banner'}
-                      onClick={() => setImageField({ format: 'banner' })}
-                    />
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-1.5 text-[11px] text-slate-700 font-medium pt-0.5">
-                  <input
-                    type="checkbox"
-                    checked={imageCfg.showTargetLogo}
-                    onChange={(e) => setImageField({ showTargetLogo: e.target.checked })}
-                    className="rounded"
+                  <textarea
+                    value={imageCfg.basePrompt}
+                    onChange={(e) => setImageField({ basePrompt: e.target.value })}
+                    placeholder="Descreva a imagem que deseja gerar"
+                    className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded h-14 resize-none focus:ring-1 focus:ring-[#FF5F39] outline-none leading-relaxed"
                   />
-                  Aplicar logo da empresa-alvo na imagem
-                </label>
-              </div>
+                </div>
+              )}
 
               {/* Base image, deliberately compact. The preview column on the
                   right is where the result gets judged — repeating it here
@@ -1362,7 +1342,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       <Upload className="w-5 h-5 text-slate-400" />
                       <span className="text-xs text-slate-600 font-medium">Clique ou arraste a imagem-base</span>
                       <span className="text-[10px] text-slate-400">
-                        JPG ou PNG • {AD_FORMATS[imageCfg.format].size} • Máx 5MB
+                        JPG ou PNG • {formatSizeLabel(imageCfg.format)} • Máx 5MB
                       </span>
                     </>
                   )}
@@ -1380,6 +1360,102 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   <AlertTriangle className="w-3 h-3 shrink-0" /> {uploadError}
                 </p>
               )}
+
+              {/* 4 · Divisor */}
+              <div className="h-px bg-slate-200 my-3" />
+
+              {/* 5 · Textos, 6 · Fonte */}
+              <div className="p-3 bg-[#FFF1ED]/50 border border-[#FFE3DA] rounded-lg space-y-2.5">
+                <p className="text-[10px] text-[#E54A26] leading-relaxed">
+                  {editingCompany
+                    ? `Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Alterar qualquer campo aqui vale só para ${editingCompany.label}.`
+                    : 'Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Compartilhados entre todas as empresas da campanha.'}
+                </p>
+
+                <TextField
+                  label="Texto destaque (principal)"
+                  value={imageCfg.textoDestaque}
+                  onChange={(v) => setImageField({ textoDestaque: v })}
+                  placeholder="Texto principal na imagem"
+                />
+                <TextLayerControls
+                  id="destaque"
+                  label="destaque"
+                  layer={imageCfg.layout.destaque}
+                  text={imageCfg.textoDestaque}
+                  fontFamily={imageCfg.fontFamily}
+                  format={imageCfg.format}
+                  palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
+                  selected={selectedLayer === 'destaque'}
+                  onSelect={() => setSelectedLayer('destaque')}
+                  onChange={(next) => setLayout({ ...imageCfg.layout, destaque: next })}
+                />
+
+                <TextField
+                  label="Texto complementar"
+                  value={imageCfg.textoComplementar}
+                  onChange={(v) => setImageField({ textoComplementar: v })}
+                  placeholder="Texto secundário na imagem"
+                />
+                <TextLayerControls
+                  id="complementar"
+                  label="complementar"
+                  layer={imageCfg.layout.complementar}
+                  text={imageCfg.textoComplementar}
+                  fontFamily={imageCfg.fontFamily}
+                  format={imageCfg.format}
+                  palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
+                  selected={selectedLayer === 'complementar'}
+                  onSelect={() => setSelectedLayer('complementar')}
+                  onChange={(next) => setLayout({ ...imageCfg.layout, complementar: next })}
+                />
+
+                <FontPicker
+                  value={imageCfg.fontFamily}
+                  onChange={(v) => setImageField({ fontFamily: v })}
+                />
+              </div>
+
+              {/* 7 · Divisor, e Logos */}
+              <div className="h-px bg-slate-200 my-3" />
+
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Logos</label>
+                <button
+                  type="button"
+                  onClick={() => setLayout({
+                    ...imageCfg.layout,
+                    paired: !imageCfg.layout.paired,
+                    advertiserLogo: { ...imageCfg.layout.advertiserLogo, enabled: true },
+                    targetLogo: { ...imageCfg.layout.targetLogo, enabled: true },
+                  })}
+                  disabled={!advertiserLogoUrl}
+                  title={advertiserLogoUrl ? undefined : 'Defina o logo no Brand Kit primeiro'}
+                  className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Copy className="w-3 h-3" />
+                  {imageCfg.layout.paired ? 'Desagrupar' : 'Agrupar como par'}
+                </button>
+              </div>
+
+              <LogoLayerControls
+                id="advertiserLogo"
+                label="Meu logo"
+                layer={imageCfg.layout.advertiserLogo}
+                disabled={!advertiserLogoUrl}
+                disabledHint="Defina o logo no Brand Kit primeiro"
+                selected={selectedLayer === 'advertiserLogo'}
+                onSelect={() => setSelectedLayer('advertiserLogo')}
+                onChange={(next) => setLayout({ ...imageCfg.layout, advertiserLogo: next })}
+              />
+              <LogoLayerControls
+                id="targetLogo"
+                label="Logo da conta"
+                layer={imageCfg.layout.targetLogo}
+                selected={selectedLayer === 'targetLogo'}
+                onSelect={() => setSelectedLayer('targetLogo')}
+                onChange={(next) => setLayout({ ...imageCfg.layout, targetLogo: next })}
+              />
             </SectionCard>
 
             {/* ============ 3 · DESTINO ============ */}
@@ -1791,20 +1867,13 @@ function CardAction({ label, onClick, loading, disabled, title, icon }: {
 
 // The icon is drawn to the real aspect ratio of the option it represents, so
 // the shape itself carries the meaning and the numbers just confirm it.
-const AD_FORMATS: Record<AdFormat, { label: string; size: string; ratio: string; icon: React.ReactNode }> = {
-  square: {
-    label: 'Quadrado',
-    size: '1200 × 1200 px',
-    ratio: '1:1',
-    icon: <Square className="w-4 h-4" strokeWidth={2.25} />,
-  },
-  banner: {
-    label: 'Banner',
-    size: '1200 × 628 px',
-    ratio: '1.91:1',
-    icon: <RectangleHorizontal className="w-4 h-4" strokeWidth={2.25} />,
-  },
+const AD_FORMATS: Record<AdFormat, { label: string; ratio: string; icon: React.ReactNode }> = {
+  square: { label: 'Quadrado', ratio: '1:1', icon: <Square className="w-4 h-4" strokeWidth={2.25} /> },
+  banner: { label: 'Banner', ratio: '1.91:1', icon: <RectangleHorizontal className="w-4 h-4" strokeWidth={2.25} /> },
 };
+
+// O rótulo sai das dimensões reais do canvas — se um dia mudarem, o texto muda junto.
+const formatSizeLabel = (f: AdFormat) => `${AD_FORMAT_SIZE[f].w} × ${AD_FORMAT_SIZE[f].h} px`;
 
 function FormatButton({ format, active, onClick }: { format: AdFormat; active: boolean; onClick: () => void }) {
   const meta = AD_FORMATS[format];
@@ -1824,7 +1893,7 @@ function FormatButton({ format, active, onClick }: { format: AdFormat; active: b
         <span className="text-xs font-bold">{meta.label}</span>
       </span>
       <span className={`text-[9px] font-semibold tabular-nums ${active ? 'text-white/85' : 'text-slate-400'}`}>
-        {meta.size} · {meta.ratio}
+        {formatSizeLabel(format)} · {meta.ratio}
       </span>
     </button>
   );
@@ -1841,6 +1910,166 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
         placeholder={placeholder}
         className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded focus:ring-1 focus:ring-[#FF5F39] outline-none"
       />
+    </div>
+  );
+}
+
+// Controles de uma camada de texto. Ficam no card e não flutuando sobre a
+// imagem: o preview é para arrastar e olhar, o card é onde se ajusta número.
+function TextLayerControls({ id, label, layer, text, fontFamily, format, palette, selected, onSelect, onChange }: {
+  id: string;
+  label: string;
+  layer: TextLayer;
+  text: string;
+  fontFamily: string;
+  format: AdFormat;
+  palette: string[];
+  selected: boolean;
+  onSelect: () => void;
+  onChange: (next: TextLayer) => void;
+}) {
+  // Teto vivo: um destaque longo não pode chegar aos 160px, senão vaza do
+  // canvas e o PNG sai cortado. Mede uma vez no tamanho atual e escala.
+  const maxSize = maxTextSizePx(
+    measureTextWidthPx(text, layer.sizePx, fontFamily), layer.sizePx, format,
+  );
+  return (
+    <div
+      onFocus={onSelect}
+      className={`mt-1.5 pl-2 border-l-2 ${selected ? 'border-[#FF5F39]' : 'border-slate-200'}`}
+    >
+      <div className="flex items-center gap-2">
+        <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
+          Tamanho do texto {label}
+        </label>
+        <input
+          id={`${id}-size`}
+          type="range"
+          min={MIN_TEXT_SIZE_PX}
+          max={maxSize}
+          step={2}
+          value={Math.min(layer.sizePx, maxSize)}
+          onChange={(e) => onChange({ ...layer, sizePx: Number(e.target.value) })}
+          className="flex-1 accent-[#FF5F39]"
+        />
+        <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{layer.sizePx}px</span>
+      </div>
+
+      <div className="flex items-center gap-2 mt-1">
+        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Cor</span>
+        {palette.filter(Boolean).map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Cor ${c} para ${label}`}
+            onClick={() => onChange({ ...layer, color: c })}
+            style={{ backgroundColor: c }}
+            className={`w-4 h-4 rounded border ${layer.color === c ? 'border-[#FF5F39] ring-1 ring-[#FF5F39]' : 'border-slate-300'}`}
+          />
+        ))}
+        <input
+          type="color"
+          aria-label={`Cor personalizada para ${label}`}
+          value={layer.color}
+          onChange={(e) => onChange({ ...layer, color: e.target.value })}
+          className="w-6 h-5 rounded border border-slate-200 bg-white p-0"
+        />
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-1">
+        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Fundo</span>
+        {(['box', 'shadow', 'none'] as const).map((b) => (
+          <button
+            key={b}
+            type="button"
+            aria-pressed={layer.backdrop === b}
+            onClick={() => onChange({ ...layer, backdrop: b })}
+            className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${
+              layer.backdrop === b
+                ? 'bg-[#FF5F39] border-[#FF5F39] text-white'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+            }`}
+          >
+            {b === 'box' ? 'Caixa' : b === 'shadow' ? 'Sombra' : 'Nenhum'}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const WRAP_LABEL: Record<LogoWrap, string> = {
+  circle: 'Círculo', square: 'Quadrado', rect: 'Retângulo', none: 'Sem fundo',
+};
+
+function LogoLayerControls({ id, label, layer, disabled, disabledHint, selected, onSelect, onChange }: {
+  id: string;
+  label: string;
+  layer: LogoLayer;
+  disabled?: boolean;
+  disabledHint?: string;
+  selected: boolean;
+  onSelect: () => void;
+  onChange: (next: LogoLayer) => void;
+}) {
+  return (
+    <div className={`mt-2 pl-2 border-l-2 ${selected ? 'border-[#FF5F39]' : 'border-slate-200'}`}>
+      <label
+        htmlFor={`${id}-enabled`}
+        title={disabled ? disabledHint : undefined}
+        className={`flex items-center gap-1.5 text-[11px] font-medium ${disabled ? 'text-slate-400' : 'text-slate-700'}`}
+      >
+        <input
+          id={`${id}-enabled`}
+          type="checkbox"
+          disabled={disabled}
+          checked={layer.enabled && !disabled}
+          onChange={(e) => { onSelect(); onChange({ ...layer, enabled: e.target.checked }); }}
+          className="rounded"
+        />
+        {label}
+      </label>
+
+      {layer.enabled && !disabled && (
+        <>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Wrap</span>
+            {(['circle', 'square', 'rect', 'none'] as const).map((w) => (
+              <button
+                key={w}
+                type="button"
+                aria-pressed={layer.wrap === w}
+                aria-label={`${WRAP_LABEL[w]} para ${label}`}
+                onClick={() => { onSelect(); onChange({ ...layer, wrap: w }); }}
+                className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${
+                  layer.wrap === w
+                    ? 'bg-[#FF5F39] border-[#FF5F39] text-white'
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                {WRAP_LABEL[w]}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 mt-1">
+            <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
+              Tamanho do {label}
+            </label>
+            <input
+              id={`${id}-size`}
+              type="range"
+              min={60}
+              max={420}
+              step={10}
+              value={layer.sizePx}
+              onChange={(e) => { onSelect(); onChange({ ...layer, sizePx: Number(e.target.value) }); }}
+              className="flex-1 accent-[#FF5F39]"
+            />
+            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{layer.sizePx}px</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

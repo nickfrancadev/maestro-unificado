@@ -76,7 +76,11 @@ describe('CreativeStep — formato reflete no preview', () => {
   it('escolher Quadrado deixa o preview 1:1', () => {
     const { container } = renderStep(withBaseImage());
     goTo(/Template global/);
-    fireEvent.click(screen.getByRole('button', { name: /Quadrado/ }));
+    // `/Quadrado.*1:1/`, não só `/Quadrado/`: a Task 7 acrescentou o wrap
+    // "Quadrado" do logo da conta (habilitado por padrão), que também é um
+    // <button> com esse texto — sem o pedaço da proporção o seletor bate em
+    // dois elementos e `getByRole` estoura.
+    fireEvent.click(screen.getByRole('button', { name: /Quadrado.*1:1/ }));
     expect(container.querySelector('[data-testid="overlay-canvas"]')).toHaveClass('aspect-[1200/1200]');
   });
 });
@@ -134,5 +138,108 @@ describe('CreativeStep — "Voltar ao template" também restaura o layout', () =
     // fica com um layout descolado do template e sem caminho de volta.
     expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ left: '30%' });
     expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('CreativeStep — ordem do card Imagem', () => {
+  // O pedido: upload antes dos textos. E formato antes do upload, porque é ele
+  // que define as dimensões que a dropzone pede.
+  it('formato vem antes da origem, que vem antes dos textos', () => {
+    const { container } = renderStep();
+    goTo(/Template global/);
+    // Busca pelo conteúdo e não por índice: a posição do <section> muda toda
+    // vez que alguém acrescenta um card, e o teste passaria a medir outra coisa.
+    const card = Array.from(container.querySelectorAll('section'))
+      .find((sec) => (sec.textContent || '').includes('Origem da imagem-base'))!;
+    // Normaliza para maiúsculas: os rótulos são Title Case na fonte (só viram
+    // caixa alta visualmente via CSS `uppercase`), e `.textContent` não é
+    // afetado por CSS — comparar em maiúsculas é o que torna a checagem
+    // insensível a essa diferença puramente visual.
+    const texto = (card.textContent || '').toUpperCase();
+    expect(texto.indexOf('FORMATO')).toBeLessThan(texto.indexOf('ORIGEM DA IMAGEM-BASE'));
+    expect(texto.indexOf('ORIGEM DA IMAGEM-BASE')).toBeLessThan(texto.indexOf('TEXTO DESTAQUE'));
+  });
+
+  it('a dropzone anuncia a dimensão do formato escolhido', () => {
+    renderStep();
+    goTo(/Template global/);
+    // `getAllByText`: o rótulo aparece DUAS vezes — no FormatButton e na
+    // dropzone —, e `getByText` estouraria com "found multiple elements".
+    expect(screen.getAllByText(/1200 × 628 px/).length).toBeGreaterThan(1);
+    fireEvent.click(screen.getByRole('button', { name: /Quadrado.*1:1/ }));
+    expect(screen.getAllByText(/1200 × 1200 px/).length).toBeGreaterThan(1);
+    // O FormatButton do Banner continua na tela mostrando a SUA própria
+    // dimensão (ele é o seletor do outro formato, não um resumo do escolhido)
+    // — por isso a checagem final é escopada ao hint da dropzone, não à
+    // página inteira.
+    const dropzoneHint = screen.getByText(/JPG ou PNG/);
+    expect(dropzoneHint.textContent).toContain('1200 × 1200 px');
+    expect(dropzoneHint.textContent).not.toContain('1200 × 628 px');
+  });
+});
+
+describe('CreativeStep — controles de camada', () => {
+  it('mudar o tamanho do destaque grava no layout', () => {
+    renderStep(withBaseImage());
+    goTo(/Template global/);
+    const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
+    expect(slider.value).toBe('56');
+    fireEvent.change(slider, { target: { value: '90' } });
+    // Só volta 90 se tiver dado a volta inteira: setLayout → updateCreative →
+    // prop → imageCfg.layout. É esse circuito que o teste tranca.
+    expect(slider.value).toBe('90');
+  });
+
+  // jsdom não implementa canvas.measureText, então `measureTextWidthPx` devolve 0
+  // e o teto cai no máximo duro. O que este teste garante é o contrato do
+  // atributo; a aritmética do teto está coberta em `overlayLayout.test.ts`.
+  it('o slider do destaque expõe piso e teto', () => {
+    renderStep(withBaseImage());
+    goTo(/Template global/);
+    const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
+    expect(Number(slider.min)).toBe(16);
+    expect(Number(slider.max)).toBeGreaterThan(0);
+  });
+
+  it('trocar o fundo para Nenhum tira a caixa do preview', () => {
+    renderStep(withBaseImage());
+    goTo(/Template global/);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Nenhum$/ })[0]);
+    // jsdom resolve o keyword CSS `transparent` para `rgba(0, 0, 0, 0)` no
+    // computed style (é assim que o próprio jsdom normaliza a cor, igual a um
+    // navegador) — `toHaveStyle` compara contra o computed style, então o
+    // valor esperado precisa ser o já resolvido, não o keyword literal.
+    expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' });
+  });
+});
+
+describe('CreativeStep — logos', () => {
+  it('"Meu logo" fica desabilitado sem logo no Brand Kit', () => {
+    renderStep(withBaseImage());
+    goTo(/Template global/);
+    expect(screen.getByLabelText(/Meu logo/)).toBeDisabled();
+  });
+
+  it('"Logo da conta" começa marcado e desmarcar tira o logo do preview', () => {
+    renderStep(withBaseImage());
+    goTo(/Template global/);
+    // String exata, não regex: o logo da conta vem habilitado por padrão, e
+    // com ele habilitado o Wrap picker expõe botões com aria-label "Quadrado
+    // para Logo da conta" etc. — um /Logo da conta/ solto bateria neles
+    // também e `getByLabelText` estouraria com múltiplos elementos.
+    const check = screen.getByLabelText('Logo da conta');
+    expect(check).toBeChecked();
+    fireEvent.click(check);
+    expect(screen.queryByAltText('Logo da conta')).not.toBeInTheDocument();
+  });
+
+  it('"Agrupar como par" liga os dois logos de uma vez', () => {
+    const d = withBaseImage();
+    d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
+    renderStep(d);
+    goTo(/Template global/);
+    fireEvent.click(screen.getByRole('button', { name: /Agrupar como par/ }));
+    expect(screen.getByAltText('Meu logo')).toBeInTheDocument();
+    expect(screen.getByAltText('Logo da conta')).toBeInTheDocument();
   });
 });

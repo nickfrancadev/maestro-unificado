@@ -83,11 +83,22 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByPlaceholderText('Texto secundário na imagem')).toBeInTheDocument();
     expect(screen.getByText('Fonte')).toBeInTheDocument();
     // Cada formato anuncia medida e proporção, não só o nome.
-    expect(screen.getByRole('button', { name: /Quadrado/ })).toBeInTheDocument();
+    // `/Quadrado.*1:1/`, não só `/Quadrado/`: a Task 7 acrescentou o wrap
+    // "Quadrado" do logo da conta (habilitado por padrão), que também é um
+    // <button> com esse texto — sem o pedaço da proporção o seletor bate em
+    // dois elementos e `getByRole` estoura.
+    expect(screen.getByRole('button', { name: /Quadrado.*1:1/ })).toBeInTheDocument();
     expect(screen.getByText('1200 × 1200 px · 1:1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Banner/ })).toBeInTheDocument();
     expect(screen.getByText('1200 × 628 px · 1.91:1')).toBeInTheDocument();
-    expect(screen.getByLabelText(/Aplicar logo da empresa-alvo/)).toBeInTheDocument();
+    // O checkbox "Aplicar logo da empresa-alvo" saiu na Task 7 — o controle
+    // morto (escrevia em `showTargetLogo`, que o preview nunca lia) foi
+    // substituído por `LogoLayerControls`, cujo sucessor direto é o toggle
+    // "Logo da conta" (liga/desliga `layout.targetLogo.enabled`).
+    // String exata, não regex: com o logo da conta habilitado por padrão, o
+    // Wrap picker expõe botões com aria-label "Quadrado para Logo da conta"
+    // etc., e um /Logo da conta/ solto bateria neles também.
+    expect(screen.getByLabelText('Logo da conta')).toBeInTheDocument();
   });
 
   it('numa empresa, o header gera os dois e cada card gera a sua parte', () => {
