@@ -137,6 +137,43 @@ describe('buildOverlaySvg — logos', () => {
   it('encaixa o logo dentro do cartão sem distorcer', () => {
     expect(svgFor({ logos: [logo()] })).toContain('preserveAspectRatio="xMidYMid meet"');
   });
+
+  // URL assinada do Supabase Storage tem query com "&" — isto é o caso comum,
+  // não o extremo. Sem escapar, o "&" cru quebra o XML do SVG.
+  it('escapa "&" no href do logo (URL assinada com query string)', () => {
+    const href = 'https://x.test/logo.png?token=abc&Expires=123&Signature=xyz';
+    const svg = svgFor({ logos: [logo({ href })] });
+    expect(svg).toContain('href="https://x.test/logo.png?token=abc&amp;Expires=123&amp;Signature=xyz"');
+    expect(svg).not.toContain('token=abc&Expires');
+  });
+
+  // Um "\"" cru no href fecha o atributo mais cedo e deixa o resto da string
+  // ser interpretado como markup novo — isto é injeção de elemento, não só
+  // XML malformado.
+  it('escapa aspas no href do logo — não deixa injetar elemento novo', () => {
+    const href = 'x.png"/><rect id="pwned" width="9999" height="9999" fill="red"/><image href="x.png';
+    const svg = svgFor({ logos: [logo({ href })] });
+    expect(svg).not.toContain('<rect id="pwned"');
+    expect(svg).toContain('&quot;');
+  });
+});
+
+describe('buildOverlaySvg — href da imagem-base', () => {
+  // Mesma classe de bug do href dos logos, só que na imagem de fundo: URL
+  // assinada com "&" na query quebra o XML se o href não for escapado.
+  it('escapa "&" no baseHref (URL assinada com query string)', () => {
+    const baseHref = 'https://x.test/base.png?token=abc&Expires=123&Signature=xyz';
+    const svg = svgFor({ baseHref });
+    expect(svg).toContain('href="https://x.test/base.png?token=abc&amp;Expires=123&amp;Signature=xyz"');
+    expect(svg).not.toContain('token=abc&Expires');
+  });
+
+  it('escapa aspas no baseHref — não deixa injetar elemento novo', () => {
+    const baseHref = 'x.png"/><rect id="pwned" width="9999" height="9999" fill="red"/><image href="x.png';
+    const svg = svgFor({ baseHref });
+    expect(svg).not.toContain('<rect id="pwned"');
+    expect(svg).toContain('&quot;');
+  });
 });
 
 describe('escapeXml', () => {

@@ -141,7 +141,7 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
     const pad = logoInnerPadPx(l.wrap, boxW);
     parts.push(
       `<image x="${r(boxX + pad)}" y="${r(boxY + pad)}" width="${r(boxW - pad * 2)}" ` +
-      `height="${r(boxH - pad * 2)}" href="${l.href}" preserveAspectRatio="xMidYMid meet"/>`,
+      `height="${r(boxH - pad * 2)}" href="${escapeXml(l.href)}" preserveAspectRatio="xMidYMid meet"/>`,
     );
   }
 
@@ -155,7 +155,7 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
       <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.75"/>
     </filter>
   </defs>
-  <image x="0" y="0" width="${CW}" height="${CH}" href="${opts.baseHref}" preserveAspectRatio="xMidYMid slice"/>
+  <image x="0" y="0" width="${CW}" height="${CH}" href="${escapeXml(opts.baseHref)}" preserveAspectRatio="xMidYMid slice"/>
   ${parts.join("\n  ")}
 </svg>`;
 }
