@@ -60,11 +60,46 @@ describe('OverlayCanvas — render', () => {
   });
 });
 
+describe('OverlayCanvas — escala', () => {
+  // `ResizeObserver` do vitest.setup.ts é um shim inerte (observe/disconnect
+  // sem corpo) — ele nunca chama o callback de resize, então este teste não
+  // consegue exercitar esse caminho. O que ele prova é o outro: a medição
+  // síncrona feita em `useLayoutEffect` assim que o container existe no DOM,
+  // logo após o commit do primeiro render e antes do primeiro paint. Sem
+  // aquele efeito, `scale` ficaria travada no fallback (contêiner tratado
+  // como se tivesse exatos 1200px) até algum re-render incidental acontecer.
+  it('mede o container real e escala o texto por largura/1200, não pelo fallback', () => {
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        // Só o canvas propriamente dito tem um retângulo "real" no teste;
+        // qualquer outro elemento cai em zero, como o resto do jsdom.
+        const w = this.dataset.testid === 'overlay-canvas' ? 600 : 0;
+        return { x: 0, y: 0, left: 0, top: 0, right: w, bottom: w, width: w, height: w, toJSON: () => ({}) } as DOMRect;
+      },
+    );
+    try {
+      renderCanvas();
+      // 600px de tela para os 1200px do canvas de referência = escala 0.5;
+      // o destaque nasce com sizePx 56 (default), logo 56 * 0.5 = 28px.
+      // Se a escala tivesse ficado presa no fallback (1), o valor seria 56px.
+      expect(screen.getByText('WORKSHOP ABM')).toHaveStyle({ fontSize: '28px' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('OverlayCanvas — seleção', () => {
-  it('clicar numa camada a seleciona', () => {
+  it('clicar numa camada a seleciona, e só a seleciona (não borbulha pro fundo)', () => {
     const onSelect = vi.fn();
     renderCanvas({ onSelect });
     fireEvent.pointerDown(screen.getByText('WORKSHOP ABM'), { clientX: 10, clientY: 10, pointerId: 1 });
+    // A camada chama `e.stopPropagation()` antes de selecionar: sem isso o
+    // pointerDown borbulharia até o fundo do canvas e este dispararia
+    // `onSelect(null)` logo em seguida, cancelando a seleção que acabou de
+    // acontecer. `toHaveBeenCalledWith` sozinho não pega essa regressão
+    // porque não importa quantas vezes a função foi chamada.
+    expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('destaque');
   });
 
@@ -83,8 +118,8 @@ describe('OverlayCanvas — arrasto', () => {
     const canvas = container.querySelector('[data-testid="overlay-canvas"]')!;
     stubRect(canvas, 600, 314); // metade do canvas de referência
 
-    const alvo = screen.getByText('WORKSHOP ABM');
-    fireEvent.pointerDown(alvo, { clientX: 100, clientY: 100, pointerId: 1 });
+    const target = screen.getByText('WORKSHOP ABM');
+    fireEvent.pointerDown(target, { clientX: 100, clientY: 100, pointerId: 1 });
     fireEvent.pointerMove(canvas, { clientX: 160, clientY: 100, pointerId: 1 });
 
     // 60px de 600 = 0.1 do canvas, somado ao x default de 0.30.

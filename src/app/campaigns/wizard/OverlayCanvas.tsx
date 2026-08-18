@@ -5,7 +5,7 @@
 // Vive fora do CreativeStep de propósito: aquele arquivo já passa de 1900
 // linhas, e a lógica de arrasto tem estado próprio que não interessa a ninguém
 // mais.
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import {
   AD_FORMAT_SIZE,
@@ -14,6 +14,7 @@ import {
   clampCenter,
   effectiveLayout,
   logoInnerPadPx,
+  textLayerRect,
   type AdFormat,
   type LogoLayer,
   type OverlayLayout,
@@ -64,24 +65,55 @@ export function OverlayCanvas({
 }: OverlayCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
-  // Só serve para forçar re-render quando a fonte termina de carregar: até lá
-  // as camadas de texto estão medidas no fallback e nascem com a largura errada.
+  // Só serve para forçar re-render quando a fonte termina de carregar (ou
+  // falha em carregar): até lá as camadas de texto estão medidas no
+  // fallback e nascem com a largura errada, mas medir no fallback ainda é
+  // melhor que não medir — por isso o `.catch` também dispara o tick.
   const [, setFontTick] = useState(0);
+  // Largura real (em px de tela) do container. Começa em 0 e é preenchida
+  // pela medição abaixo — até lá, `scale` cai no fallback de 1200px de
+  // referência (ver definição de `scale` após o guard de `baseImageUrl`).
+  const [measuredWidth, setMeasuredWidth] = useState(0);
 
-  const { w: CW, h: CH } = AD_FORMAT_SIZE[format];
+  const { w: CW } = AD_FORMAT_SIZE[format];
   const eff = effectiveLayout(layout, format);
 
   useEffect(() => {
     if (typeof document === 'undefined' || !document.fonts) return;
-    let vivo = true;
+    let alive = true;
     document.fonts.load(`700 56px "${fontFamily}"`)
       .then(() => document.fonts.ready)
-      .then(() => { if (vivo) setFontTick((t) => t + 1); })
-      .catch(() => {});
-    return () => { vivo = false; };
+      .then(() => { if (alive) setFontTick((t) => t + 1); })
+      .catch(() => { if (alive) setFontTick((t) => t + 1); });
+    return () => { alive = false; };
   }, [fontFamily]);
 
-  const scaleOf = () => (canvasRef.current?.getBoundingClientRect().width || CW) / CW;
+  // Mede o container assim que ele existe no DOM (síncrono, antes do
+  // primeiro paint): no primeiro render `canvasRef.current` ainda é `null`
+  // — refs só são atribuídos depois do commit —, então sem isto `scale`
+  // nasceria travada em 1 (como se o container tivesse exatos 1200px) até
+  // algum re-render incidental acontecer. Depende de `baseImageUrl` porque
+  // o `ref` só existe na árvore "carregada" (o placeholder não o carrega).
+  useLayoutEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const width = el.getBoundingClientRect().width;
+    if (width > 0) setMeasuredWidth(width);
+  }, [baseImageUrl]);
+
+  // Reage a resize do container depois do mount: janela redimensionada,
+  // sidebar recolhida, breakpoint responsivo. Mesmo padrão de
+  // `LpThumbnail.tsx` (ResizeObserver na caixa externa → estado → escala).
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry && entry.contentRect.width > 0) setMeasuredWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [baseImageUrl]);
 
   const beginDrag = (
     e: React.PointerEvent, id: OverlayLayerId, x: number, y: number, boxW: number, boxH: number,
@@ -104,8 +136,8 @@ export function OverlayCanvas({
     const nx = drag.startX + (e.clientX - drag.startClientX) / rect.width;
     const ny = drag.startY + (e.clientY - drag.startClientY) / rect.height;
     const { x, y } = clampCenter(nx, ny, drag.boxW, drag.boxH, format);
-    const camada = layout[drag.id];
-    onLayoutChange?.({ ...layout, [drag.id]: { ...camada, x, y } });
+    const layer = layout[drag.id];
+    onLayoutChange?.({ ...layout, [drag.id]: { ...layer, x, y } });
   };
 
   const endDrag = () => setDrag(null);
@@ -124,16 +156,22 @@ export function OverlayCanvas({
     );
   }
 
-  const scale = scaleOf();
+  // `measuredWidth` só é 0 antes da primeira medição (ver `useLayoutEffect`
+  // acima); a partir daí segue a largura real do container.
+  const scale = (measuredWidth || CW) / CW;
   const ring = (id: OverlayLayerId) =>
     selected === id ? 'ring-2 ring-[#FF5F39] ring-offset-1 ring-offset-black/20' : '';
 
-  const textLayer = (id: 'destaque' | 'complementar', texto: string, peso: number) => {
-    if (!texto) return null;
+  const textLayer = (id: 'destaque' | 'complementar', text: string, weight: number) => {
+    if (!text) return null;
     const l = eff[id];
-    const larguraPx = measureTextWidthPx(texto, l.sizePx, fontFamily);
-    const boxW = larguraPx + OVERLAY_STYLE.boxPadX * 2;
-    const boxH = l.sizePx + OVERLAY_STYLE.boxPadY * 2;
+    const widthPx = measureTextWidthPx(text, l.sizePx, fontFamily);
+    // Mesma conta que o servidor usa para a caixa de fundo (`overlaySvg.ts`
+    // espelha `textLayerRect`) — reusar a função em vez de reimplementar a
+    // aritmética à mão é o que garante que os dois nunca divirjam.
+    const rect = textLayerRect(l, widthPx, format);
+    const boxW = rect.w;
+    const boxH = rect.h;
     return (
       <div
         key={id}
@@ -147,14 +185,14 @@ export function OverlayCanvas({
           padding: `${OVERLAY_STYLE.boxPadY * scale}px ${OVERLAY_STYLE.boxPadX * scale}px`,
           fontFamily: `"${fontFamily}", sans-serif`,
           fontSize: `${l.sizePx * scale}px`,
-          fontWeight: peso,
+          fontWeight: weight,
           lineHeight: 1,
           color: l.color,
           background: l.backdrop === 'box' ? OVERLAY_STYLE.boxFill : 'transparent',
           textShadow: l.backdrop === 'shadow' ? '0 2px 8px rgba(0,0,0,0.75)' : undefined,
         }}
       >
-        {texto}
+        {text}
       </div>
     );
   };
@@ -167,13 +205,13 @@ export function OverlayCanvas({
     const pad = logoInnerPadPx(l.wrap, boxW);
     // No modo par só o logo do anunciante recebe alça: o da conta é derivado
     // dele, e dar duas alças a uma posição só seria mentira.
-    const arrastavel = !(layout.paired && id === 'targetLogo');
+    const draggable = !(layout.paired && id === 'targetLogo');
     return (
       <div
         key={id}
-        data-draggable={arrastavel ? 'true' : undefined}
-        onPointerDown={arrastavel ? (e) => beginDrag(e, id, l.x, l.y, boxW, boxH) : undefined}
-        className={`absolute flex items-center justify-center ${arrastavel ? 'cursor-move' : ''} ${ring(id)}`}
+        data-draggable={draggable ? 'true' : undefined}
+        onPointerDown={draggable ? (e) => beginDrag(e, id, l.x, l.y, boxW, boxH) : undefined}
+        className={`absolute flex items-center justify-center ${draggable ? 'cursor-move' : ''} ${ring(id)}`}
         style={{
           left: `${l.x * 100}%`,
           top: `${l.y * 100}%`,

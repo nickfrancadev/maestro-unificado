@@ -145,9 +145,9 @@ export function maxTextSizePx(
   format: AdFormat,
 ): number {
   if (measuredWidthPx <= 0 || atSizePx <= 0) return MAX_TEXT_SIZE_PX;
-  const disponivel = AD_FORMAT_SIZE[format].w - OVERLAY_STYLE.boxPadX * 2;
-  const cabe = Math.floor((disponivel / measuredWidthPx) * atSizePx);
-  return Math.max(MIN_TEXT_SIZE_PX, Math.min(MAX_TEXT_SIZE_PX, cabe));
+  const availableWidthPx = AD_FORMAT_SIZE[format].w - OVERLAY_STYLE.boxPadX * 2;
+  const fittingSizePx = Math.floor((availableWidthPx / measuredWidthPx) * atSizePx);
+  return Math.max(MIN_TEXT_SIZE_PX, Math.min(MAX_TEXT_SIZE_PX, fittingSizePx));
 }
 
 export function pairedTargetLayer(advertiser: LogoLayer, format: AdFormat): LogoLayer {
