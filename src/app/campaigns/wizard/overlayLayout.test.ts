@@ -2,17 +2,16 @@ import { describe, it, expect } from 'vitest';
 import {
   AD_FORMAT_SIZE,
   createDefaultOverlayLayout,
+  createDefaultBackdrop,
   withLayoutDefaults,
   textLayerRect,
   logoLayerRect,
   clampCenter,
-  pairedTargetLayer,
   effectiveLayout,
   effectiveTextSize,
   maxTextSizePx,
   OVERLAY_STYLE,
   LOGO_WRAP_ASPECT,
-  PAIR_GAP_PX,
 } from './overlayLayout';
 
 describe('createDefaultOverlayLayout', () => {
@@ -52,7 +51,7 @@ describe('withLayoutDefaults', () => {
 
 describe('textLayerRect', () => {
   it('centraliza a caixa no ponto da camada, com o padding dos dois lados', () => {
-    const layer = { x: 0.5, y: 0.5, sizePx: 50, color: '#FFF', backdrop: 'box' as const };
+    const layer = { x: 0.5, y: 0.5, sizePx: 50, color: '#FFF', align: 'center' as const, backdrop: createDefaultBackdrop() };
     const r = textLayerRect(layer, 200, 'banner');
     expect(r.w).toBe(200 + OVERLAY_STYLE.boxPadX * 2);
     expect(r.h).toBe(50 + OVERLAY_STYLE.boxPadY * 2);
@@ -94,22 +93,19 @@ describe('clampCenter', () => {
   });
 });
 
-describe('pairedTargetLayer', () => {
-  it('põe o logo da conta à direita do anunciante, mesmo tamanho e mesmo wrap', () => {
-    const adv = { enabled: true, x: 0.2, y: 0.8, sizePx: 140, wrap: 'rect' as const };
-    const t = pairedTargetLayer(adv, 'banner');
-    expect(t.y).toBe(0.8);
-    expect(t.sizePx).toBe(140);
-    expect(t.wrap).toBe('rect');
-    expect(t.enabled).toBe(true);
-    expect(t.x).toBeCloseTo(0.2 + (140 + PAIR_GAP_PX) / 1200);
-  });
-});
 
 describe('effectiveLayout', () => {
-  it('sem par, devolve o layout intacto', () => {
+  // O complementar passou a ser DERIVADO do destaque (bloco de texto), então
+  // `effectiveLayout` sempre devolve objeto novo. O que continua valendo é que
+  // sem par e sem medição nada além dessa derivação muda.
+  it('sem par, só deriva a posição do complementar', () => {
     const l = createDefaultOverlayLayout();
-    expect(effectiveLayout(l, 'banner')).toBe(l);
+    const e = effectiveLayout(l, 'banner');
+    expect(e.destaque).toEqual(l.destaque);
+    expect(e.advertiserLogo).toEqual(l.advertiserLogo);
+    expect(e.targetLogo).toEqual(l.targetLogo);
+    expect(e.complementar.x).toBe(l.destaque.x);
+    expect(e.complementar.y).toBeGreaterThan(l.destaque.y);
   });
 
   // No modo par o logo da conta deixa de ter GEOMETRIA independente: quem
@@ -170,12 +166,12 @@ describe('effectiveLayout', () => {
 
 describe('effectiveTextSize', () => {
   it('sem medição confiável (0), devolve o próprio gravado', () => {
-    const layer = { x: 0.3, y: 0.14, sizePx: 56, color: '#FFFFFF', backdrop: 'box' as const };
+    const layer = { x: 0.3, y: 0.14, sizePx: 56, color: '#FFFFFF', align: 'center' as const, backdrop: createDefaultBackdrop() };
     expect(effectiveTextSize(layer, 0, 'banner')).toBe(56);
   });
 
   it('com o gravado acima do teto medido, deriva o teto — sem alterar o objeto de entrada', () => {
-    const layer = { x: 0.3, y: 0.14, sizePx: 160, color: '#FFFFFF', backdrop: 'box' as const };
+    const layer = { x: 0.3, y: 0.14, sizePx: 160, color: '#FFFFFF', align: 'center' as const, backdrop: createDefaultBackdrop() };
     expect(effectiveTextSize(layer, 2312, 'banner')).toBe(80);
     expect(layer.sizePx).toBe(160); // puro: não muta o argumento
   });
@@ -183,7 +179,7 @@ describe('effectiveTextSize', () => {
   it('com o gravado abaixo do teto medido, devolve o gravado — nunca ENGORDA sozinho', () => {
     // 200px medidos a 40px de fonte cabem várias vezes na largura útil
     // (1156px); o teto vem do máximo duro (160), bem acima do gravado.
-    const layer = { x: 0.3, y: 0.14, sizePx: 40, color: '#FFFFFF', backdrop: 'box' as const };
+    const layer = { x: 0.3, y: 0.14, sizePx: 40, color: '#FFFFFF', align: 'center' as const, backdrop: createDefaultBackdrop() };
     expect(effectiveTextSize(layer, 200, 'banner')).toBe(40);
   });
 });
@@ -265,23 +261,27 @@ describe('paridade cliente ↔ servidor', () => {
   it.each(['square', 'banner'] as const)(
     'textLayerRect bate com o <rect> da caixa de texto que o servidor gera (%s)',
     (format) => {
-      const layer = { x: 0.37, y: 0.62, sizePx: 44, color: '#FFFFFF', backdrop: 'box' as const };
-      const widthPx = 173; // simula a medição real que o editor manda (widthPx)
-      const expected = textLayerRect(layer, widthPx, format);
+      // Os TRÊS alinhamentos: `align` mudou o significado de `x`, então a
+      // paridade só vale se ela se sustentar em cada âncora, não só no centro.
+      for (const align of ['left', 'center', 'right'] as const) {
+        const layer = { x: 0.37, y: 0.62, sizePx: 44, color: '#FFFFFF', align, backdrop: createDefaultBackdrop() };
+        const widthPx = 173; // simula a medição real que o editor manda (widthPx)
+        const expected = textLayerRect(layer, widthPx, format);
 
-      const svg = buildOverlaySvg({
-        format,
-        baseHref: 'data:image/png;base64,',
-        fontFamily: 'Arial',
-        texts: [{ text: 'Rótulo', ...layer, weight: 700, widthPx }],
-        logos: [],
-      });
-      const got = firstRectAttrs(svg);
+        const svg = buildOverlaySvg({
+          format,
+          baseHref: 'data:image/png;base64,',
+          fontFamily: 'Arial',
+          texts: [{ text: 'Rótulo', ...layer, weight: 700, widthPx }],
+          logos: [],
+        });
+        const got = firstRectAttrs(svg);
 
-      expect(got.x).toBeCloseTo(expected.x, 2);
-      expect(got.y).toBeCloseTo(expected.y, 2);
-      expect(got.w).toBeCloseTo(expected.w, 2);
-      expect(got.h).toBeCloseTo(expected.h, 2);
+        expect(got.x).toBeCloseTo(expected.x, 2);
+        expect(got.y).toBeCloseTo(expected.y, 2);
+        expect(got.w).toBeCloseTo(expected.w, 2);
+        expect(got.h).toBeCloseTo(expected.h, 2);
+      }
     },
   );
 

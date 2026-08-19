@@ -27,7 +27,7 @@ import {
   Plus,
   Square,
   RectangleHorizontal,
-  Copy,
+  Copy, AlignLeft, AlignCenter, AlignRight,
 } from 'lucide-react';
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
@@ -45,6 +45,7 @@ import {
   type LogoLayer,
   type LogoWrap,
   type TextLayer,
+  type TextAlign,
 } from './overlayLayout';
 import { OverlayCanvas, type OverlayLayerId, measureTextWidthPx } from './OverlayCanvas';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
@@ -165,6 +166,22 @@ function sendableAdvertiserLogoUrl(logo: string | null): string | null {
   return logo && logo.startsWith('blob:') ? null : logo;
 }
 
+// Uma URL de logo com token vazio/undefined é pior que nenhuma: o logo.dev
+// devolve 401 e o preview desenharia um ícone de imagem quebrada dentro do
+// anúncio. Tratá-la como ausente deixa o fallback assumir.
+export function usableLogoUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return /[?&]token=(undefined|null)?(&|$)/i.test(url) ? null : url;
+}
+
+// "Tera" → "tera.com". Palpite, não verdade: o logo.dev devolve 404 para
+// domínio que não existe e o preview cai no avatar de letra, então errar aqui
+// custa nada. Mesma heurística de `SegmentationStep`.
+export function domainFromCompanyName(name: string | undefined): string | undefined {
+  const slug = (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return slug ? `${slug}.com` : undefined;
+}
+
 function getAccountColor(name: string) {
   const colors: Record<string, string> = {
     NVIDIA: '#76b900', Revolut: '#0075EB', Datadog: '#632CA6', Figma: '#F24E1E',
@@ -178,6 +195,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   // Camada selecionada no editor — é ela que os controles do card 2 editam.
   const [selectedLayer, setSelectedLayer] = useState<OverlayLayerId | null>(null);
+  // Qual logo não carregou — o preview já cai no avatar de letra, e o card
+  // diz em texto por que, para o usuário não achar que é escolha de design.
+  const [brokenLogo, setBrokenLogo] = useState<Record<string, boolean>>({});
   // O editor ao vivo é o default; "Composto" existe só para conferir que o
   // resvg bateu com o que estava na tela.
   const [previewMode, setPreviewMode] = useState<'editor' | 'composed'>('editor');
@@ -885,8 +905,19 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // não há empresa-alvo, então o preview usa `previewCompany` (companies[0])
   // como stand-in — mesma escolha que o resto do preview já faz.
   const advertiserLogoUrl = imageCfgSource.brandKit.logo;
+  // O servidor monta URLs de logo sem checar se a chave do logo.dev existe, e
+  // sai `?token=undefined` — que o logo.dev responde com 401. Como é string
+  // truthy, ela venceria o `||` e afogaria a versão do cliente, que TEM a
+  // guarda. Descartar aqui é o que impede o logo quebrado dentro do anúncio.
+  // Último degrau: derivar o domínio do NOME da conta, que é o mesmo palpite
+  // que a Segmentação já usa para as empresas similares. Sem ele, uma conta
+  // que veio da busca do LinkedIn sem `domain` cai direto no avatar de letra
+  // mesmo existindo logo publicado — e o anúncio perde o logo à toa.
   const targetLogoUrl = previewCompany
-    ? (previewCompany.logoUrl || logoDevUrl(previewCompany.domain) || null)
+    ? (usableLogoUrl(previewCompany.logoUrl)
+      || logoDevUrl(previewCompany.domain)
+      || logoDevUrl(domainFromCompanyName(previewCompany.label))
+      || null)
     : null;
   const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
 
@@ -1459,6 +1490,26 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onChange={(next) => setLayout({ ...imageCfg.layout, destaque: next })}
                 />
 
+                {/* Os dois textos são um bloco: o complementar é ancorado ao
+                    destaque, e este slider é a distância entre as duas caixas.
+                    Arrastar o destaque no preview leva os dois junto. */}
+                <div className="flex items-center gap-2 mt-2">
+                  <label htmlFor="text-gap" className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
+                    Espaçamento entre os textos
+                  </label>
+                  <input
+                    id="text-gap"
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={2}
+                    value={imageCfg.layout.textGapPx}
+                    onChange={(e) => setLayout({ ...imageCfg.layout, textGapPx: Number(e.target.value) })}
+                    className="flex-1 accent-[#FF5F39]"
+                  />
+                  <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{imageCfg.layout.textGapPx}px</span>
+                </div>
+
                 <TextField
                   label="Texto complementar"
                   value={imageCfg.textoComplementar}
@@ -1516,6 +1567,18 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   {imageCfg.layout.paired ? 'Desagrupar' : 'Agrupar como par'}
                 </button>
               </div>
+
+              {(brokenLogo.advertiserLogo || brokenLogo.targetLogo) && (
+                <p className="flex items-start gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-1.5">
+                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                  <span>
+                    {brokenLogo.advertiserLogo && brokenLogo.targetLogo
+                      ? 'Nenhum dos dois logos carregou'
+                      : brokenLogo.advertiserLogo ? 'O seu logo não carregou' : 'O logo da conta não carregou'}
+                    {' '}— o preview está mostrando as iniciais. O anúncio gerado sai sem esse logo.
+                  </span>
+                </p>
+              )}
 
               <LogoLayerControls
                 id="advertiserLogo"
@@ -1699,6 +1762,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     complementar={imageCfg.textoComplementar}
                     advertiserLogoUrl={advertiserLogoUrl}
                     targetLogoUrl={targetLogoUrl}
+                    advertiserLabel={imageCfgSource.brandKit.context || 'Minha marca'}
+                    targetLabel={previewCompany?.label}
+                    onLogoError={(which) => setBrokenLogo((b) => ({ ...b, [which]: true }))}
                     selected={selectedLayer}
                     onSelect={setSelectedLayer}
                     onLayoutChange={setLayout}
@@ -2070,15 +2136,35 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
       </div>
 
       <div className="flex items-center gap-1.5 mt-1">
+        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Alinhar</span>
+        {(['left', 'center', 'right'] as const).map((a) => (
+          <button
+            key={a}
+            type="button"
+            aria-pressed={layer.align === a}
+            aria-label={`${ALIGN_LABEL[a]} para ${label}`}
+            onClick={() => onChange({ ...layer, align: a })}
+            className={`px-2 py-1 rounded border ${
+              layer.align === a
+                ? 'bg-[#FF5F39] border-[#FF5F39] text-white'
+                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+            }`}
+          >
+            {a === 'left' ? <AlignLeft className="w-3 h-3" /> : a === 'center' ? <AlignCenter className="w-3 h-3" /> : <AlignRight className="w-3 h-3" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-1">
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Fundo</span>
         {(['box', 'shadow', 'none'] as const).map((b) => (
           <button
             key={b}
             type="button"
-            aria-pressed={layer.backdrop === b}
-            onClick={() => onChange({ ...layer, backdrop: b })}
+            aria-pressed={layer.backdrop.mode === b}
+            onClick={() => onChange({ ...layer, backdrop: { ...layer.backdrop, mode: b } })}
             className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${
-              layer.backdrop === b
+              layer.backdrop.mode === b
                 ? 'bg-[#FF5F39] border-[#FF5F39] text-white'
                 : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
             }`}
@@ -2087,9 +2173,98 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
           </button>
         ))}
       </div>
+
+      {/* A caixa é o que torna o texto legível sobre uma foto qualquer, então
+          ela ganha controles próprios em vez de ficar presa no preto 55%. */}
+      {layer.backdrop.mode === 'box' && (
+        <div className="mt-1 pl-2 border-l border-slate-200 space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Cor da caixa</span>
+            {palette.filter(Boolean).map((c, i) => (
+              <button
+                key={`bg-${c}-${i}`}
+                type="button"
+                aria-label={`Cor da caixa ${c} para ${label}`}
+                onClick={() => onChange({ ...layer, backdrop: { ...layer.backdrop, color: c } })}
+                style={{ backgroundColor: c }}
+                className={`w-4 h-4 rounded border ${layer.backdrop.color === c ? 'border-[#FF5F39] ring-1 ring-[#FF5F39]' : 'border-slate-300'}`}
+              />
+            ))}
+            <input
+              type="color"
+              aria-label={`Cor personalizada da caixa para ${label}`}
+              value={layer.backdrop.color}
+              onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, color: e.target.value } })}
+              className="w-6 h-5 rounded border border-slate-200 bg-white p-0"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor={`${id}-bg-opacity`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
+              Opacidade da caixa {label}
+            </label>
+            <input
+              id={`${id}-bg-opacity`}
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={layer.backdrop.opacity}
+              onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, opacity: Number(e.target.value) } })}
+              className="flex-1 accent-[#FF5F39]"
+            />
+            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.opacity}%</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor={`${id}-bg-radius`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
+              Cantos da caixa {label}
+            </label>
+            <input
+              id={`${id}-bg-radius`}
+              type="range"
+              min={0}
+              max={60}
+              step={1}
+              value={layer.backdrop.radius}
+              onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, radius: Number(e.target.value) } })}
+              className="flex-1 accent-[#FF5F39]"
+            />
+            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.radius}px</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor={`${id}-bg-border`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
+              Contorno da caixa {label}
+            </label>
+            <input
+              id={`${id}-bg-border`}
+              type="range"
+              min={0}
+              max={12}
+              step={1}
+              value={layer.backdrop.borderWidth}
+              onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderWidth: Number(e.target.value) } })}
+              className="flex-1 accent-[#FF5F39]"
+            />
+            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.borderWidth}px</span>
+            <input
+              type="color"
+              aria-label={`Cor do contorno da caixa para ${label}`}
+              value={layer.backdrop.borderColor}
+              onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderColor: e.target.value } })}
+              className="w-6 h-5 rounded border border-slate-200 bg-white p-0 shrink-0"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const ALIGN_LABEL: Record<TextAlign, string> = {
+  left: 'Alinhar à esquerda', center: 'Centralizar', right: 'Alinhar à direita',
+};
 
 const WRAP_LABEL: Record<LogoWrap, string> = {
   circle: 'Círculo', square: 'Quadrado', rect: 'Retângulo', none: 'Sem fundo',

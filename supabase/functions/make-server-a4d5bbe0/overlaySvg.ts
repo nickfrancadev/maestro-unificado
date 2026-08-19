@@ -16,7 +16,18 @@
 
 export type AdFormat = "square" | "banner";
 export type LogoWrap = "circle" | "square" | "rect" | "none";
-export type TextBackdrop = "box" | "shadow" | "none";
+export type BackdropMode = "box" | "shadow" | "none";
+export type TextAlign = "left" | "center" | "right";
+
+// Espelha `TextBackdrop` de overlayLayout.ts.
+export interface TextBackdrop {
+  mode: BackdropMode;
+  color: string;
+  opacity: number;      // 0–100
+  radius: number;
+  borderColor: string;
+  borderWidth: number;
+}
 
 export const AD_FORMAT_SIZE: Record<AdFormat, { w: number; h: number }> = {
   square: { w: 1200, h: 1200 },
@@ -33,6 +44,8 @@ export const OVERLAY_STYLE = {
   rectWrapAspect: 2.5,
   padRatioDefault: 0.12,
   padRatioCircle: 0.18,
+  pairDividerWidth: 2,
+  pairDividerColor: "#CBD5E1",
 } as const;
 
 export const LOGO_WRAP_ASPECT: Record<LogoWrap, number> = {
@@ -65,9 +78,21 @@ export interface SvgTextLayer {
   y: number;          // 0–1, centro
   sizePx: number;
   color: string;
+  align: TextAlign;
   backdrop: TextBackdrop;
   weight: number;     // 700 no destaque, 400 no complementar
   widthPx?: number;   // medido pelo cliente; ausente cai no estimador
+}
+
+// Lockup co-branded: os dois logos num cartão só, com divisor. Quando vem
+// preenchido, `logos` é ignorado e este par é desenhado no lugar.
+export interface SvgLogoPair {
+  firstHref: string;
+  secondHref: string;
+  x: number;          // 0–1, centro do cartão
+  y: number;          // 0–1, centro do cartão
+  sizePx: number;     // LARGURA do cartão inteiro
+  wrap: LogoWrap;
 }
 
 export interface SvgLogoLayer {
@@ -84,6 +109,8 @@ export interface BuildOverlaySvgOptions {
   fontFamily: string;
   texts: SvgTextLayer[];
   logos: SvgLogoLayer[];
+  // Quando presente, substitui `logos` pelo cartão co-branded único.
+  pair?: SvgLogoPair | null;
   // Desliga o caminho de `<svg>` aninhado inteiro — todo logo vai por
   // `<image href="${escapeXml(...)}">`, mesmo que seja um SVG que passaria
   // em `looksWellFormed`. `looksWellFormed` é uma checagem barata, não um
@@ -383,6 +410,31 @@ function prepareNestedSvg(rawMarkup: string): { markup: string; viewBox: string 
   return { markup, viewBox };
 }
 
+// Espelha `alignOffsetPx` de overlayLayout.ts.
+export function alignOffsetPx(align: TextAlign, boxW: number): number {
+  return align === "left" ? 0 : align === "right" ? boxW : boxW / 2;
+}
+
+const TEXT_ANCHOR: Record<TextAlign, string> = {
+  left: "start",
+  center: "middle",
+  right: "end",
+};
+
+// Conteúdo de UM logo dentro de um retângulo já calculado. Extraído para o
+// cartão co-branded reusar exatamente o mesmo caminho (SVG aninhado quando dá,
+// `<image>` escapado quando não dá) em vez de reimplementá-lo.
+function logoContent(href: string, x: number, y: number, w: number, h: number, forceImage?: boolean): string {
+  const innerSvgMarkup = forceImage ? null : decodeSvgDataUri(href);
+  const prepared = innerSvgMarkup !== null ? prepareNestedSvg(innerSvgMarkup) : null;
+  if (prepared) {
+    return `<svg x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" ` +
+      `viewBox="${escapeXml(prepared.viewBox)}" preserveAspectRatio="xMidYMid meet">${prepared.markup}</svg>`;
+  }
+  return `<image x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}" ` +
+    `href="${escapeXml(href)}" preserveAspectRatio="xMidYMid meet"/>`;
+}
+
 export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
   const { w: CW, h: CH } = AD_FORMAT_SIZE[opts.format];
   const parts: string[] = [];
@@ -393,26 +445,65 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
     const boxW = width + OVERLAY_STYLE.boxPadX * 2;
     const boxH = t.sizePx + OVERLAY_STYLE.boxPadY * 2;
     const boxY = t.y * CH - boxH / 2;
+    const boxX = t.x * CW - alignOffsetPx(t.align, boxW);
 
-    if (t.backdrop === "box") {
+    if (t.backdrop.mode === "box") {
+      const stroke = t.backdrop.borderWidth > 0
+        ? ` stroke="${escapeXml(t.backdrop.borderColor)}" stroke-width="${r(t.backdrop.borderWidth)}"`
+        : "";
       parts.push(
-        `<rect x="${r(t.x * CW - boxW / 2)}" y="${r(boxY)}" width="${r(boxW)}" height="${r(boxH)}" ` +
-        `rx="${OVERLAY_STYLE.boxRadius}" ry="${OVERLAY_STYLE.boxRadius}" fill="${OVERLAY_STYLE.boxFill}"/>`,
+        `<rect x="${r(boxX)}" y="${r(boxY)}" width="${r(boxW)}" height="${r(boxH)}" ` +
+        `rx="${r(t.backdrop.radius)}" ry="${r(t.backdrop.radius)}" ` +
+        `fill="${escapeXml(t.backdrop.color)}" fill-opacity="${r(t.backdrop.opacity / 100)}"${stroke}/>`,
       );
     }
 
-    // `text-anchor="middle"` é o que torna a centro-ancoragem honesta: se a
-    // largura medida errar, a caixa fica larga ou estreita demais, mas o texto
-    // nunca sai torto dentro dela.
-    const filter = t.backdrop === "shadow" ? ` filter="url(#ovl-textShadow)"` : "";
+    // O `text-anchor` acompanha o alinhamento, e o x do texto é derivado da
+    // MESMA caixa: se a largura medida errar, a caixa fica larga ou estreita
+    // demais, mas o texto nunca sai torto dentro dela.
+    const filter = t.backdrop.mode === "shadow" ? ` filter="url(#ovl-textShadow)"` : "";
+    const textX = t.align === "left"
+      ? boxX + OVERLAY_STYLE.boxPadX
+      : t.align === "right"
+        ? boxX + boxW - OVERLAY_STYLE.boxPadX
+        : boxX + boxW / 2;
     parts.push(
-      `<text x="${r(t.x * CW)}" y="${r(boxY + OVERLAY_STYLE.boxPadY + t.sizePx * 0.8)}" ` +
-      `text-anchor="middle" font-family="${escapeXml(opts.fontFamily)}" font-weight="${t.weight}" ` +
+      `<text x="${r(textX)}" y="${r(boxY + OVERLAY_STYLE.boxPadY + t.sizePx * 0.8)}" ` +
+      `text-anchor="${TEXT_ANCHOR[t.align]}" font-family="${escapeXml(opts.fontFamily)}" font-weight="${t.weight}" ` +
       `font-size="${t.sizePx}" fill="${escapeXml(t.color)}"${filter}>${escapeXml(t.text)}</text>`,
     );
   }
 
-  for (const l of opts.logos) {
+  // Lockup co-branded: um cartão só, os dois logos lado a lado e um divisor
+  // vertical no meio. Substitui o loop de logos individuais.
+  if (opts.pair) {
+    const pr = opts.pair;
+    const boxW = pr.sizePx;
+    const boxH = pr.wrap === "rect" ? pr.sizePx / LOGO_WRAP_ASPECT.rect : pr.sizePx / 2;
+    const boxX = pr.x * CW - boxW / 2;
+    const boxY = pr.y * CH - boxH / 2;
+
+    if (pr.wrap !== "none") {
+      parts.push(
+        `<rect x="${r(boxX)}" y="${r(boxY)}" width="${r(boxW)}" height="${r(boxH)}" ` +
+        `rx="${OVERLAY_STYLE.logoCardRadius}" ry="${OVERLAY_STYLE.logoCardRadius}" ` +
+        `fill="${OVERLAY_STYLE.logoCardFill}" filter="url(#ovl-cardShadow)"/>`,
+      );
+    }
+
+    const pad = logoInnerPadPx(pr.wrap === "none" ? "rect" : pr.wrap, boxW) / 2;
+    const half = (boxW - pad * 3) / 2;
+    const innerH = boxH - pad * 2;
+    parts.push(logoContent(pr.firstHref, boxX + pad, boxY + pad, half, innerH, opts.forceImageLogos));
+    parts.push(
+      `<line x1="${r(boxX + boxW / 2)}" y1="${r(boxY + pad * 1.5)}" ` +
+      `x2="${r(boxX + boxW / 2)}" y2="${r(boxY + boxH - pad * 1.5)}" ` +
+      `stroke="${OVERLAY_STYLE.pairDividerColor}" stroke-width="${OVERLAY_STYLE.pairDividerWidth}"/>`,
+    );
+    parts.push(logoContent(pr.secondHref, boxX + boxW / 2 + pad / 2, boxY + pad, half, innerH, opts.forceImageLogos));
+  }
+
+  for (const l of opts.pair ? [] : opts.logos) {
     const boxW = l.sizePx;
     const boxH = l.sizePx / LOGO_WRAP_ASPECT[l.wrap];
     const boxX = l.x * CW - boxW / 2;
@@ -432,19 +523,7 @@ export function buildOverlaySvg(opts: BuildOverlaySvgOptions): string {
     }
 
     const pad = logoInnerPadPx(l.wrap, boxW);
-    const innerSvgMarkup = opts.forceImageLogos ? null : decodeSvgDataUri(l.href);
-    const prepared = innerSvgMarkup !== null ? prepareNestedSvg(innerSvgMarkup) : null;
-    if (prepared) {
-      parts.push(
-        `<svg x="${r(boxX + pad)}" y="${r(boxY + pad)}" width="${r(boxW - pad * 2)}" ` +
-        `height="${r(boxH - pad * 2)}" viewBox="${escapeXml(prepared.viewBox)}" preserveAspectRatio="xMidYMid meet">${prepared.markup}</svg>`,
-      );
-    } else {
-      parts.push(
-        `<image x="${r(boxX + pad)}" y="${r(boxY + pad)}" width="${r(boxW - pad * 2)}" ` +
-        `height="${r(boxH - pad * 2)}" href="${escapeXml(l.href)}" preserveAspectRatio="xMidYMid meet"/>`,
-      );
-    }
+    parts.push(logoContent(l.href, boxX + pad, boxY + pad, boxW - pad * 2, boxH - pad * 2, opts.forceImageLogos));
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>

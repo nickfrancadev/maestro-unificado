@@ -41,7 +41,9 @@ describe('buildOverlaySvg — canvas', () => {
 describe('buildOverlaySvg — texto', () => {
   const texto = (over = {}) => ({
     text: 'WORKSHOP ABM', x: 0.5, y: 0.5, sizePx: 50,
-    color: '#FFFFFF', backdrop: 'box' as const, weight: 700, ...over,
+    color: '#FFFFFF', align: 'center' as const,
+    backdrop: { mode: 'box' as const, color: '#000000', opacity: 55, radius: 14, borderColor: '#FFFFFF', borderWidth: 0 },
+    weight: 700, ...over,
   });
 
   it('ancora o texto pelo centro', () => {
@@ -65,20 +67,20 @@ describe('buildOverlaySvg — texto', () => {
   });
 
   it('backdrop "box" desenha o retângulo e não a sombra', () => {
-    const svg = svgFor({ texts: [texto({ backdrop: 'box' })] });
-    expect(svg).toContain('rgba(0,0,0,0.55)');
+    const svg = svgFor({ texts: [texto({ backdrop: { mode: 'box' as const, color: '#000000', opacity: 55, radius: 14, borderColor: '#FFFFFF', borderWidth: 0 } })] });
+    expect(svg).toContain('fill="#000000" fill-opacity="0.55"');
     expect(svg).not.toContain('filter="url(#ovl-textShadow)"');
   });
 
   it('backdrop "shadow" aplica o filtro e não desenha retângulo', () => {
-    const svg = svgFor({ texts: [texto({ backdrop: 'shadow' })] });
+    const svg = svgFor({ texts: [texto({ backdrop: { mode: 'shadow' as const, color: '#000000', opacity: 55, radius: 14, borderColor: '#FFFFFF', borderWidth: 0 } })] });
     expect(svg).toContain('filter="url(#ovl-textShadow)"');
-    expect(svg).not.toContain('rgba(0,0,0,0.55)');
+    expect(svg).not.toContain('fill-opacity=');
   });
 
   it('backdrop "none" não desenha nem retângulo nem sombra', () => {
-    const svg = svgFor({ texts: [texto({ backdrop: 'none' })] });
-    expect(svg).not.toContain('rgba(0,0,0,0.55)');
+    const svg = svgFor({ texts: [texto({ backdrop: { mode: 'none' as const, color: '#000000', opacity: 55, radius: 14, borderColor: '#FFFFFF', borderWidth: 0 } })] });
+    expect(svg).not.toContain('fill-opacity=');
     expect(svg).not.toContain('filter="url(#ovl-textShadow)"');
   });
 

@@ -15,6 +15,7 @@ import {
   type AdFormat,
   type SvgTextLayer,
   type SvgLogoLayer,
+  type SvgLogoPair,
 } from "./overlaySvg.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
@@ -625,7 +626,13 @@ app.post("/make-server-a4d5bbe0/linkedin/org-logos", async (c) => {
       }
 
       if (domain) {
-        logos[`urn:li:organization:${orgId}`] = `https://img.logo.dev/${domain}?token=${LOGO_DEV_KEY}`;
+        // Sem a chave NÃO monta URL. Montar com `token=undefined` produz 401
+        // no logo.dev, e como a string é truthy ela vence qualquer fallback do
+        // cliente — o resultado é um logo quebrado renderizado dentro do
+        // anúncio. Ausência é melhor que URL envenenada.
+        if (LOGO_DEV_KEY) {
+          logos[`urn:li:organization:${orgId}`] = `https://img.logo.dev/${domain}?token=${LOGO_DEV_KEY}`;
+        }
       }
     }
 
@@ -3034,6 +3041,7 @@ async function renderOverlayPng(opts: {
   fontFamily: string;
   texts: SvgTextLayer[];
   logos: SvgLogoLayer[];
+  pair?: SvgLogoPair | null;
 }): Promise<Uint8Array> {
   await ensureResvg();
 
@@ -3054,6 +3062,7 @@ async function renderOverlayPng(opts: {
     fontFamily: opts.fontFamily,
     texts: opts.texts,
     logos: opts.logos,
+    pair: opts.pair,
   };
 
   try {
@@ -3154,6 +3163,20 @@ app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
       }
     }
 
+    // Lockup co-branded: só quando os DOIS logos resolveram. Com um só, o par
+    // viraria um cartão com metade vazia — melhor cair no logo individual, que
+    // é o que `logos` já contém.
+    const pair: SvgLogoPair | null = layout.paired && logos.length === 2
+      ? {
+        firstHref: logos[1].href,   // anunciante à esquerda do divisor
+        secondHref: logos[0].href,  // conta-alvo à direita
+        x: layout.advertiserLogo.x,
+        y: layout.advertiserLogo.y,
+        sizePx: layout.advertiserLogo.sizePx,
+        wrap: layout.advertiserLogo.wrap,
+      }
+      : null;
+
     const png = await renderOverlayPng({
       baseImageBase64: baseImg.base64,
       baseImageMime: baseImg.mime,
@@ -3161,6 +3184,7 @@ app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
       fontFamily: font_family,
       texts,
       logos,
+      pair,
     });
 
     const safeTarget = target_company_name.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);

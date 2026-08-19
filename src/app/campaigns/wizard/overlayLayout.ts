@@ -13,13 +13,29 @@
 
 export type AdFormat = 'square' | 'banner';
 export type LogoWrap = 'circle' | 'square' | 'rect' | 'none';
-export type TextBackdrop = 'box' | 'shadow' | 'none';
+export type BackdropMode = 'box' | 'shadow' | 'none';
+export type TextAlign = 'left' | 'center' | 'right';
+
+// A caixa atrás do texto tem controles próprios: ela é o que torna o texto
+// legível sobre uma foto qualquer, e "preto 55%" não serve para toda arte.
+export interface TextBackdrop {
+  mode: BackdropMode;
+  color: string;        // hex da caixa
+  opacity: number;      // 0–100
+  radius: number;       // arredondamento, px do canvas de referência
+  borderColor: string;  // hex do contorno
+  borderWidth: number;  // 0 = sem contorno
+}
 
 export interface TextLayer {
   x: number;
   y: number;
   sizePx: number;
   color: string;
+  // `x` é a ÂNCORA, e o que ela significa depende do alinhamento: borda
+  // esquerda da caixa em 'left', centro em 'center', borda direita em
+  // 'right'. `y` continua sempre o centro vertical.
+  align: TextAlign;
   backdrop: TextBackdrop;
 }
 
@@ -36,7 +52,11 @@ export interface OverlayLayout {
   complementar: TextLayer;
   advertiserLogo: LogoLayer;  // "Meu logo"      → brandKit.logo
   targetLogo: LogoLayer;      // "Logo da conta" → logo.dev
-  paired: boolean;            // atalho co-branded
+  paired: boolean;            // co-branded: os dois num cartão só
+  // Os dois textos são um BLOCO: o complementar não tem posição própria, ele
+  // é ancorado ao destaque com esta distância vertical entre as duas caixas.
+  // Sem âncora, "espaçamento" entre dois pontos livres seria só mover um.
+  textGapPx: number;
 }
 
 /** Retângulo em px do canvas de referência, ancorado no canto superior esquerdo. */
@@ -73,6 +93,10 @@ export const OVERLAY_STYLE = {
   rectWrapAspect: 2.5,
   padRatioDefault: 0.12,
   padRatioCircle: 0.18,
+  // Lockup co-branded: respiro interno e espessura do divisor entre os dois
+  // logos dentro do cartão único.
+  pairDividerWidth: 2,
+  pairDividerColor: '#CBD5E1',
 } as const;
 
 export const LOGO_WRAP_ASPECT: Record<LogoWrap, number> = {
@@ -82,20 +106,27 @@ export const LOGO_WRAP_ASPECT: Record<LogoWrap, number> = {
   rect: OVERLAY_STYLE.rectWrapAspect,
 };
 
-/** Gap entre os dois logos no modo par, em px do canvas de referência. */
-export const PAIR_GAP_PX = 28;
 
 // Defaults que APROXIMAM o visual anterior (texto no canto superior esquerdo,
 // logo da conta no superior direito). Não reproduzem ao pixel: as constantes
 // antigas eram ancoradas à esquerda e este modelo é centro-ancorado, então o x
 // exato dependeria do comprimento do texto. Ver spec §1.
+// Reproduz o visual anterior (preto 55%, raio 14, sem contorno), que era
+// hardcoded quando `backdrop` ainda era só a string do modo.
+export function createDefaultBackdrop(mode: BackdropMode = 'box'): TextBackdrop {
+  return { mode, color: '#000000', opacity: 55, radius: OVERLAY_STYLE.boxRadius, borderColor: '#FFFFFF', borderWidth: 0 };
+}
+
 export function createDefaultOverlayLayout(showTargetLogo = true): OverlayLayout {
   return {
-    destaque:       { x: 0.30, y: 0.14, sizePx: 56, color: '#FFFFFF', backdrop: 'box' },
-    complementar:   { x: 0.30, y: 0.26, sizePx: 28, color: '#FFFFFF', backdrop: 'box' },
+    destaque:       { x: 0.30, y: 0.14, sizePx: 56, color: '#FFFFFF', align: 'center', backdrop: createDefaultBackdrop() },
+    // x/y do complementar são DERIVADOS do destaque em `effectiveLayout`;
+    // os valores aqui são só o ponto de partida antes da primeira derivação.
+    complementar:   { x: 0.30, y: 0.26, sizePx: 28, color: '#FFFFFF', align: 'center', backdrop: createDefaultBackdrop() },
     advertiserLogo: { enabled: false, x: 0.14, y: 0.85, sizePx: 140, wrap: 'rect' },
     targetLogo:     { enabled: showTargetLogo, x: 0.86, y: 0.15, sizePx: 140, wrap: 'square' },
     paired: false,
+    textGapPx: 12,
   };
 }
 
@@ -105,14 +136,46 @@ export function withLayoutDefaults(
   layout: OverlayLayout | undefined,
   showTargetLogo: boolean | undefined,
 ): OverlayLayout {
-  return layout ?? createDefaultOverlayLayout(showTargetLogo ?? true);
+  if (!layout) return createDefaultOverlayLayout(showTargetLogo ?? true);
+  return {
+    ...layout,
+    destaque: withTextLayerDefaults(layout.destaque),
+    complementar: withTextLayerDefaults(layout.complementar),
+    textGapPx: layout.textGapPx ?? 12,
+  };
+}
+
+// Camadas de texto salvas antes destes campos têm `backdrop` como STRING
+// ('box' | 'shadow' | 'none') e nenhum `align`. Perder a escolha de fundo de
+// uma campanha já montada seria mudar o anúncio pelas costas do usuário.
+export function withTextLayerDefaults(layer: TextLayer | undefined): TextLayer {
+  const base = layer ?? { x: 0.30, y: 0.14, sizePx: 56, color: '#FFFFFF' } as TextLayer;
+  const raw = base.backdrop as unknown;
+  const backdrop = typeof raw === 'string'
+    ? createDefaultBackdrop(raw as BackdropMode)
+    : { ...createDefaultBackdrop(), ...(raw as Partial<TextBackdrop> | undefined) };
+  return { ...base, align: base.align ?? 'center', backdrop };
+}
+
+// Deslocamento da caixa em relação à âncora, por alinhamento: 0 quando a
+// âncora É a borda esquerda, metade quando é o centro, tudo quando é a borda
+// direita. É a única peça que precisa saber o que `align` significa — DOM e
+// SVG derivam a posição daqui.
+export function alignOffsetPx(align: TextAlign, boxW: number): number {
+  return align === 'left' ? 0 : align === 'right' ? boxW : boxW / 2;
 }
 
 export function textLayerRect(layer: TextLayer, textWidthPx: number, format: AdFormat): Rect {
   const { w: cw, h: ch } = AD_FORMAT_SIZE[format];
   const w = textWidthPx + OVERLAY_STYLE.boxPadX * 2;
   const h = layer.sizePx + OVERLAY_STYLE.boxPadY * 2;
-  return { x: layer.x * cw - w / 2, y: layer.y * ch - h / 2, w, h };
+  return { x: layer.x * cw - alignOffsetPx(layer.align, w), y: layer.y * ch - h / 2, w, h };
+}
+
+// Altura da caixa de um texto — não depende da medição, só do tamanho da
+// fonte. É o que permite derivar a posição do complementar sem medir nada.
+export function textBoxHeightPx(sizePx: number): number {
+  return sizePx + OVERLAY_STYLE.boxPadY * 2;
 }
 
 export function logoLayerRect(layer: LogoLayer, format: AdFormat): Rect {
@@ -162,14 +225,6 @@ export function maxTextSizePx(
   return Math.max(MIN_TEXT_SIZE_PX, Math.min(MAX_TEXT_SIZE_PX, fittingSizePx));
 }
 
-export function pairedTargetLayer(advertiser: LogoLayer, format: AdFormat): LogoLayer {
-  const { w: cw } = AD_FORMAT_SIZE[format];
-  return {
-    ...advertiser,
-    enabled: true,
-    x: advertiser.x + (advertiser.sizePx + PAIR_GAP_PX) / cw,
-  };
-}
 
 // Larguras medidas dos dois textos, NO TAMANHO GRAVADO (`layer.sizePx`, não
 // o efetivo — seria circular). Quem mede é sempre quem vai desenhar (preview
@@ -214,17 +269,28 @@ export function effectiveLayout(
   format: AdFormat,
   measured?: MeasuredTextWidths,
 ): OverlayLayout {
-  if (!layout.paired && !measured) return layout;
-
   let result = layout;
 
+  // No lockup os dois logos ocupam o MESMO retângulo — o cartão único que os
+  // renderizadores desenham com os dois lado a lado e um divisor no meio.
+  // Igualar a geometria aqui é o que faz DOM e SVG concordarem sem cada um
+  // reinventar a conta.
   if (layout.paired) {
     result = {
       ...result,
-      targetLogo: { ...pairedTargetLayer(layout.advertiserLogo, format), enabled: layout.targetLogo.enabled },
+      targetLogo: {
+        ...layout.targetLogo,
+        x: layout.advertiserLogo.x,
+        y: layout.advertiserLogo.y,
+        sizePx: layout.advertiserLogo.sizePx,
+        wrap: layout.advertiserLogo.wrap,
+      },
     };
   }
 
+  // O tamanho efetivo precisa sair ANTES da posição do complementar: é a
+  // altura das caixas (que depende do tamanho já clampado) que define onde a
+  // segunda linha cai.
   if (measured) {
     result = {
       ...result,
@@ -233,5 +299,20 @@ export function effectiveLayout(
     };
   }
 
-  return result;
+  return { ...result, complementar: stackedComplementar(result, format) };
+}
+
+// Posição DERIVADA do complementar: mesma âncora horizontal do destaque, e
+// logo abaixo dele com `textGapPx` entre as duas caixas. O complementar não
+// tem posição própria — arrastar o destaque leva os dois.
+export function stackedComplementar(layout: OverlayLayout, format: AdFormat): TextLayer {
+  const { h: ch } = AD_FORMAT_SIZE[format];
+  const gap = layout.textGapPx ?? 0;
+  const halfDestaque = textBoxHeightPx(layout.destaque.sizePx) / 2;
+  const halfComplementar = textBoxHeightPx(layout.complementar.sizePx) / 2;
+  return {
+    ...layout.complementar,
+    x: layout.destaque.x,
+    y: layout.destaque.y + (halfDestaque + gap + halfComplementar) / ch,
+  };
 }

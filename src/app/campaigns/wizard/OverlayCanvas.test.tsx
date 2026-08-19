@@ -161,13 +161,24 @@ describe('OverlayCanvas — modo par', () => {
   // `paired` sozinho não liga o logo do anunciante — quem liga os dois é o
   // clique em "Agrupar como par" (CreativeStep.tsx), daí o fixture ligar
   // `advertiserLogo.enabled` explicitamente, do jeito que a produção faz.
-  it('mostra os dois logos com uma alça só', () => {
+  // O par virou um LOCKUP: um cartão só com os dois logos e um divisor, e não
+  // mais dois cartões vizinhos. Antes "agrupar" só encostava um no outro, o
+  // que não lia como par nenhum.
+  it('desenha um cartão único com os dois logos e uma alça só', () => {
     const base = createDefaultOverlayLayout(true);
     const layout = { ...base, paired: true, advertiserLogo: { ...base.advertiserLogo, enabled: true } };
-    render(<OverlayCanvas {...baseProps} layout={layout} />);
-    expect(screen.getByAltText('Meu logo')).toBeInTheDocument();
-    expect(screen.getByAltText('Logo da conta')).toBeInTheDocument();
-    expect(screen.getByAltText('Logo da conta').closest('[data-draggable="true"]')).toBeNull();
+    const { container } = render(<OverlayCanvas {...baseProps} layout={layout} />);
+
+    const card = container.querySelector('[data-testid="overlay-logo-pair"]')!;
+    expect(card).toBeInTheDocument();
+    // Os dois logos vivem DENTRO do mesmo cartão…
+    expect(card.contains(screen.getByAltText('Meu logo'))).toBe(true);
+    expect(card.contains(screen.getByAltText('Logo da conta'))).toBe(true);
+    // …e o cartão é a alça dos DOIS: nenhum logo tem arrasto próprio, senão
+    // haveria duas alças para uma posição só. (O texto do destaque tem a
+    // dele, por isso a contagem é sobre a alça de cada logo, não sobre todas.)
+    expect(screen.getByAltText('Meu logo').closest('[data-draggable="true"]')).toBe(card);
+    expect(screen.getByAltText('Logo da conta').closest('[data-draggable="true"]')).toBe(card);
   });
 
   // Regressão: `effectiveLayout` costumava forçar `enabled: true` nos dois
