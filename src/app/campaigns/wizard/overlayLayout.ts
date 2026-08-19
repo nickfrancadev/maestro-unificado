@@ -194,6 +194,23 @@ export function logoInnerPadPx(wrap: LogoWrap, boxW: number): number {
 }
 
 // Trava o CENTRO para que a bounding box inteira fique dentro do canvas.
+// Trava a âncora de um texto: com `align` a caixa não é centrada no x, então
+// clampar como se fosse empurrava a borda para fora e travava o arrasto para
+// um dos lados. O que tem de caber é a CAIXA, não a âncora.
+export function clampTextAnchor(
+  x: number, y: number, boxW: number, boxH: number, format: AdFormat, align: TextAlign,
+): { x: number; y: number } {
+  const { w: cw, h: ch } = AD_FORMAT_SIZE[format];
+  const offset = alignOffsetPx(align, boxW);
+  const minX = offset / cw;
+  const maxX = (cw - boxW + offset) / cw;
+  const halfY = boxH / 2 / ch;
+  return {
+    x: boxW >= cw ? minX : Math.min(Math.max(x, minX), maxX),
+    y: halfY * 2 >= 1 ? 0.5 : Math.min(Math.max(y, halfY), 1 - halfY),
+  };
+}
+
 export function clampCenter(
   x: number, y: number, boxW: number, boxH: number, format: AdFormat,
 ): { x: number; y: number } {

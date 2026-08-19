@@ -13,12 +13,14 @@ import {
   LOGO_WRAP_ASPECT,
   aspectClass,
   clampCenter,
+  clampTextAnchor,
   effectiveLayout,
   logoInnerPadPx,
   textLayerRect,
   type AdFormat,
   type LogoLayer,
   type OverlayLayout,
+  type TextLayer,
 } from './overlayLayout';
 
 export type OverlayLayerId = 'destaque' | 'complementar' | 'advertiserLogo' | 'targetLogo';
@@ -171,9 +173,13 @@ export function OverlayCanvas({
     if (!rect || !rect.width) return;
     const nx = drag.startX + (e.clientX - drag.startClientX) / rect.width;
     const ny = drag.startY + (e.clientY - drag.startClientY) / rect.height;
-    const { x, y } = clampCenter(nx, ny, drag.boxW, drag.boxH, format);
-    const layer = layout[drag.id];
-    onLayoutChange?.({ ...layout, [drag.id]: { ...layer, x, y } });
+    // Texto e logo travam de formas diferentes: o logo é centrado no x, o
+    // texto tem a âncora deslocada pelo alinhamento.
+    const dragged = layout[drag.id];
+    const { x, y } = drag.id === 'destaque' || drag.id === 'complementar'
+      ? clampTextAnchor(nx, ny, drag.boxW, drag.boxH, format, (dragged as TextLayer).align)
+      : clampCenter(nx, ny, drag.boxW, drag.boxH, format);
+    onLayoutChange?.({ ...layout, [drag.id]: { ...dragged, x, y } });
   };
 
   const endDrag = () => setDrag(null);

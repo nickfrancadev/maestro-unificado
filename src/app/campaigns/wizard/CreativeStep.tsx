@@ -53,7 +53,7 @@ import type { BrandKit } from './brandKit';
 import { BriefPane, type BriefDraft } from './BriefPane';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
-import { logoDevUrl } from '@/lib/linkedin/logo';
+import { logoDevUrl, logoProxyUrl } from '@/lib/linkedin/logo';
 import {
   fetchBrandBrief,
   generateCopy,
@@ -913,10 +913,18 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // que a Segmentação já usa para as empresas similares. Sem ele, uma conta
   // que veio da busca do LinkedIn sem `domain` cai direto no avatar de letra
   // mesmo existindo logo publicado — e o anúncio perde o logo à toa.
+  // Ordem importa. O `logoUrl` hidratado pela Segmentação JÁ é a URL do proxy
+  // do servidor; depois dele vem o proxy montado na hora (mesmo caminho, caso
+  // a hidratação não tenha rodado para esta conta), e só então a URL direta do
+  // logo.dev. A direta fica por último de propósito: ela depende de
+  // `VITE_LOGO_DEV_KEY` estar no build do cliente, e é justamente essa
+  // assimetria — Segmentação via proxy, Criativo via chave do cliente — que
+  // fazia o logo da conta aparecer lá e sumir aqui.
   const targetLogoUrl = previewCompany
     ? (usableLogoUrl(previewCompany.logoUrl)
+      || logoProxyUrl(previewCompany.domain)
+      || logoProxyUrl(domainFromCompanyName(previewCompany.label))
       || logoDevUrl(previewCompany.domain)
-      || logoDevUrl(domainFromCompanyName(previewCompany.label))
       || null)
     : null;
   const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
@@ -1463,8 +1471,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               <div className="h-px bg-slate-200 my-3" />
 
               {/* 5 · Textos, 6 · Fonte */}
-              <div className="p-3 bg-[#FFF1ED]/50 border border-[#FFE3DA] rounded-lg space-y-2.5">
-                <p className="text-[10px] text-[#E54A26] leading-relaxed">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
                   {editingCompany
                     ? `Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Alterar qualquer campo aqui vale só para ${editingCompany.label}.`
                     : 'Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Compartilhados entre todas as empresas da campanha.'}
@@ -1490,6 +1498,32 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   onChange={(next) => setLayout({ ...imageCfg.layout, destaque: next })}
                 />
 
+                {/* Alinhamento é do BLOCO, não de cada linha: dois textos
+                    empilhados com âncoras diferentes não leem como um bloco. */}
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Alinhamento</span>
+                  {(['left', 'center', 'right'] as const).map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      aria-pressed={imageCfg.layout.destaque.align === a}
+                      aria-label={ALIGN_LABEL[a]}
+                      onClick={() => setLayout({
+                        ...imageCfg.layout,
+                        destaque: { ...imageCfg.layout.destaque, align: a },
+                        complementar: { ...imageCfg.layout.complementar, align: a },
+                      })}
+                      className={`px-2 py-1 rounded border ${
+                        imageCfg.layout.destaque.align === a
+                          ? 'bg-slate-700 border-slate-700 text-white'
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                      }`}
+                    >
+                      {a === 'left' ? <AlignLeft className="w-3 h-3" /> : a === 'center' ? <AlignCenter className="w-3 h-3" /> : <AlignRight className="w-3 h-3" />}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Os dois textos são um bloco: o complementar é ancorado ao
                     destaque, e este slider é a distância entre as duas caixas.
                     Arrastar o destaque no preview leva os dois junto. */}
@@ -1505,7 +1539,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     step={2}
                     value={imageCfg.layout.textGapPx}
                     onChange={(e) => setLayout({ ...imageCfg.layout, textGapPx: Number(e.target.value) })}
-                    className="flex-1 accent-[#FF5F39]"
+                    className="flex-1 accent-slate-500"
                   />
                   <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{imageCfg.layout.textGapPx}px</span>
                 </div>
@@ -2095,7 +2129,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
   return (
     <div
       onFocus={onSelect}
-      className={`mt-1.5 pl-2 border-l-2 ${selected ? 'border-[#FF5F39]' : 'border-slate-200'}`}
+      className={`mt-1.5 pl-2 border-l-2 ${selected ? 'border-slate-500' : 'border-slate-200'}`}
     >
       <div className="flex items-center gap-2">
         <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
@@ -2109,7 +2143,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
           step={1}
           value={effectiveSize}
           onChange={(e) => onChange({ ...layer, sizePx: Number(e.target.value) })}
-          className="flex-1 accent-[#FF5F39]"
+          className="flex-1 accent-slate-500"
         />
         <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{effectiveSize}px</span>
       </div>
@@ -2123,7 +2157,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
             aria-label={`Cor ${c} para ${label}`}
             onClick={() => onChange({ ...layer, color: c })}
             style={{ backgroundColor: c }}
-            className={`w-4 h-4 rounded border ${layer.color === c ? 'border-[#FF5F39] ring-1 ring-[#FF5F39]' : 'border-slate-300'}`}
+            className={`w-4 h-4 rounded border ${layer.color === c ? 'border-slate-700 ring-1 ring-slate-700' : 'border-slate-300'}`}
           />
         ))}
         <input
@@ -2136,26 +2170,6 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
       </div>
 
       <div className="flex items-center gap-1.5 mt-1">
-        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Alinhar</span>
-        {(['left', 'center', 'right'] as const).map((a) => (
-          <button
-            key={a}
-            type="button"
-            aria-pressed={layer.align === a}
-            aria-label={`${ALIGN_LABEL[a]} para ${label}`}
-            onClick={() => onChange({ ...layer, align: a })}
-            className={`px-2 py-1 rounded border ${
-              layer.align === a
-                ? 'bg-[#FF5F39] border-[#FF5F39] text-white'
-                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-            }`}
-          >
-            {a === 'left' ? <AlignLeft className="w-3 h-3" /> : a === 'center' ? <AlignCenter className="w-3 h-3" /> : <AlignRight className="w-3 h-3" />}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-1.5 mt-1">
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Fundo</span>
         {(['box', 'shadow', 'none'] as const).map((b) => (
           <button
@@ -2165,7 +2179,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
             onClick={() => onChange({ ...layer, backdrop: { ...layer.backdrop, mode: b } })}
             className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${
               layer.backdrop.mode === b
-                ? 'bg-[#FF5F39] border-[#FF5F39] text-white'
+                ? 'bg-slate-700 border-slate-700 text-white'
                 : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
             }`}
           >
@@ -2187,7 +2201,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
                 aria-label={`Cor da caixa ${c} para ${label}`}
                 onClick={() => onChange({ ...layer, backdrop: { ...layer.backdrop, color: c } })}
                 style={{ backgroundColor: c }}
-                className={`w-4 h-4 rounded border ${layer.backdrop.color === c ? 'border-[#FF5F39] ring-1 ring-[#FF5F39]' : 'border-slate-300'}`}
+                className={`w-4 h-4 rounded border ${layer.backdrop.color === c ? 'border-slate-700 ring-1 ring-slate-700' : 'border-slate-300'}`}
               />
             ))}
             <input
@@ -2211,7 +2225,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.opacity}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, opacity: Number(e.target.value) } })}
-              className="flex-1 accent-[#FF5F39]"
+              className="flex-1 accent-slate-500"
             />
             <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.opacity}%</span>
           </div>
@@ -2228,7 +2242,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.radius}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, radius: Number(e.target.value) } })}
-              className="flex-1 accent-[#FF5F39]"
+              className="flex-1 accent-slate-500"
             />
             <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.radius}px</span>
           </div>
@@ -2245,7 +2259,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.borderWidth}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderWidth: Number(e.target.value) } })}
-              className="flex-1 accent-[#FF5F39]"
+              className="flex-1 accent-slate-500"
             />
             <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.borderWidth}px</span>
             <input
@@ -2287,7 +2301,7 @@ function LogoLayerControls({ id, label, layer, disabled, disabledHint, geometryL
   onChange: (next: LogoLayer) => void;
 }) {
   return (
-    <div className={`mt-2 pl-2 border-l-2 ${selected ? 'border-[#FF5F39]' : 'border-slate-200'}`}>
+    <div className={`mt-2 pl-2 border-l-2 ${selected ? 'border-slate-500' : 'border-slate-200'}`}>
       <label
         htmlFor={`${id}-enabled`}
         title={disabled ? disabledHint : undefined}

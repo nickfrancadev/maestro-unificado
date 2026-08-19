@@ -7,9 +7,11 @@ import {
   textLayerRect,
   logoLayerRect,
   clampCenter,
+  clampTextAnchor,
   effectiveLayout,
   effectiveTextSize,
   maxTextSizePx,
+  alignOffsetPx,
   OVERLAY_STYLE,
   LOGO_WRAP_ASPECT,
 } from './overlayLayout';
@@ -181,6 +183,34 @@ describe('effectiveTextSize', () => {
     // (1156px); o teto vem do máximo duro (160), bem acima do gravado.
     const layer = { x: 0.3, y: 0.14, sizePx: 40, color: '#FFFFFF', align: 'center' as const, backdrop: createDefaultBackdrop() };
     expect(effectiveTextSize(layer, 200, 'banner')).toBe(40);
+  });
+});
+
+describe('clampTextAnchor', () => {
+  // A regressão que este bloco tranca: o arrasto usava `clampCenter` para
+  // texto também. Com `align: 'left'` o x É a borda esquerda, mas o clamp
+  // reservava meia caixa antes dele — o texto travava antes de encostar na
+  // borda e parecia que a área arrastável tinha mudado sozinha.
+  it("alinhado à esquerda, a âncora chega até a borda esquerda", () => {
+    expect(clampTextAnchor(-1, 0.5, 200, 100, 'banner', 'left').x).toBe(0);
+  });
+
+  it("alinhado à direita, a âncora chega até a borda direita", () => {
+    expect(clampTextAnchor(2, 0.5, 200, 100, 'banner', 'right').x).toBe(1);
+  });
+
+  it('centralizado, reserva meia caixa dos dois lados', () => {
+    expect(clampTextAnchor(-1, 0.5, 200, 100, 'banner', 'center').x).toBeCloseTo(100 / 1200);
+    expect(clampTextAnchor(2, 0.5, 200, 100, 'banner', 'center').x).toBeCloseTo(1 - 100 / 1200);
+  });
+
+  it('em qualquer alinhamento, a CAIXA inteira fica dentro do canvas', () => {
+    for (const align of ['left', 'center', 'right'] as const) {
+      const { x } = clampTextAnchor(-5, 0.5, 300, 80, 'square', align);
+      const left = x * 1200 - alignOffsetPx(align, 300);
+      expect(left).toBeGreaterThanOrEqual(-0.001);
+      expect(left + 300).toBeLessThanOrEqual(1200.001);
+    }
   });
 });
 
