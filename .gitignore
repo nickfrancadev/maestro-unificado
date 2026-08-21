@@ -9,3 +9,6 @@ build
 
 # Superpowers brainstorm visual companion
 .superpowers/
+
+# Resíduo local do Supabase CLI (deploy de functions)
+supabase/.temp/
