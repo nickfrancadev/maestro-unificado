@@ -9,6 +9,14 @@ import {
   mergeRefreshedTokens,
   isRefreshLocked,
 } from "./tokenLifecycle.ts";
+import {
+  buildOverlaySvg,
+  AD_FORMAT_SIZE,
+  type AdFormat,
+  type SvgTextLayer,
+  type SvgLogoLayer,
+  type SvgLogoPair,
+} from "./overlaySvg.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -50,37 +58,35 @@ app.get("/make-server-a4d5bbe0/logo-proxy", async (c) => {
   if (!domain) {
     return c.json({ error: "domain param required" }, 400);
   }
-  try {
-    // Try Clearbit first
-    const clearbitUrl = `https://logo.clearbit.com/${encodeURIComponent(domain)}`;
-    const res = await fetch(clearbitUrl, { redirect: "follow" });
-    if (res.ok && res.headers.get("content-type")?.startsWith("image")) {
-      const body = await res.arrayBuffer();
-      return new Response(body, {
-        headers: {
-          "Content-Type": res.headers.get("content-type") || "image/png",
-          "Cache-Control": "public, max-age=86400",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
+  // Cada provedor no seu próprio try: uma falha de REDE (DNS morto, timeout)
+  // lança em vez de responder não-ok, e um catch único em volta da cadeia
+  // inteira encerrava tudo com 500 sem nunca tentar o fallback — foi
+  // exatamente o que aconteceu quando a Clearbit desligou a Logo API (o
+  // domínio saiu do DNS e TODO logo passou a falhar). A Clearbit saiu da
+  // cadeia por isso; logo.dev entra primeiro por ser o provedor que o resto
+  // do servidor já usa, com o favicon do Google como último recurso.
+  const providers = [
+    `https://img.logo.dev/${encodeURIComponent(domain)}?token=${LOGO_DEV_KEY}`,
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`,
+  ];
+  for (const url of providers) {
+    try {
+      const res = await fetch(url, { redirect: "follow" });
+      if (res.ok && res.headers.get("content-type")?.startsWith("image")) {
+        const body = await res.arrayBuffer();
+        return new Response(body, {
+          headers: {
+            "Content-Type": res.headers.get("content-type") || "image/png",
+            "Cache-Control": "public, max-age=86400",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      }
+    } catch (e) {
+      console.log(`[logo-proxy] provedor falhou (${url.split("/")[2]}):`, (e as Error)?.message);
     }
-    // Fallback: Google Favicon
-    const googleUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
-    const gRes = await fetch(googleUrl, { redirect: "follow" });
-    if (gRes.ok) {
-      const body = await gRes.arrayBuffer();
-      return new Response(body, {
-        headers: {
-          "Content-Type": gRes.headers.get("content-type") || "image/png",
-          "Cache-Control": "public, max-age=86400",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-    }
-    return new Response(null, { status: 404 });
-  } catch (_e) {
-    return new Response(null, { status: 500 });
   }
+  return new Response(null, { status: 404 });
 });
 
 // ================================================
@@ -618,7 +624,13 @@ app.post("/make-server-a4d5bbe0/linkedin/org-logos", async (c) => {
       }
 
       if (domain) {
-        logos[`urn:li:organization:${orgId}`] = `https://img.logo.dev/${domain}?token=${LOGO_DEV_KEY}`;
+        // Sem a chave NÃO monta URL. Montar com `token=undefined` produz 401
+        // no logo.dev, e como a string é truthy ela vence qualquer fallback do
+        // cliente — o resultado é um logo quebrado renderizado dentro do
+        // anúncio. Ausência é melhor que URL envenenada.
+        if (LOGO_DEV_KEY) {
+          logos[`urn:li:organization:${orgId}`] = `https://img.logo.dev/${domain}?token=${LOGO_DEV_KEY}`;
+        }
       }
     }
 
@@ -2748,10 +2760,10 @@ Gere headline e bodyText para este anúncio.`;
 });
 
 // ---------- Image composition shared helpers ----------
-// Both /ai/generate-base-image and /ai/compose-logo-overlay use Nano Banana 2
-// (gemini-3.1-flash-image-preview). The base-image endpoint produces a single
-// reusable canvas without overlays; the compose endpoint takes that canvas
-// and asks the model to paint texts + the target company's logo on top.
+// `/ai/generate-base-image` usa Nano Banana 2 (gemini-3.1-flash-image-preview)
+// para produzir uma tela reutilizável, sem overlays. `/ai/compose-logo-overlay`
+// NÃO usa IA: monta um SVG a partir do layout que o usuário posicionou
+// (`overlaySvg.ts`) e rasteriza com resvg.
 
 const GEMINI_COMPOSE_MODEL = "gemini-3.1-flash-image-preview";
 
@@ -2920,7 +2932,7 @@ async function callGeminiImageCompose(
 // realistic editorial photograph or an abstract illustrative graphic.
 app.post("/make-server-a4d5bbe0/ai/generate-base-image", async (c) => {
   try {
-    const { mode, client_brand_context, prompt_brief } = await c.req.json();
+    const { mode, client_brand_context, prompt_brief, format } = await c.req.json();
     const styleMode: "photo_ai" | "graphic_ai" = mode === "photo_ai" ? "photo_ai" : "graphic_ai";
 
     const styleDirective = styleMode === "photo_ai"
@@ -2929,7 +2941,9 @@ app.post("/make-server-a4d5bbe0/ai/generate-base-image", async (c) => {
 
     const prompt = `Generate a single LinkedIn-style B2B advertisement BASE IMAGE for an ABM campaign.
 
-Aspect ratio: 1.91:1, suitable for 1200x628 pixels. Landscape composition.
+${format === "square"
+  ? "Aspect ratio: 1:1, suitable for 1200x1200 pixels. Square composition."
+  : "Aspect ratio: 1.91:1, suitable for 1200x628 pixels. Landscape composition."}
 
 CRITICAL: do NOT render any text, words, letters, numbers, logos, or watermarks. The image is a clean canvas — text and logos will be added programmatically afterwards. Leave generous negative space (especially in the corners and across the top third) so overlays don't compete with subjects.
 
@@ -3004,110 +3018,73 @@ async function loadGoogleFont(family: string, weight: 400 | 700): Promise<Uint8A
   return bytes;
 }
 
-const CANVAS_W = 1200;
-const CANVAS_H = 628;
-const HEADLINE_FONT_PX = 56;
-const SECONDARY_FONT_PX = 28;
-const BOX_PAD_X = 22;
-const BOX_PAD_Y = 12;
-const BOX_RADIUS = 14;
-const BOX_FILL = "rgba(0,0,0,0.55)";
-const TEXT_COLOR = "#FFFFFF";
-const TEXT_X = 48;
-const TEXT_TOP = 48;
-const STACK_GAP = 10;
-const LOGO_CARD_W = 140;
-const LOGO_CARD_PAD = 14;
-const LOGO_CARD_RADIUS = 14;
-const LOGO_CARD_RIGHT = 48;
-const LOGO_CARD_TOP = 36;
-
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+// Roda o resvg de verdade sobre um SVG já montado. Extraído para ser
+// chamado duas vezes por `renderOverlayPng` — uma normal, uma de retry.
+function rasterizeSvg(svg: string, fontBuffers: Uint8Array[], fontFamily: string, widthPx: number): Uint8Array {
+  const resvg = new Resvg(svg, {
+    font: { fontBuffers, defaultFontFamily: fontFamily, loadSystemFonts: false },
+    background: "rgba(255,255,255,0)",
+    fitTo: { mode: "width", value: widthPx },
+  });
+  return resvg.render().asPng();
 }
 
+// Rasteriza o overlay. A GEOMETRIA toda vive em `overlaySvg.ts`, que é puro e
+// testado; aqui fica só o que precisa de rede e wasm: baixar as fontes e rodar
+// o resvg.
 async function renderOverlayPng(opts: {
   baseImageBase64: string;
   baseImageMime: string;
+  format: AdFormat;
   fontFamily: string;
-  destaque: string;
-  complementar: string;
-  logoBase64: string | null;
-  logoMime: string | null;
+  texts: SvgTextLayer[];
+  logos: SvgLogoLayer[];
+  pair?: SvgLogoPair | null;
 }): Promise<Uint8Array> {
   await ensureResvg();
 
-  const fontTasks: Array<Promise<Uint8Array>> = [loadGoogleFont(opts.fontFamily, 700)];
-  if (opts.complementar) fontTasks.push(loadGoogleFont(opts.fontFamily, 400));
-  const fontBuffers = await Promise.all(fontTasks);
+  // Só baixa os pesos que o SVG vai realmente usar. `SvgTextLayer.weight` é
+  // `number` (paridade com `overlayLayout.ts`, que não conhece a limitação
+  // do resvg), mas `loadGoogleFont` só entende 400/700 — o cast é seguro
+  // porque só chamamos com o `700`/`400` que os dois textos do compose usam.
+  const weights = [...new Set(opts.texts.filter((t) => t.text).map((t) => t.weight))];
+  const fontBuffers = await Promise.all(
+    (weights.length ? weights : [700]).map((w) => loadGoogleFont(opts.fontFamily, w as 400 | 700)),
+  );
 
-  // Approximate text width — enough to size the rounded box around it. Sans
-  // glyphs average ~0.55em advance in upper/lower mix; slightly generous so
-  // boxes never clip the actual rendered text.
-  const estimateWidth = (text: string, sizePx: number) =>
-    Math.ceil(text.length * sizePx * 0.55);
+  const baseHref = `data:${opts.baseImageMime};base64,${opts.baseImageBase64}`;
+  const widthPx = AD_FORMAT_SIZE[opts.format].w;
+  const buildOpts = {
+    format: opts.format,
+    baseHref,
+    fontFamily: opts.fontFamily,
+    texts: opts.texts,
+    logos: opts.logos,
+    pair: opts.pair,
+  };
 
-  const headlineWidth = estimateWidth(opts.destaque, HEADLINE_FONT_PX);
-  const secondaryWidth = estimateWidth(opts.complementar, SECONDARY_FONT_PX);
-  const headlineBoxW = headlineWidth + BOX_PAD_X * 2;
-  const secondaryBoxW = secondaryWidth + BOX_PAD_X * 2;
-  const headlineBoxH = HEADLINE_FONT_PX + BOX_PAD_Y * 2;
-  const secondaryBoxH = SECONDARY_FONT_PX + BOX_PAD_Y * 2;
-
-  const headlineY = TEXT_TOP;
-  const secondaryY = headlineY + headlineBoxH + STACK_GAP;
-
-  const baseDataUrl = `data:${opts.baseImageMime};base64,${opts.baseImageBase64}`;
-
-  let logoSvg = "";
-  if (opts.logoBase64 && opts.logoMime) {
-    const cardX = CANVAS_W - LOGO_CARD_RIGHT - LOGO_CARD_W;
-    const cardY = LOGO_CARD_TOP;
-    const logoX = cardX + LOGO_CARD_PAD;
-    const logoY = cardY + LOGO_CARD_PAD;
-    const logoSize = LOGO_CARD_W - LOGO_CARD_PAD * 2;
-    logoSvg = `
-    <rect x="${cardX}" y="${cardY}" width="${LOGO_CARD_W}" height="${LOGO_CARD_W}" rx="${LOGO_CARD_RADIUS}" ry="${LOGO_CARD_RADIUS}" fill="#FFFFFF" filter="url(#cardShadow)"/>
-    <image x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" href="data:${opts.logoMime};base64,${opts.logoBase64}" preserveAspectRatio="xMidYMid meet"/>`;
-  }
-
-  const secondarySvg = opts.complementar
-    ? `
-    <rect x="${TEXT_X}" y="${secondaryY}" width="${secondaryBoxW}" height="${secondaryBoxH}" rx="${BOX_RADIUS}" ry="${BOX_RADIUS}" fill="${BOX_FILL}"/>
-    <text x="${TEXT_X + BOX_PAD_X}" y="${secondaryY + BOX_PAD_Y + SECONDARY_FONT_PX * 0.8}" font-family="${escapeXml(opts.fontFamily)}" font-weight="400" font-size="${SECONDARY_FONT_PX}" fill="${TEXT_COLOR}">${escapeXml(opts.complementar)}</text>`
-    : "";
-
-  const headlineSvg = opts.destaque
-    ? `
-    <rect x="${TEXT_X}" y="${headlineY}" width="${headlineBoxW}" height="${headlineBoxH}" rx="${BOX_RADIUS}" ry="${BOX_RADIUS}" fill="${BOX_FILL}"/>
-    <text x="${TEXT_X + BOX_PAD_X}" y="${headlineY + BOX_PAD_Y + HEADLINE_FONT_PX * 0.8}" font-family="${escapeXml(opts.fontFamily)}" font-weight="700" font-size="${HEADLINE_FONT_PX}" fill="${TEXT_COLOR}">${escapeXml(opts.destaque)}</text>`
-    : "";
-
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}">
-  <defs>
-    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.18"/>
-    </filter>
-  </defs>
-  <image x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" href="${baseDataUrl}" preserveAspectRatio="xMidYMid slice"/>${headlineSvg}${secondarySvg}${logoSvg}
-</svg>`;
-
-  const resvg = new Resvg(svg, {
-    font: {
+  try {
+    return rasterizeSvg(buildOverlaySvg(buildOpts), fontBuffers, opts.fontFamily, widthPx);
+  } catch (err) {
+    // `looksWellFormed` (em overlaySvg.ts) é uma checagem barata, não um
+    // parser XML — pode deixar passar má-formação que só o resvg detecta de
+    // verdade (ex.: prefixo de namespace não declarado num logo SVG). Em vez
+    // de tentar prever mais casos por regex e arriscar outro furo, sobrevive
+    // ao que não previu: recompõe com TODO logo forçado pelo
+    // `<image href="${escapeXml(...)}">` (sempre XML válido, mesmo que o
+    // logo específico não renderize) e tenta de novo. Se isso também
+    // falhar, propaga — não sobra mais fallback depois do <image>.
+    console.log(
+      "[Compose Overlay] SVG aninhado falhou na rasterização, tentando de novo com <image>:",
+      (err as Error)?.message,
+    );
+    return rasterizeSvg(
+      buildOverlaySvg({ ...buildOpts, forceImageLogos: true }),
       fontBuffers,
-      defaultFontFamily: opts.fontFamily,
-      loadSystemFonts: false,
-    },
-    background: "rgba(255,255,255,0)",
-    fitTo: { mode: "width", value: CANVAS_W },
-  });
-  return resvg.render().asPng();
+      opts.fontFamily,
+      widthPx,
+    );
+  }
 }
 
 app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
@@ -3117,30 +3094,95 @@ app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
       base_image_url,
       target_company_name,
       target_company_domain,
-      show_target_logo = true,
+      advertiser_logo_url = null,
+      advertiser_domain = null,
       texto_destaque = "",
       texto_complementar = "",
       font_family = "Inter",
+      destaque_width_px,
+      complementar_width_px,
+      layout,
     } = body;
+    // `banner` continua sendo o default para não quebrar chamadas antigas.
+    const format: AdFormat = body.format === "square" ? "square" : "banner";
     if (!base_image_url) return c.json({ error: "base_image_url é obrigatório" }, 400);
     if (!target_company_name) return c.json({ error: "target_company_name é obrigatório" }, 400);
+    if (!layout) return c.json({ error: "layout é obrigatório" }, 400);
 
     const baseImg = await fetchAsBase64(base_image_url);
     if (!baseImg) return c.json({ error: "Não foi possível baixar a imagem base" }, 500);
 
-    let logoImg: { base64: string; mime: string } | null = null;
-    if (show_target_logo) {
-      logoImg = await resolveTargetLogo(target_company_name, target_company_domain || null);
+    const texts: SvgTextLayer[] = [
+      { ...layout.destaque, text: (texto_destaque || "").trim(), weight: 700, widthPx: destaque_width_px },
+      { ...layout.complementar, text: (texto_complementar || "").trim(), weight: 400, widthPx: complementar_width_px },
+    ];
+
+    const logos: SvgLogoLayer[] = [];
+
+    // Logo da conta-alvo: continua passando pelo resolvedor multi-fonte, que
+    // devolve bitmap justamente porque logo.dev às vezes responde SVG.
+    let targetLogoApplied = false;
+    if (layout.targetLogo?.enabled) {
+      const img = await resolveTargetLogo(target_company_name, target_company_domain || null);
+      if (img) {
+        logos.push({
+          href: `data:${img.mime};base64,${img.base64}`,
+          x: layout.targetLogo.x, y: layout.targetLogo.y,
+          sizePx: layout.targetLogo.sizePx, wrap: layout.targetLogo.wrap,
+        });
+        targetLogoApplied = true;
+      }
     }
+
+    // Logo do anunciante: `advertiser_logo_url` (Brand Kit, URL ou data: URI)
+    // manda; `advertiser_domain` é o fallback via `resolveTargetLogo` — sem
+    // isso o checkbox "Meu logo" nasce morto, já que `brandKit.logo` é `null`
+    // por padrão. `fetchAsBase64` atende URL e data: URI ao mesmo tempo — o
+    // fetch do Deno resolve `data:` nativamente. Tenta o domínio também
+    // quando a URL existe mas falha (não só quando ela está ausente) — os
+    // dois caminhos falhando não é erro: `advertiser_logo_applied` só vira
+    // `false`.
+    let advertiserLogoApplied = false;
+    if (layout.advertiserLogo?.enabled) {
+      let img: { base64: string; mime: string } | null = null;
+      if (advertiser_logo_url) {
+        img = await fetchAsBase64(advertiser_logo_url);
+      }
+      if (!img && advertiser_domain) {
+        img = await resolveTargetLogo(advertiser_domain, advertiser_domain);
+      }
+      if (img) {
+        logos.push({
+          href: `data:${img.mime};base64,${img.base64}`,
+          x: layout.advertiserLogo.x, y: layout.advertiserLogo.y,
+          sizePx: layout.advertiserLogo.sizePx, wrap: layout.advertiserLogo.wrap,
+        });
+        advertiserLogoApplied = true;
+      }
+    }
+
+    // Lockup co-branded: só quando os DOIS logos resolveram. Com um só, o par
+    // viraria um cartão com metade vazia — melhor cair no logo individual, que
+    // é o que `logos` já contém.
+    const pair: SvgLogoPair | null = layout.paired && logos.length === 2
+      ? {
+        firstHref: logos[1].href,   // anunciante à esquerda do divisor
+        secondHref: logos[0].href,  // conta-alvo à direita
+        x: layout.advertiserLogo.x,
+        y: layout.advertiserLogo.y,
+        sizePx: layout.advertiserLogo.sizePx,
+        wrap: layout.advertiserLogo.wrap,
+      }
+      : null;
 
     const png = await renderOverlayPng({
       baseImageBase64: baseImg.base64,
       baseImageMime: baseImg.mime,
+      format,
       fontFamily: font_family,
-      destaque: (texto_destaque || "").trim(),
-      complementar: (texto_complementar || "").trim(),
-      logoBase64: logoImg?.base64 ?? null,
-      logoMime: logoImg?.mime ?? null,
+      texts,
+      logos,
+      pair,
     });
 
     const safeTarget = target_company_name.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
@@ -3151,7 +3193,8 @@ app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
       url: stored.url,
       path: stored.path,
       filename: stored.filename,
-      logo_applied: !!logoImg,
+      logo_applied: targetLogoApplied,
+      advertiser_logo_applied: advertiserLogoApplied,
     });
   } catch (err: any) {
     console.log("[Compose Overlay] Erro:", err.message);

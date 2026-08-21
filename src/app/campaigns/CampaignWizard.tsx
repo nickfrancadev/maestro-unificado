@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Settings2,
+  PaintBucket,
   Palette,
   Check,
   ChevronRight,
@@ -10,12 +11,15 @@ import {
   Eye,
 } from 'lucide-react';
 import { ConfigStep } from './wizard/ConfigStep';
+import { BriefStep, createEmptyBriefDraft } from './wizard/BriefStep';
 import { CreativeStep } from './wizard/CreativeStep';
 import { OrchestrationStep } from './wizard/OrchestrationStep';
-import { SegmentationStep, createEmptyTargeting, resolveTargetingForAccount } from './wizard/SegmentationStep';
+import { SegmentationStep, createEmptyTargeting } from './wizard/SegmentationStep';
+import { canProceedFromStep } from './wizard/wizardGates';
 import type { TargetingData } from './wizard/SegmentationStep';
 import { TargetAccount, CampaignConfig, createDefaultCampaignConfig } from './wizard/types';
 import { CreativeData, createDefaultCreativeData } from './wizard/types';
+import type { BriefDraft } from './wizard/BriefPane';
 import { getLinkedInStatus } from '@/lib/linkedin';
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 import { toast } from 'sonner';
@@ -36,6 +40,11 @@ export function CampaignWizard() {
   // Creative data state (lifted from CreativeStep)
   const [creativeData, setCreativeData] = useState<CreativeData>(createDefaultCreativeData());
 
+  // Rascunho da marca (lifted from BriefStep). Vive aqui porque o BriefStep
+  // desmonta ao trocar de passo, e sem isso toda edição ainda não enviada com
+  // "Salvar marca" morria ao clicar em "Próximo Passo".
+  const [briefDraft, setBriefDraft] = useState<BriefDraft>(createEmptyBriefDraft());
+
   // Shared campaign state
   const [selectedAccounts, setSelectedAccounts] = useState<TargetAccount[]>([]);
   const [targetingData, setTargetingData] = useState<TargetingData>(createEmptyTargeting());
@@ -50,8 +59,9 @@ export function CampaignWizard() {
   const steps = [
     { id: 1, label: 'Configuração', icon: Settings2 },
     { id: 2, label: 'Segmentação', icon: Crosshair },
-    { id: 3, label: 'Criativo', icon: Palette },
-    { id: 4, label: 'Revisão & Lançamento', icon: Eye },
+    { id: 3, label: 'Marca', icon: PaintBucket },
+    { id: 4, label: 'Criativos', icon: Palette },
+    { id: 5, label: 'Revisão & Lançamento', icon: Eye },
   ];
 
   const totalSteps = steps.length;
@@ -80,42 +90,8 @@ export function CampaignWizard() {
     setTimeout(() => onCancel(), 1500);
   };
 
-  const canProceed = () => {
-    if (currentStep === 1) {
-      // Config step: require a campaign name
-      return !!campaignConfig.campaignName.trim();
-    }
-    if (currentStep === 2) {
-      // Segmentação: >=1 empresa-alvo E cada conjunto efetivo com >=1 localização.
-      const accounts = targetingData.companies.included;
-      if (accounts.length === 0) return false;
-      return accounts.every((acc) => {
-        const person = resolveTargetingForAccount(targetingData, acc.id);
-        return person.locations.included.length > 0;
-      });
-    }
-    if (currentStep === 3) {
-      // Criativo: URL/CTA always required at template level. Each target
-      // company must have either (a) full override (headline+body+image)
-      // or (b) the template fully filled to fall back on.
-      const urlAndCtaOk = !!(creativeData.landingPageUrl?.trim() && creativeData.cta);
-      if (!urlAndCtaOk) return false;
-      const templateComplete = !!(
-        creativeData.bodyText?.trim() &&
-        creativeData.headline?.trim() &&
-        creativeData.imageUrl
-      );
-      const companies = targetingData.companies?.included || [];
-      if (companies.length === 0) return templateComplete;
-      const allCompaniesFullyOverridden = companies.every((c) => {
-        const o = creativeData.overrides?.[c.id];
-        return !!(o?.headline?.trim() && o?.bodyText?.trim() && o?.imageUrl);
-      });
-      return templateComplete || allCompaniesFullyOverridden;
-    }
-    // Review is always valid
-    return true;
-  };
+  const canProceed = () =>
+    canProceedFromStep(currentStep, { campaignConfig, targetingData, creativeData });
 
   const getStepSummary = () => {
     if (currentStep === 1) {
@@ -126,6 +102,13 @@ export function CampaignWizard() {
       const custom = Object.keys(targetingData.overrides).length;
       if (n === 0) return 'Selecione ao menos 1 conta';
       return `${n} conjunto${n !== 1 ? 's' : ''} de anúncio${custom > 0 ? ` · ${custom} personalizado${custom !== 1 ? 's' : ''}` : ''}`;
+    }
+    if (currentStep === 3) {
+      if (creativeData.brandKit?.voice?.trim()) return 'Marca definida';
+      // Digitou mas não salvou: sem esta frase o botão fica desabilitado sem
+      // explicação, já que o campo na tela *parece* preenchido.
+      if (briefDraft.voice.trim()) return 'Salve a marca para continuar';
+      return 'Defina o tom de voz da marca';
     }
     return '';
   };
@@ -227,14 +210,23 @@ export function CampaignWizard() {
             />
           )}
           {currentStep === 3 && (
+            <BriefStep
+              creativeData={creativeData}
+              onCreativeChange={setCreativeData}
+              draft={briefDraft}
+              setDraft={setBriefDraft}
+            />
+          )}
+          {currentStep === 4 && (
             <CreativeStep
               selectedAccounts={selectedAccounts}
               targetingData={targetingData}
               creativeData={creativeData}
               onCreativeChange={setCreativeData}
+              onEditBrand={() => setCurrentStep(3)}
             />
           )}
-          {currentStep === 4 && (
+          {currentStep === 5 && (
             <OrchestrationStep
               selectedAccounts={selectedAccounts}
               onAccountsChange={setSelectedAccounts}

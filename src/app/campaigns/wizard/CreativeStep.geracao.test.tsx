@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useState } from 'react';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { CreativeStep } from './CreativeStep';
 import { createDefaultCreativeData, type CreativeData } from './types';
@@ -45,6 +45,10 @@ const renderStep = (initial?: Partial<CreativeData>) =>
   render(<MemoryRouter><Host initial={initial} /></MemoryRouter>);
 
 const goTo = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
+// Os cards do editor são um acordeão colapsado por padrão; o toggle tem
+// aria-label exato com o título ("Texto" | "Imagem" | "Destino").
+const openCard = (title: string) =>
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${title}$`) }));
 
 describe('CreativeStep — botões de geração por bloco', () => {
   it('no Template global, cada card tem seu botão e o header faz o fan-out', () => {
@@ -63,6 +67,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('trocar a origem para IA revela o prompt e o botão de gerar a imagem-base', () => {
     renderStep();
     goTo(/Template global/);
+    openCard('Imagem');
 
     expect(screen.queryByPlaceholderText(/Descreva a imagem que deseja gerar/)).not.toBeInTheDocument();
 
@@ -76,6 +81,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('o modo IA expõe o conjunto completo de campos da composição', () => {
     renderStep();
     goTo(/Template global/);
+    openCard('Imagem');
     goTo(/Gerar com IA/);
 
     expect(screen.getByPlaceholderText('Descreva a imagem que deseja gerar')).toBeInTheDocument();
@@ -83,11 +89,22 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByPlaceholderText('Texto secundário na imagem')).toBeInTheDocument();
     expect(screen.getByText('Fonte')).toBeInTheDocument();
     // Cada formato anuncia medida e proporção, não só o nome.
-    expect(screen.getByRole('button', { name: /Quadrado/ })).toBeInTheDocument();
+    // `/Quadrado.*1:1/`, não só `/Quadrado/`: a Task 7 acrescentou o wrap
+    // "Quadrado" do logo da conta (habilitado por padrão), que também é um
+    // <button> com esse texto — sem o pedaço da proporção o seletor bate em
+    // dois elementos e `getByRole` estoura.
+    expect(screen.getByRole('button', { name: /Quadrado.*1:1/ })).toBeInTheDocument();
     expect(screen.getByText('1200 × 1200 px · 1:1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Banner/ })).toBeInTheDocument();
     expect(screen.getByText('1200 × 628 px · 1.91:1')).toBeInTheDocument();
-    expect(screen.getByLabelText(/Aplicar logo da empresa-alvo/)).toBeInTheDocument();
+    // O checkbox "Aplicar logo da empresa-alvo" saiu na Task 7 — o controle
+    // morto (escrevia em `showTargetLogo`, que o preview nunca lia) foi
+    // substituído por `LogoLayerControls`, cujo sucessor direto é o toggle
+    // "Logo da conta" (liga/desliga `layout.targetLogo.enabled`).
+    // String exata, não regex: com o logo da conta habilitado por padrão, o
+    // Wrap picker expõe botões com aria-label "Quadrado para Logo da conta"
+    // etc., e um /Logo da conta/ solto bateria neles também.
+    expect(screen.getByLabelText('Logo da conta')).toBeInTheDocument();
   });
 
   it('numa empresa, o header gera os dois e cada card gera a sua parte', () => {
@@ -104,6 +121,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
       templateLogo: { ...createDefaultCreativeData().templateLogo, textoDestaque: 'WORKSHOP ABM' },
     });
     goTo(/Nubank/);
+    openCard('Imagem');
 
     // As mesmas duas origens que o template oferece.
     expect(screen.getByRole('button', { name: /Enviar imagem/ })).toBeInTheDocument();
@@ -115,6 +133,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('editar um campo na empresa vira override, com volta ao template', () => {
     renderStep();
     goTo(/Nubank/);
+    openCard('Imagem');
 
     expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
 
@@ -131,18 +150,30 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('o editor não repete o anúncio — quem renderiza o resultado é o preview', () => {
     renderStep({
       overrides: {
-        c1: { status: 'fully_personalized', imageUrl: 'https://x/composto.png', imageFileName: 'composto.png' },
+        c1: {
+          status: 'fully_personalized',
+          baseImageUrl: 'https://x/base-nubank.png',
+          imageUrl: 'https://x/composto.png',
+          imageFileName: 'composto.png',
+        },
       },
     });
     goTo(/Nubank/);
 
-    // Nada de um segundo slot para o mesmo anúncio dentro do formulário.
+    // Nada de um segundo slot para o mesmo anúncio dentro do formulário — o
+    // guard original é por TEXTO, não por alt: ele travava o <label> que
+    // envolvia o segundo slot do formulário, não o <img> do preview.
     expect(screen.queryByText('Anúncio composto')).not.toBeInTheDocument();
-    expect(screen.getByAltText('Ad creative')).toHaveAttribute('src', 'https://x/composto.png');
+    expect(screen.queryByAltText('Anúncio composto')).not.toBeInTheDocument();
+
+    // O composto só aparece no preview quando o toggle "Composto" é acionado
+    // — por padrão o preview mostra o editor ao vivo.
+    fireEvent.click(screen.getByRole('button', { name: /Composto/ }));
+    expect(screen.getByAltText('Anúncio composto')).toHaveAttribute('src', 'https://x/composto.png');
   });
 
   it('a imagem-base da própria empresa aparece no preview antes de compor', () => {
-    renderStep({
+    const { container } = renderStep({
       imageUrl: 'https://x/template.png',
       overrides: {
         c1: { status: 'fully_personalized', baseImageUrl: 'https://x/base-nubank.png' },
@@ -151,8 +182,10 @@ describe('CreativeStep — botões de geração por bloco', () => {
     goTo(/Nubank/);
 
     // Sem a base da empresa na cadeia, o preview mostraria o anúncio do
-    // template — que não é o que essa empresa vai rodar.
-    expect(screen.getByAltText('Ad creative')).toHaveAttribute('src', 'https://x/base-nubank.png');
+    // template — que não é o que essa empresa vai rodar. Escopado ao canvas
+    // do preview porque o card 2 também tem uma miniatura com o mesmo alt.
+    const canvas = container.querySelector('[data-testid="overlay-canvas"]') as HTMLElement;
+    expect(within(canvas).getByAltText('Imagem-base')).toHaveAttribute('src', 'https://x/base-nubank.png');
   });
 
   it('sem imagem-base e com origem upload, a empresa bloqueia a geração', () => {
@@ -167,6 +200,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('a empresa tem URL de destino e CTA próprios, herdados até serem mudados', () => {
     renderStep({ landingPageUrl: '/p/campanha-geral', cta: 'LEARN_MORE' });
     goTo(/Nubank/);
+    openCard('Destino');
 
     const url = screen.getByDisplayValue('/p/campanha-geral');
     expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
@@ -178,8 +212,9 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByDisplayValue('/p/nubank')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Request Demo')).toBeInTheDocument();
 
-    // O template segue intocado.
+    // O template segue intocado. (Trocar de alvo recolhe o acordeão.)
     goTo(/Template global/);
+    openCard('Destino');
     expect(screen.getByDisplayValue('/p/campanha-geral')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
   });
@@ -197,6 +232,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('o Brand Brief sai do header e passa a ser acessível pelo card de Texto', () => {
     renderStep();
     goTo(/Nubank/);
+    openCard('Texto');
 
     // Nada de botão "Brand Brief" no header da página — o acesso é pelo card 1.
     expect(screen.queryByRole('button', { name: /^Brand Brief$/ })).not.toBeInTheDocument();

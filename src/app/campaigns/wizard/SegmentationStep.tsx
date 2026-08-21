@@ -902,9 +902,6 @@ function FacetCard({
   defaultOpen = false,
 }: FacetCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultOpen);
-  const [mode, setMode] = useState<"include" | "exclude">(
-    "include",
-  );
   const [filterText, setFilterText] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -921,27 +918,20 @@ function FacetCard({
 
   const { inc, exc } = countSelections(selection);
 
+  // Buscar um item deste facet sempre INCLUI. O ramo de excluir só era
+  // alcançável pelos botões Incluir/Excluir, que saíram — a lista de
+  // excluídos continua existindo no modelo (e o chip de remover continua
+  // funcionando para o que já estiver lá), só não se alimenta mais daqui.
   const addItem = useCallback(
     (item: FacetItem) => {
       const newSel = { ...selection };
-      if (mode === "include") {
-        newSel.excluded = newSel.excluded.filter(
-          (i) => i.id !== item.id,
-        );
-        if (!newSel.included.find((i) => i.id === item.id)) {
-          newSel.included = [...newSel.included, item];
-        }
-      } else {
-        newSel.included = newSel.included.filter(
-          (i) => i.id !== item.id,
-        );
-        if (!newSel.excluded.find((i) => i.id === item.id)) {
-          newSel.excluded = [...newSel.excluded, item];
-        }
+      newSel.excluded = newSel.excluded.filter((i) => i.id !== item.id);
+      if (!newSel.included.find((i) => i.id === item.id)) {
+        newSel.included = [...newSel.included, item];
       }
       onSelectionChange(newSel);
     },
-    [mode, selection, onSelectionChange],
+    [selection, onSelectionChange],
   );
 
   const removeItem = useCallback(
@@ -972,24 +962,18 @@ function FacetCard({
     [selection],
   );
 
+  // Clicar numa opção fixa alterna inclusão. Antes o comportamento dependia do
+  // modo Incluir/Excluir; sem os botões, sobra o caso que sempre valeu — e
+  // clicar de novo num item já excluído continua tirando ele de lá, para um
+  // estado herdado não virar armadilha sem saída.
   const toggleFixedItem = useCallback(
     (item: FacetItem) => {
       const status = isSelected(item.id);
-      if (mode === "include") {
-        if (status === "included") {
-          removeItem(item, "included");
-        } else {
-          addItem(item);
-        }
-      } else {
-        if (status === "excluded") {
-          removeItem(item, "excluded");
-        } else {
-          addItem(item);
-        }
-      }
+      if (status === "included") removeItem(item, "included");
+      else if (status === "excluded") removeItem(item, "excluded");
+      else addItem(item);
     },
-    [mode, isSelected, addItem, removeItem],
+    [isSelected, addItem, removeItem],
   );
 
   const filteredOptions = useMemo(() => {
@@ -1063,32 +1047,6 @@ function FacetCard({
       {/* Body */}
       {isExpanded && (
         <div className="px-5 pb-5 border-t border-slate-100 pt-4 space-y-4">
-          {/* Include / Exclude toggle */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setMode("include")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                mode === "include"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-              }`}
-            >
-              <Plus className="w-3 h-3" />
-              Incluir
-            </button>
-            <button
-              onClick={() => setMode("exclude")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                mode === "exclude"
-                  ? "bg-red-600 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-              }`}
-            >
-              <Minus className="w-3 h-3" />
-              Excluir
-            </button>
-          </div>
-
           {/* Typeahead Input */}
           {type === "typeahead" && (
             <div className="relative" ref={dropdownRef}>
