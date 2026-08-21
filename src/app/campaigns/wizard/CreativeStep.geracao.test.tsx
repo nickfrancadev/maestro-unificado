@@ -45,6 +45,10 @@ const renderStep = (initial?: Partial<CreativeData>) =>
   render(<MemoryRouter><Host initial={initial} /></MemoryRouter>);
 
 const goTo = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
+// Os cards do editor são um acordeão colapsado por padrão; o toggle tem
+// aria-label exato com o título ("Texto" | "Imagem" | "Destino").
+const openCard = (title: string) =>
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${title}$`) }));
 
 describe('CreativeStep — botões de geração por bloco', () => {
   it('no Template global, cada card tem seu botão e o header faz o fan-out', () => {
@@ -63,6 +67,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('trocar a origem para IA revela o prompt e o botão de gerar a imagem-base', () => {
     renderStep();
     goTo(/Template global/);
+    openCard('Imagem');
 
     expect(screen.queryByPlaceholderText(/Descreva a imagem que deseja gerar/)).not.toBeInTheDocument();
 
@@ -76,6 +81,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('o modo IA expõe o conjunto completo de campos da composição', () => {
     renderStep();
     goTo(/Template global/);
+    openCard('Imagem');
     goTo(/Gerar com IA/);
 
     expect(screen.getByPlaceholderText('Descreva a imagem que deseja gerar')).toBeInTheDocument();
@@ -115,6 +121,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
       templateLogo: { ...createDefaultCreativeData().templateLogo, textoDestaque: 'WORKSHOP ABM' },
     });
     goTo(/Nubank/);
+    openCard('Imagem');
 
     // As mesmas duas origens que o template oferece.
     expect(screen.getByRole('button', { name: /Enviar imagem/ })).toBeInTheDocument();
@@ -126,6 +133,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('editar um campo na empresa vira override, com volta ao template', () => {
     renderStep();
     goTo(/Nubank/);
+    openCard('Imagem');
 
     expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
 
@@ -192,6 +200,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('a empresa tem URL de destino e CTA próprios, herdados até serem mudados', () => {
     renderStep({ landingPageUrl: '/p/campanha-geral', cta: 'LEARN_MORE' });
     goTo(/Nubank/);
+    openCard('Destino');
 
     const url = screen.getByDisplayValue('/p/campanha-geral');
     expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
@@ -203,8 +212,9 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(screen.getByDisplayValue('/p/nubank')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Request Demo')).toBeInTheDocument();
 
-    // O template segue intocado.
+    // O template segue intocado. (Trocar de alvo recolhe o acordeão.)
     goTo(/Template global/);
+    openCard('Destino');
     expect(screen.getByDisplayValue('/p/campanha-geral')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
   });
@@ -222,6 +232,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('o Brand Brief sai do header e passa a ser acessível pelo card de Texto', () => {
     renderStep();
     goTo(/Nubank/);
+    openCard('Texto');
 
     // Nada de botão "Brand Brief" no header da página — o acesso é pelo card 1.
     expect(screen.queryByRole('button', { name: /^Brand Brief$/ })).not.toBeInTheDocument();

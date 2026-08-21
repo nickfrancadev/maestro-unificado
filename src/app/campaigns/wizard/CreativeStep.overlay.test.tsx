@@ -53,6 +53,14 @@ const renderStep = (initial?: Partial<CreativeData>) =>
   render(<MemoryRouter><Host initial={initial} /></MemoryRouter>);
 
 const goTo = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }));
+// Cards do editor são um acordeão colapsado por padrão; este arquivo só mexe
+// no card Imagem, então abri-lo após navegar é seguro em todos os testes.
+const openCard = (title: string) =>
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${title}$`) }));
+// Os controles de uma camada de texto só aparecem com a camada ATIVA (foco no
+// input ou clique no texto do preview).
+const activateDestaque = () =>
+  fireEvent.focus(screen.getByPlaceholderText('Texto principal na imagem'));
 
 // jsdom devolve zero em todo getBoundingClientRect; sem um retângulo real o
 // arrasto não teria escala para converter px em fração (mesmo padrão de
@@ -68,6 +76,7 @@ describe('CreativeStep — formato reflete no preview', () => {
   it('banner mantém o preview em 1.91:1', () => {
     const { container } = renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     expect(container.querySelector('[data-testid="overlay-canvas"]')).toHaveClass('aspect-[1200/628]');
   });
 
@@ -76,6 +85,7 @@ describe('CreativeStep — formato reflete no preview', () => {
   it('escolher Quadrado deixa o preview 1:1', () => {
     const { container } = renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     // `/Quadrado.*1:1/`, não só `/Quadrado/`: a Task 7 acrescentou o wrap
     // "Quadrado" do logo da conta (habilitado por padrão), que também é um
     // <button> com esse texto — sem o pedaço da proporção o seletor bate em
@@ -89,12 +99,14 @@ describe('CreativeStep — editor no lugar da imagem', () => {
   it('com imagem-base, o preview mostra os textos do overlay como camadas', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     expect(screen.getByText('WORKSHOP ABM')).toBeInTheDocument();
   });
 
   it('sem imagem-base, mostra o placeholder', () => {
     renderStep();
     goTo(/Template global/);
+    openCard('Imagem');
     expect(screen.getByText(/Imagem aparecerá aqui/)).toBeInTheDocument();
   });
 
@@ -102,6 +114,7 @@ describe('CreativeStep — editor no lugar da imagem', () => {
   it('o toggle Composto só existe quando há imagem composta', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     expect(screen.queryByRole('button', { name: /Composto/ })).not.toBeInTheDocument();
   });
 });
@@ -115,6 +128,7 @@ describe('CreativeStep — "Voltar ao template" também restaura o layout', () =
   it('arrastar uma camada na empresa e depois resetar restaura a posição do template e some com o botão', () => {
     const { container } = renderStep(withBaseImage());
     goTo(/Nubank/);
+    openCard('Imagem');
 
     const canvas = container.querySelector('[data-testid="overlay-canvas"]')!;
     stubRect(canvas, 600, 314); // metade do canvas de referência (banner: 1200×628)
@@ -147,6 +161,7 @@ describe('CreativeStep — ordem do card Imagem', () => {
   it('formato vem antes da origem, que vem antes da imagem-base, que vem antes dos textos', () => {
     const { container } = renderStep();
     goTo(/Template global/);
+    openCard('Imagem');
     // Busca pelo conteúdo e não por índice: a posição do <section> muda toda
     // vez que alguém acrescenta um card, e o teste passaria a medir outra coisa.
     const card = Array.from(container.querySelectorAll('section'))
@@ -183,6 +198,7 @@ describe('CreativeStep — ordem do card Imagem', () => {
   it('a dropzone anuncia a dimensão do formato escolhido', () => {
     renderStep();
     goTo(/Template global/);
+    openCard('Imagem');
     // `getAllByText`: o rótulo aparece DUAS vezes — no FormatButton e na
     // dropzone —, e `getByText` estouraria com "found multiple elements".
     expect(screen.getAllByText(/1200 × 628 px/).length).toBeGreaterThan(1);
@@ -202,6 +218,8 @@ describe('CreativeStep — controles de camada', () => {
   it('mudar o tamanho do destaque grava no layout', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
+    activateDestaque();
     const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
     expect(slider.value).toBe('56');
     fireEvent.change(slider, { target: { value: '90' } });
@@ -216,6 +234,8 @@ describe('CreativeStep — controles de camada', () => {
   it('o slider do destaque expõe piso e teto', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
+    activateDestaque();
     const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
     expect(Number(slider.min)).toBe(16);
     expect(Number(slider.max)).toBeGreaterThan(0);
@@ -264,6 +284,8 @@ describe('CreativeStep — controles de camada', () => {
       };
       renderStep(d);
       goTo(/Template global/);
+      openCard('Imagem');
+      activateDestaque();
 
       const slider = screen.getByLabelText(/Tamanho do texto destaque/) as HTMLInputElement;
       expect(Number(slider.max)).toBe(80);
@@ -299,8 +321,11 @@ describe('CreativeStep — controles de camada', () => {
       };
       renderStep(d);
 
-      // Só abre a empresa. Nenhuma outra interação.
+      // Só abre a empresa e ATIVA a camada (foco é seleção de UI pura — não
+      // escreve nada). Nenhuma outra interação.
       goTo(/Nubank/);
+      openCard('Imagem');
+      activateDestaque();
 
       // A empresa deriva o mesmo teto (herda o layout cru do template, sem
       // override) — prova que a ausência de override não é por acidente de
@@ -317,6 +342,8 @@ describe('CreativeStep — controles de camada', () => {
   it('trocar o fundo para Nenhum tira a caixa do preview', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
+    activateDestaque();
     fireEvent.click(screen.getAllByRole('button', { name: /^Nenhum$/ })[0]);
     // jsdom resolve o keyword CSS `transparent` para `rgba(0, 0, 0, 0)` no
     // computed style (é assim que o próprio jsdom normaliza a cor, igual a um
@@ -330,12 +357,14 @@ describe('CreativeStep — logos', () => {
   it('"Meu logo" fica desabilitado sem logo no Brand Kit', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     expect(screen.getByLabelText(/Meu logo/)).toBeDisabled();
   });
 
   it('"Logo da conta" começa marcado e desmarcar tira o logo do preview', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     // String exata, não regex: o logo da conta vem habilitado por padrão, e
     // com ele habilitado o Wrap picker expõe botões com aria-label "Quadrado
     // para Logo da conta" etc. — um /Logo da conta/ solto bateria neles
@@ -351,6 +380,7 @@ describe('CreativeStep — logos', () => {
     d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
     renderStep(d);
     goTo(/Template global/);
+    openCard('Imagem');
     fireEvent.click(screen.getByRole('button', { name: /Agrupar como par/ }));
     expect(screen.getByAltText('Meu logo')).toBeInTheDocument();
     expect(screen.getByAltText('Logo da conta')).toBeInTheDocument();
@@ -366,6 +396,7 @@ describe('CreativeStep — logos', () => {
     d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
     renderStep(d);
     goTo(/Template global/);
+    openCard('Imagem');
     fireEvent.click(screen.getByRole('button', { name: /Agrupar como par/ }));
     expect(screen.getByAltText('Logo da conta')).toBeInTheDocument();
 
@@ -384,6 +415,7 @@ describe('CreativeStep — logos', () => {
     d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
     renderStep(d);
     goTo(/Template global/);
+    openCard('Imagem');
 
     const pairButton = screen.getByRole('button', { name: /Agrupar como par/ });
     fireEvent.click(pairButton); // agrupa
@@ -403,6 +435,7 @@ describe('CreativeStep — logos', () => {
     d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA' };
     renderStep(d);
     goTo(/Template global/);
+    openCard('Imagem');
 
     fireEvent.click(screen.getByRole('button', { name: /Agrupar como par/ }));
 
@@ -419,6 +452,7 @@ describe('CreativeStep — wrap e tamanho do logo', () => {
   it('trocar o wrap do logo da conta para Círculo arredonda o cartão no preview', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     fireEvent.click(screen.getByRole('button', { name: /Círculo para Logo da conta/ }));
     const wrap = screen.getByAltText('Logo da conta').parentElement!;
     expect(wrap).toHaveStyle({ borderRadius: '9999px' });
@@ -427,6 +461,7 @@ describe('CreativeStep — wrap e tamanho do logo', () => {
   it('mudar o tamanho do logo da conta muda a largura do cartão no preview', () => {
     renderStep(withBaseImage());
     goTo(/Template global/);
+    openCard('Imagem');
     const slider = screen.getByLabelText(/Tamanho do Logo da conta/) as HTMLInputElement;
     fireEvent.change(slider, { target: { value: '300' } });
     const wrap = screen.getByAltText('Logo da conta').parentElement!;
@@ -451,6 +486,7 @@ describe('CreativeStep — payload da composição', () => {
     d.brandKit = { ...d.brandKit, logo: 'data:image/png;base64,AAAA', websiteUrl: 'https://acme.com/pricing' };
     renderStep(d);
     goTo(/Nubank/);
+    openCard('Imagem');
     fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
 
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());
@@ -489,6 +525,7 @@ describe('CreativeStep — payload da composição', () => {
 
     renderStep(withBaseImage());
     goTo(/Nubank/);
+    openCard('Imagem');
     fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
 
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());
@@ -547,6 +584,7 @@ describe('CreativeStep — payload da composição', () => {
       };
       renderStep(d);
       goTo(/Nubank/);
+      openCard('Imagem');
       fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
 
       await vi.waitFor(() => expect(spy).toHaveBeenCalled());
@@ -587,6 +625,7 @@ describe('CreativeStep — payload da composição', () => {
     d.brandKit = { ...d.brandKit, logo: 'blob:https://exemplo.com/1234-5678-90ab' };
     renderStep(d);
     goTo(/Nubank/);
+    openCard('Imagem');
     fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
 
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());

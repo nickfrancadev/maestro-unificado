@@ -17,7 +17,6 @@ import {
   Sparkles,
   Wand2,
   RotateCw,
-  PaintBucket,
   Megaphone,
   X,
   ChevronDown,
@@ -48,19 +47,16 @@ import {
   type TextAlign,
 } from './overlayLayout';
 import { OverlayCanvas, type OverlayLayerId, measureTextWidthPx } from './OverlayCanvas';
-import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
-import type { BrandKit } from './brandKit';
-import { BriefPane, type BriefDraft } from './BriefPane';
+import { FontPicker } from './FontPicker';
+import { CompanyAvatar, resolveCompanyLogoUrl } from './CompanyAvatar';
+import { createDefaultBrandKit } from './brandKit';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
-import { logoDevUrl, logoProxyUrl } from '@/lib/linkedin/logo';
 import {
   fetchBrandBrief,
   generateCopy,
   generateBaseImage,
   composeLogoOverlay,
-  fetchClientVoice,
-  saveClientVoice,
 } from '@/lib/ai';
 import { LandingPagePicker } from '@/app/landingPages/ads/LandingPagePicker';
 import { listPages, savePage } from '@/app/landingPages/store/repo';
@@ -92,12 +88,17 @@ interface CreativeStepProps {
    * absent, the LP is still selected but the reverse link is skipped.
    */
   campaignId?: string;
+  /**
+   * Leva de volta ao step "Marca". A geração só roda com o tom de voz
+   * definido, e ele agora mora num passo anterior — sem isto o usuário fica
+   * com os botões desabilitados e nenhum caminho até a causa.
+   */
+  onEditBrand?: () => void;
 }
 
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
 
 const TEMPLATE_TARGET = '__template__';
-const BRIEF_TARGET = '__brief__';
 
 function statusOf(override: CompanyCreativeOverride | undefined): CompanyStatus {
   return override?.status ?? 'template';
@@ -166,31 +167,7 @@ function sendableAdvertiserLogoUrl(logo: string | null): string | null {
   return logo && logo.startsWith('blob:') ? null : logo;
 }
 
-// Uma URL de logo com token vazio/undefined é pior que nenhuma: o logo.dev
-// devolve 401 e o preview desenharia um ícone de imagem quebrada dentro do
-// anúncio. Tratá-la como ausente deixa o fallback assumir.
-export function usableLogoUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  return /[?&]token=(undefined|null)?(&|$)/i.test(url) ? null : url;
-}
-
-// "Tera" → "tera.com". Palpite, não verdade: o logo.dev devolve 404 para
-// domínio que não existe e o preview cai no avatar de letra, então errar aqui
-// custa nada. Mesma heurística de `SegmentationStep`.
-export function domainFromCompanyName(name: string | undefined): string | undefined {
-  const slug = (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  return slug ? `${slug}.com` : undefined;
-}
-
-function getAccountColor(name: string) {
-  const colors: Record<string, string> = {
-    NVIDIA: '#76b900', Revolut: '#0075EB', Datadog: '#632CA6', Figma: '#F24E1E',
-    Stripe: '#635BFF', Snowflake: '#29b5e8', Databricks: '#FF3621', Notion: '#000000',
-  };
-  return colors[name] || '#6366f1';
-}
-
-export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId }: CreativeStepProps) {
+export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId, onEditBrand }: CreativeStepProps) {
   const navigate = useNavigate();
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   // Camada selecionada no editor — é ela que os controles do card 2 editam.
@@ -202,7 +179,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // resvg bateu com o que estava na tela.
   const [previewMode, setPreviewMode] = useState<'editor' | 'composed'>('editor');
   const companies: FacetItem[] = targetingData?.companies?.included || [];
-  const [editingTarget, setEditingTarget] = useState<string>(BRIEF_TARGET);
+  const [editingTarget, setEditingTarget] = useState<string>(TEMPLATE_TARGET);
   const [briefDrawerOpen, setBriefDrawerOpen] = useState(false);
 
   // ----------------- Landing page picker (URL de destino) -----------------
@@ -212,9 +189,14 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const [urlMode, setUrlMode] = useState<'picker' | 'manual'>('manual');
   const [linkedPageId, setLinkedPageId] = useState<string | undefined>(undefined);
 
-  const isBrief = editingTarget === BRIEF_TARGET;
+  // Acordeão dos cards do editor: um aberto por vez, todos fechados por
+  // padrão — a coluna de controles não compete com o preview.
+  const [openSection, setOpenSection] = useState<'text' | 'image' | 'destination' | null>(null);
+  const toggleSection = (section: 'text' | 'image' | 'destination') =>
+    setOpenSection((cur) => (cur === section ? null : section));
+
   const isTemplate = editingTarget === TEMPLATE_TARGET;
-  const editingCompany = !isTemplate && !isBrief
+  const editingCompany = !isTemplate
     ? companies.find((c) => c.id === editingTarget) || null
     : null;
 
@@ -228,12 +210,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const overrides = creativeData?.overrides || {};
   const brandKit = creativeData?.brandKit || createDefaultBrandKit();
   const clientVoice = brandKit.voice;
-  const clientBrandContext = brandKit.context;
-  const clientWebsiteUrl = brandKit.websiteUrl;
-  const clientProductService = creativeData?.clientProductService || '';
-  const clientAudienceMarket = creativeData?.clientAudienceMarket || '';
-  const clientPersona = creativeData?.clientPersona || '';
-  const clientBrandColors = brandKit.colors;
   const imageMode: ImageMode = creativeData?.imageMode || 'upload';
   const templateLogo = creativeData?.templateLogo || DEFAULT_TEMPLATE_LOGO;
 
@@ -265,6 +241,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     const page = match ? listPages().find((p) => p.slug === match[1]) : undefined;
     setLinkedPageId(page?.id);
     setUrlMode(page ? 'picker' : 'manual');
+    // Trocar o alvo de edição também recolhe o acordeão: o contexto mudou e o
+    // card aberto era do alvo anterior.
+    setOpenSection(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingTarget]);
 
@@ -320,44 +299,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     onCreativeChange({ ...creativeData, overrides: next });
   };
 
-  // Load saved client voice on mount
-  useEffect(() => {
-    if (!creativeData) return;
-    if (clientVoice || clientBrandContext || clientWebsiteUrl) return;
-    fetchClientVoice()
-      .then((stored) => {
-        if (
-          stored.voice ||
-          stored.brand_context ||
-          stored.website_url ||
-          stored.product_service ||
-          stored.audience_market ||
-          stored.persona
-        ) {
-          updateCreative({
-            brandKit: {
-              ...createDefaultBrandKit(),
-              status: 'defined',
-              voice: stored.voice,
-              context: stored.brand_context,
-              websiteUrl: stored.website_url,
-              colors: stored.brand_colors || { primary: '', secondary: '', accent: '' },
-            },
-            clientProductService: stored.product_service || '',
-            clientAudienceMarket: stored.audience_market || '',
-            clientPersona: stored.persona || '',
-          });
-        }
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Preview source — what shows in the canvas.
-  // `!isTemplate` sozinho classificaria o alvo Brief como "empresa" (e só não
-  // quebra hoje porque `editingCompany` já é `null` nesse caso). Espelha a
-  // condição de `editingCompany` para não virar armadilha na próxima edição.
-  const previewCompany: FacetItem | null = !isTemplate && !isBrief
+  // Preview source — what shows in the canvas. No Template global não há
+  // empresa-alvo, então `companies[0]` entra como stand-in.
+  const previewCompany: FacetItem | null = !isTemplate
     ? editingCompany
     : companies[0] || null;
   const resolved = useMemo(
@@ -671,7 +615,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
   const generateForAllCompanies = async () => {
     if (!clientVoice.trim()) {
-      setEditingTarget(BRIEF_TARGET);
+      onEditBrand?.();
       return;
     }
     setBulkProgress({ done: 0, total: companies.length });
@@ -683,172 +627,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       setBulkProgress({ done, total: companies.length });
     }
     setBulkProgress(null);
-  };
-
-  // ----------------- Brief modal handlers -----------------
-  const [briefDraft, setBriefDraft] = useState<BriefDraft>({
-    voice: '', context: '', websiteUrl: '',
-    productService: '', audienceMarket: '', persona: '',
-    brandColors: { primary: '', secondary: '', accent: '' },
-    fontFamily: 'Inter',
-    logo: null,
-    source: null,
-    extractedRef: '',
-  });
-  // DOIS efeitos, de propósito. Antes era um só, com os campos de campanha
-  // (produto/público/persona) na lista de deps e reescrevendo o draft INTEIRO —
-  // e como esses três gravam ao vivo em `creativeData`, o prop controlado dava
-  // a volta pelo `CampaignWizard`, o efeito reagia e ressuscitava a marca
-  // *salva* por cima do que o usuário tinha acabado de digitar/extrair.
-  // O semeador da marca agora só reage ao `brandKit`; os campos de campanha
-  // fazem patch cirúrgico das próprias chaves.
-  useEffect(() => {
-    setBriefDraft((d) => ({
-      ...d,
-      voice: brandKit.voice,
-      context: brandKit.context,
-      websiteUrl: brandKit.websiteUrl,
-      brandColors: brandKit.colors,
-      fontFamily: brandKit.fontFamily,
-      logo: brandKit.logo,
-      colorOptions: brandKit.colorOptions,
-      // `source`/`extractedRef` NÃO são tocados aqui de propósito: quem os
-      // possui são os handlers de extração (`applyFixtureToDraft` grava,
-      // `handleResetExtraction` limpa). Zerá-los aqui fazia o chip de
-      // procedência sumir exatamente ao salvar — o momento em que ele mais
-      // importa —, já que salvar muda o `brandKit` e reacende este efeito.
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    brandKit.status,
-    brandKit.voice,
-    brandKit.context,
-    brandKit.websiteUrl,
-    brandKit.fontFamily,
-    brandKit.colors.primary,
-    brandKit.colors.secondary,
-    brandKit.colors.accent,
-  ]);
-
-  useEffect(() => {
-    setBriefDraft((d) => ({
-      ...d,
-      productService: clientProductService,
-      audienceMarket: clientAudienceMarket,
-      persona: clientPersona,
-    }));
-  }, [clientProductService, clientAudienceMarket, clientPersona]);
-
-  // Extraction UI state
-  const [extracting, setExtracting] = useState(false);
-  const [extractError, setExtractError] = useState<string | null>(null);
-  const [extractWarning, setExtractWarning] = useState<string | null>(null);
-  const [savingBrand, setSavingBrand] = useState(false);
-  // Sem o modal fechando, sucesso e falha do save global ficavam
-  // indistinguíveis (o botão ia pra "Salvando…" e voltava). Estes dois estados
-  // dão o feedback que a dispensa do overlay levou embora.
-  const [saveBrandError, setSaveBrandError] = useState<string | null>(null);
-  const [brandSaved, setBrandSaved] = useState(false);
-
-  const persistVoice = async () => {
-    setSavingBrand(true);
-    setSaveBrandError(null);
-    setBrandSaved(false);
-    updateCreative({
-      brandKit: {
-        ...(creativeDataRef.current?.brandKit || createDefaultBrandKit()),
-        status: 'defined',
-        voice: briefDraft.voice,
-        context: briefDraft.context,
-        websiteUrl: briefDraft.websiteUrl,
-        colors: briefDraft.brandColors,
-        // As candidatas precisam ir junto: o efeito de sync re-semeia o draft a
-        // partir do brandKit depois deste write, e sem elas aqui as amostras
-        // desapareceriam no instante em que o usuário salva.
-        colorOptions: briefDraft.colorOptions,
-        fontFamily: briefDraft.fontFamily,
-        logo: briefDraft.logo,
-      },
-      clientProductService: briefDraft.productService,
-      clientAudienceMarket: briefDraft.audienceMarket,
-      clientPersona: briefDraft.persona,
-    });
-    try {
-      await saveClientVoice({
-        voice: briefDraft.voice,
-        brand_context: briefDraft.context,
-        website_url: briefDraft.websiteUrl,
-        product_service: briefDraft.productService,
-        audience_market: briefDraft.audienceMarket,
-        persona: briefDraft.persona,
-        brand_colors: briefDraft.brandColors,
-      });
-      setBrandSaved(true);
-    } catch (e: any) {
-      // A escrita local (updateCreative acima) permanece — o que falhou foi o
-      // envio pro servidor, e é isso que a mensagem precisa dizer.
-      setSaveBrandError(`Não foi possível salvar a marca no servidor: ${e?.message || 'erro desconhecido'}`);
-    }
-    setSavingBrand(false);
-  };
-
-  // O "salvo" é confirmação momentânea, não estado permanente da tela.
-  useEffect(() => {
-    if (!brandSaved) return;
-    const t = setTimeout(() => setBrandSaved(false), 4000);
-    return () => clearTimeout(t);
-  }, [brandSaved]);
-
-  const applyFixtureToDraft = (source: 'brandbook' | 'website', ref: string) => {
-    setBriefDraft((d) => ({
-      ...d,
-      voice: MOCK_BRAND_FIXTURE.voice,
-      context: MOCK_BRAND_FIXTURE.context,
-      brandColors: MOCK_BRAND_FIXTURE.colors,
-      fontFamily: MOCK_BRAND_FIXTURE.fontFamily,
-      logo: MOCK_BRAND_FIXTURE.logo,
-      colorOptions: MOCK_BRAND_FIXTURE.colorOptions,
-      source,
-      extractedRef: ref,
-    }));
-  };
-
-  const handleExtract = async () => {
-    const url = briefDraft.websiteUrl.trim();
-    if (!url) return;
-    setExtracting(true);
-    setExtractError(null);
-    setExtractWarning(null);
-    // Mock: simula latência de rede e preenche a partir da fixture.
-    await new Promise((r) => setTimeout(r, 900));
-    applyFixtureToDraft('website', url);
-    setExtractWarning('Extração simulada (mock) — revise os campos antes de salvar.');
-    setExtracting(false);
-  };
-
-  const handleBrandBookUpload = async (file: File) => {
-    setExtracting(true);
-    setExtractError(null);
-    setExtractWarning(null);
-    await new Promise((r) => setTimeout(r, 900));
-    applyFixtureToDraft('brandbook', file.name);
-    setExtractWarning('Brand Book lido (mock) — revise os campos antes de salvar.');
-    setExtracting(false);
-  };
-
-  const handleResetExtraction = () => {
-    setExtractWarning(null);
-    setExtractError(null);
-    setBriefDraft((d) => ({
-      ...d,
-      // websiteUrl e fontFamily são mantidos de propósito (pré-preenche um retry).
-      source: null,
-      extractedRef: '',
-      voice: '',
-      context: '',
-      brandColors: { primary: '', secondary: '', accent: '' },
-      logo: null,
-    }));
   };
 
   // Resolved, not raw: the preview must show the CTA the previewed company
@@ -913,20 +691,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // que a Segmentação já usa para as empresas similares. Sem ele, uma conta
   // que veio da busca do LinkedIn sem `domain` cai direto no avatar de letra
   // mesmo existindo logo publicado — e o anúncio perde o logo à toa.
-  // Ordem importa. O `logoUrl` hidratado pela Segmentação JÁ é a URL do proxy
-  // do servidor; depois dele vem o proxy montado na hora (mesmo caminho, caso
-  // a hidratação não tenha rodado para esta conta), e só então a URL direta do
-  // logo.dev. A direta fica por último de propósito: ela depende de
-  // `VITE_LOGO_DEV_KEY` estar no build do cliente, e é justamente essa
-  // assimetria — Segmentação via proxy, Criativo via chave do cliente — que
-  // fazia o logo da conta aparecer lá e sumir aqui.
-  const targetLogoUrl = previewCompany
-    ? (usableLogoUrl(previewCompany.logoUrl)
-      || logoProxyUrl(previewCompany.domain)
-      || logoProxyUrl(domainFromCompanyName(previewCompany.label))
-      || logoDevUrl(previewCompany.domain)
-      || null)
-    : null;
+  // Mesma cadeia de resolução que o avatar da sidebar usa (ver
+  // `resolveCompanyLogoUrl`), para o logo dentro do anúncio nunca divergir do
+  // que a lista mostra.
+  const targetLogoUrl = previewCompany ? resolveCompanyLogoUrl(previewCompany) : null;
   const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
 
   // Routes a field edit to the right home: a company writes an override, the
@@ -956,6 +724,28 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Destination follows the same inherit-then-override rule as the image block.
   const editorLandingPageUrl = editingOverride?.landingPageUrl ?? landingPageUrl;
   const editorCta = editingOverride?.cta ?? cta;
+
+  // ----------------- Resumos dos cards colapsados -----------------
+  // Uma linha por card com o estado EFETIVO (override ?? template), para o
+  // acordeão fechado continuar informando o que cada bloco contém.
+  const effHeadline = (isTemplate ? headline : (editingOverride?.headline ?? headline)).trim();
+  const effBody = (isTemplate ? bodyText : (editingOverride?.bodyText ?? bodyText)).trim();
+  const textOverridden = !!editingCompany
+    && !!(editingOverride?.headline?.trim() || editingOverride?.bodyText?.trim());
+  const textSummary = !(effHeadline || effBody)
+    ? 'Sem texto ainda'
+    : editingCompany && !textOverridden
+      ? 'Segue o template'
+      : (effHeadline || effBody);
+  const imageSummary = [
+    imageCfg.format === 'square' ? 'Quadrado 1:1' : 'Banner 1.91:1',
+    imageCfg.imageMode === 'ai' ? 'Gerada com IA' : 'Upload',
+    ...(imageCfg.baseImageUrl ? [] : ['sem imagem-base']),
+  ].join(' · ');
+  const editorCtaLabel = CTA_OPTIONS.find((o) => o.value === editorCta)?.label || editorCta;
+  const destinationSummary = editorLandingPageUrl.trim()
+    ? `${editorCtaLabel} · ${editorLandingPageUrl}`
+    : 'Defina a URL de destino';
   const destinationOverridden = !!editingCompany
     && (editingOverride?.landingPageUrl !== undefined || editingOverride?.cta !== undefined);
 
@@ -997,26 +787,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {/* Brief entry — third editing target, sibling of Template global e das empresas */}
-          <button
-            onClick={() => { setEditingTarget(BRIEF_TARGET); setBriefDrawerOpen(false); }}
-            className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-slate-100 transition-colors ${
-              isBrief ? 'bg-[#FFF1ED] border-l-4 border-l-[#FF5F39]' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
-            }`}
-          >
-            <div className="w-8 h-8 rounded-md bg-[#FFE3DA] flex items-center justify-center shrink-0">
-              <PaintBucket className="w-4 h-4 text-[#FF5F39]" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className={`text-sm truncate ${isBrief ? 'font-bold text-[#212A46]' : 'font-semibold text-slate-700'}`}>
-                Brief
-              </div>
-              <div className="text-[10px] text-slate-500 truncate">
-                {clientVoice || <span className="italic text-slate-400">Defina a marca</span>}
-              </div>
-            </div>
-          </button>
-
           {/* Template entry */}
           <button
             onClick={() => { setEditingTarget(TEMPLATE_TARGET); setBriefDrawerOpen(false); }}
@@ -1058,21 +828,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   isActive ? 'bg-[#FFF1ED] border-l-4 border-l-[#FF5F39]' : 'hover:bg-slate-50 border-l-4 border-l-transparent'
                 }`}
               >
-                {company.logoUrl ? (
-                  <img
-                    src={company.logoUrl}
-                    alt=""
-                    className="w-8 h-8 rounded-md object-contain bg-white border border-slate-100 shrink-0"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                ) : (
-                  <div
-                    className="w-8 h-8 rounded-md flex items-center justify-center text-xs font-bold text-white shrink-0"
-                    style={{ backgroundColor: getAccountColor(company.label) }}
-                  >
-                    {company.label?.[0]?.toUpperCase() || '?'}
-                  </div>
-                )}
+                <CompanyAvatar company={company} />
                 <div className="flex-1 min-w-0">
                   <div className={`text-sm truncate ${isActive ? 'font-bold text-[#212A46]' : 'font-semibold text-slate-800'}`}>
                     {company.label}
@@ -1098,18 +854,14 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              {isBrief ? (
-                <><PaintBucket className="w-4 h-4 text-[#FF5F39]" /> Editando: Brief</>
-              ) : isTemplate ? (
+              {isTemplate ? (
                 <><FileText className="w-4 h-4 text-[#FF5F39]" /> Editando: Template global</>
               ) : (
                 <><Sparkles className="w-4 h-4 text-emerald-600" /> Editando: {editingCompany?.label}</>
               )}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {isBrief
-                ? 'Define a marca e o brief usados por toda a campanha.'
-                : isTemplate
+              {isTemplate
                 ? 'Use variáveis como {{company.name}} para personalizar dinamicamente.'
                 : 'Estas alterações só se aplicam a esta empresa, sobrescrevendo o template.'}
             </p>
@@ -1130,7 +882,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 onClick={() => generateAllFor(editingCompany)}
                 className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-[#FF5F39] hover:bg-[#E54A26] text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
-                  noVoice ? 'Defina a voz da marca no Brief primeiro'
+                  noVoice ? 'Defina o tom de voz no passo Marca primeiro'
                   : needsBaseImage ? 'Envie uma imagem-base no Template global primeiro'
                   : `Gerar texto e imagem para ${editingCompany.label}`
                 }
@@ -1145,7 +897,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 onClick={generateForAllCompanies}
                 className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-[#FF5F39] to-violet-600 hover:from-[#E54A26] hover:to-violet-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
-                  noVoice ? 'Defina a voz da marca no Brief primeiro'
+                  noVoice ? 'Defina o tom de voz no passo Marca primeiro'
                   : needsBaseImage ? 'Envie uma imagem-base no card Imagem primeiro'
                   : `Gerar texto e imagem para as ${companies.length} empresas`
                 }
@@ -1167,34 +919,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           </div>
         )}
 
-        {isBrief ? (
-          // A casca (`main`) tem altura fixa e `overflow-hidden`; sem este
-          // wrapper com `flex-1 overflow-y-auto` o painel (>1000px) era cortado
-          // sem barra de rolagem e o "Salvar marca" ficava inalcançável.
-          // Mesma convenção do ramo irmão (template/empresa) logo abaixo.
-          <div className="flex-1 overflow-y-auto p-6 bg-white">
-            <BriefPane
-              draft={briefDraft}
-              setDraft={setBriefDraft}
-              status={brandKit.status}
-              savingBrand={savingBrand}
-              saveError={saveBrandError}
-              saveSucceeded={brandSaved}
-              onSaveBrand={persistVoice}
-              extracting={extracting}
-              extractError={extractError}
-              extractWarning={extractWarning}
-              onExtractWebsite={handleExtract}
-              onUploadBrandBook={handleBrandBookUpload}
-              onResetExtraction={handleResetExtraction}
-              onCampaignFieldChange={(patch) => updateCreative({
-                ...(patch.productService !== undefined && { clientProductService: patch.productService }),
-                ...(patch.audienceMarket !== undefined && { clientAudienceMarket: patch.audienceMarket }),
-                ...(patch.persona !== undefined && { clientPersona: patch.persona }),
-              })}
-            />
-          </div>
-        ) : (
         <div className="flex-1 grid grid-cols-2 overflow-hidden">
           {/* ---------- Editor form ---------- */}
           <div className="overflow-y-auto p-5 border-r border-slate-200 bg-slate-50 space-y-3">
@@ -1203,6 +927,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <SectionCard
               index={1}
               title="Texto"
+              summary={textSummary}
+              open={openSection === 'text'}
+              onToggle={() => toggleSection('text')}
               action={
                 isTemplate ? (
                   <CardAction
@@ -1211,7 +938,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     loading={templateCopyLoading}
                     disabled={noVoice}
                     title={noVoice
-                      ? 'Defina a voz da marca no Brief primeiro'
+                      ? 'Defina o tom de voz no passo Marca primeiro'
                       : 'Escreve a copy do template já com {{company.name}}'}
                   />
                 ) : editingCompany ? (
@@ -1221,7 +948,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     loading={!!aiCopyLoading[editingCompany.id]}
                     disabled={noVoice}
                     title={noVoice
-                      ? 'Defina a voz da marca no Brief primeiro'
+                      ? 'Defina o tom de voz no passo Marca primeiro'
                       : `Gerar texto para ${editingCompany.label}`}
                   />
                 ) : null
@@ -1293,6 +1020,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <SectionCard
               index={2}
               title="Imagem"
+              summary={imageSummary}
+              open={openSection === 'image'}
+              onToggle={() => toggleSection('image')}
               action={
                 imageCfg.imageMode === 'ai' ? (
                   <CardAction
@@ -1478,91 +1208,114 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     : 'Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Compartilhados entre todas as empresas da campanha.'}
                 </p>
 
-                <TextField
-                  label="Texto destaque (principal)"
-                  value={imageCfg.textoDestaque}
-                  onChange={(v) => setImageField({ textoDestaque: v })}
-                  placeholder="Texto principal na imagem"
-                />
-                <TextLayerControls
-                  id="destaque"
-                  label="destaque"
-                  layer={imageCfg.layout.destaque}
-                  text={imageCfg.textoDestaque}
-                  fontFamily={imageCfg.fontFamily}
-                  format={imageCfg.format}
-                  weight={700}
-                  palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
-                  selected={selectedLayer === 'destaque'}
-                  onSelect={() => setSelectedLayer('destaque')}
-                  onChange={(next) => setLayout({ ...imageCfg.layout, destaque: next })}
-                />
-
-                {/* Alinhamento é do BLOCO, não de cada linha: dois textos
-                    empilhados com âncoras diferentes não leem como um bloco. */}
-                <div className="flex items-center gap-1.5 mt-2">
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Alinhamento</span>
-                  {(['left', 'center', 'right'] as const).map((a) => (
-                    <button
-                      key={a}
-                      type="button"
-                      aria-pressed={imageCfg.layout.destaque.align === a}
-                      aria-label={ALIGN_LABEL[a]}
-                      onClick={() => setLayout({
-                        ...imageCfg.layout,
-                        destaque: { ...imageCfg.layout.destaque, align: a },
-                        complementar: { ...imageCfg.layout.complementar, align: a },
-                      })}
-                      className={`px-2 py-1 rounded border ${
-                        imageCfg.layout.destaque.align === a
-                          ? 'bg-slate-700 border-slate-700 text-white'
-                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-                      }`}
-                    >
-                      {a === 'left' ? <AlignLeft className="w-3 h-3" /> : a === 'center' ? <AlignCenter className="w-3 h-3" /> : <AlignRight className="w-3 h-3" />}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Os dois textos são um bloco: o complementar é ancorado ao
-                    destaque, e este slider é a distância entre as duas caixas.
-                    Arrastar o destaque no preview leva os dois junto. */}
-                <div className="flex items-center gap-2 mt-2">
-                  <label htmlFor="text-gap" className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-                    Espaçamento entre os textos
-                  </label>
-                  <input
-                    id="text-gap"
-                    type="range"
-                    min={0}
-                    max={200}
-                    step={2}
-                    value={imageCfg.layout.textGapPx}
-                    onChange={(e) => setLayout({ ...imageCfg.layout, textGapPx: Number(e.target.value) })}
-                    className="flex-1 accent-slate-500"
+                {/* Cada texto é um grupo fechado: o input fica sempre à mão,
+                    mas os controles de estilo só abrem quando a camada está
+                    ATIVA — foco no input ou clique no próprio texto dentro do
+                    preview. Sem isso, os dois conjuntos de sliders empilhados
+                    liam como um bloco só e afogavam o card. */}
+                <div className={`rounded-lg border bg-white p-2.5 transition-colors ${
+                  selectedLayer === 'destaque' ? 'border-slate-400 shadow-sm' : 'border-slate-200'
+                }`}>
+                  <TextField
+                    label="Texto destaque (principal)"
+                    value={imageCfg.textoDestaque}
+                    onChange={(v) => setImageField({ textoDestaque: v })}
+                    placeholder="Texto principal na imagem"
+                    onFocus={() => setSelectedLayer('destaque')}
                   />
-                  <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{imageCfg.layout.textGapPx}px</span>
+                  {selectedLayer === 'destaque' && (
+                    <TextLayerControls
+                      id="destaque"
+                      label="destaque"
+                      layer={imageCfg.layout.destaque}
+                      text={imageCfg.textoDestaque}
+                      fontFamily={imageCfg.fontFamily}
+                      format={imageCfg.format}
+                      weight={700}
+                      palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
+                      selected
+                      onSelect={() => setSelectedLayer('destaque')}
+                      onChange={(next) => setLayout({ ...imageCfg.layout, destaque: next })}
+                    />
+                  )}
                 </div>
 
-                <TextField
-                  label="Texto complementar"
-                  value={imageCfg.textoComplementar}
-                  onChange={(v) => setImageField({ textoComplementar: v })}
-                  placeholder="Texto secundário na imagem"
-                />
-                <TextLayerControls
-                  id="complementar"
-                  label="complementar"
-                  layer={imageCfg.layout.complementar}
-                  text={imageCfg.textoComplementar}
-                  fontFamily={imageCfg.fontFamily}
-                  format={imageCfg.format}
-                  weight={400}
-                  palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
-                  selected={selectedLayer === 'complementar'}
-                  onSelect={() => setSelectedLayer('complementar')}
-                  onChange={(next) => setLayout({ ...imageCfg.layout, complementar: next })}
-                />
+                <div className={`rounded-lg border bg-white p-2.5 transition-colors ${
+                  selectedLayer === 'complementar' ? 'border-slate-400 shadow-sm' : 'border-slate-200'
+                }`}>
+                  <TextField
+                    label="Texto complementar"
+                    value={imageCfg.textoComplementar}
+                    onChange={(v) => setImageField({ textoComplementar: v })}
+                    placeholder="Texto secundário na imagem"
+                    onFocus={() => setSelectedLayer('complementar')}
+                  />
+                  {selectedLayer === 'complementar' && (
+                    <TextLayerControls
+                      id="complementar"
+                      label="complementar"
+                      layer={imageCfg.layout.complementar}
+                      text={imageCfg.textoComplementar}
+                      fontFamily={imageCfg.fontFamily}
+                      format={imageCfg.format}
+                      weight={400}
+                      palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
+                      selected
+                      onSelect={() => setSelectedLayer('complementar')}
+                      onChange={(next) => setLayout({ ...imageCfg.layout, complementar: next })}
+                    />
+                  )}
+                </div>
+
+                {/* Alinhamento e espaçamento são do BLOCO (os dois textos), não
+                    de cada linha — por isso vivem num grupo próprio, e só
+                    enquanto se edita texto. */}
+                {(selectedLayer === 'destaque' || selectedLayer === 'complementar') && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
+                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide">
+                      Bloco de texto (os dois juntos)
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Alinhamento</span>
+                      {(['left', 'center', 'right'] as const).map((a) => (
+                        <button
+                          key={a}
+                          type="button"
+                          aria-pressed={imageCfg.layout.destaque.align === a}
+                          aria-label={ALIGN_LABEL[a]}
+                          onClick={() => setLayout({
+                            ...imageCfg.layout,
+                            destaque: { ...imageCfg.layout.destaque, align: a },
+                            complementar: { ...imageCfg.layout.complementar, align: a },
+                          })}
+                          className={`px-2 py-1 rounded border ${
+                            imageCfg.layout.destaque.align === a
+                              ? 'bg-slate-700 border-slate-700 text-white'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          }`}
+                        >
+                          {a === 'left' ? <AlignLeft className="w-3 h-3" /> : a === 'center' ? <AlignCenter className="w-3 h-3" /> : <AlignRight className="w-3 h-3" />}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="text-gap" className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
+                        Espaçamento entre os textos
+                      </label>
+                      <input
+                        id="text-gap"
+                        type="range"
+                        min={0}
+                        max={200}
+                        step={2}
+                        value={imageCfg.layout.textGapPx}
+                        onChange={(e) => setLayout({ ...imageCfg.layout, textGapPx: Number(e.target.value) })}
+                        className="flex-1 accent-slate-500"
+                      />
+                      <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{imageCfg.layout.textGapPx}px</span>
+                    </div>
+                  </div>
+                )}
 
                 <FontPicker
                   value={imageCfg.fontFamily}
@@ -1642,6 +1395,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <SectionCard
               index={3}
               title="Destino"
+              summary={destinationSummary}
+              open={openSection === 'destination'}
+              onToggle={() => toggleSection('destination')}
               action={destinationOverridden ? (
                 <button
                   onClick={resetDestination}
@@ -1827,7 +1583,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             </div>
           </div>
         </div>
-        )}
       </main>
 
       {/* ============= Brand Brief drawer ============= */}
@@ -2003,24 +1758,49 @@ function ModeButton({ icon, label, sub, active, onClick }: { icon: React.ReactNo
 // One numbered card per responsibility. The card owns the action that fills
 // it — which is the whole point: the button you press is attached to the thing
 // it produces, instead of floating in a header shared by everything.
-function SectionCard({ index, title, action, children }: {
+function SectionCard({ index, title, summary, open, onToggle, action, children }: {
   index: number;
   title: string;
+  /** Uma linha com o estado efetivo, mostrada só colapsado — o card fechado não pode ser caixa-preta. */
+  summary?: string;
+  open: boolean;
+  onToggle: () => void;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <header className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-slate-50 border-b border-slate-200">
-        <h3 className="flex items-center gap-2 text-[11px] font-extrabold text-slate-800 uppercase tracking-wide">
-          <span className="w-4 h-4 rounded bg-[#FF5F39] text-white text-[9px] font-black flex items-center justify-center shrink-0">
+      {/* A ação é IRMÃ do toggle, não filha: além de <button> dentro de
+          <button> ser HTML inválido, é o que garante que "Gerar texto" não
+          abre/fecha o card por acidente. */}
+      <header className={`flex items-center gap-2 pr-3.5 bg-slate-50 ${open ? 'border-b border-slate-200' : ''}`}>
+        <button
+          type="button"
+          aria-label={title}
+          aria-expanded={open}
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-3 px-3.5 py-3 text-left min-w-0 group"
+        >
+          <span className="w-6 h-6 rounded-md bg-[#FF5F39] text-white text-xs font-black flex items-center justify-center shrink-0">
             {index}
           </span>
-          {title}
-        </h3>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-extrabold text-slate-800 uppercase tracking-wide leading-tight">
+              {title}
+            </span>
+            {!open && summary && (
+              <span className="block text-xs text-slate-500 truncate mt-0.5 normal-case font-normal">
+                {summary}
+              </span>
+            )}
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 text-slate-400 group-hover:text-slate-600 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
         {action}
       </header>
-      <div className="p-3.5">{children}</div>
+      {open && <div className="p-3.5">{children}</div>}
     </section>
   );
 }
@@ -2080,7 +1860,7 @@ function FormatButton({ format, active, onClick }: { format: AdFormat; active: b
   );
 }
 
-function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function TextField({ label, value, onChange, placeholder, onFocus }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; onFocus?: () => void }) {
   return (
     <div>
       <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">{label}</label>
@@ -2088,6 +1868,7 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
         placeholder={placeholder}
         className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded focus:ring-1 focus:ring-[#FF5F39] outline-none"
       />
@@ -2362,82 +2143,6 @@ function LogoLayerControls({ id, label, layer, disabled, disabledHint, geometryL
             <p className="text-[9px] text-slate-400 mt-0.5">{geometryLockedHint}</p>
           )}
         </>
-      )}
-    </div>
-  );
-}
-
-// Curated Google Fonts the IA composer recognizes well. Grouped by tone so
-// the user can pick a vibe without scrolling through 1500 options.
-const FONT_OPTIONS: { label: string; family: string; group: string }[] = [
-  { group: 'Sans-serif moderna', family: 'Inter', label: 'Inter' },
-  { group: 'Sans-serif moderna', family: 'Roboto', label: 'Roboto' },
-  { group: 'Sans-serif moderna', family: 'Poppins', label: 'Poppins' },
-  { group: 'Sans-serif moderna', family: 'Montserrat', label: 'Montserrat' },
-  { group: 'Sans-serif moderna', family: 'DM Sans', label: 'DM Sans' },
-  { group: 'Sans-serif moderna', family: 'Work Sans', label: 'Work Sans' },
-  { group: 'Sans-serif geométrica', family: 'Manrope', label: 'Manrope' },
-  { group: 'Sans-serif geométrica', family: 'Plus Jakarta Sans', label: 'Plus Jakarta Sans' },
-  { group: 'Sans-serif geométrica', family: 'Space Grotesk', label: 'Space Grotesk' },
-  { group: 'Serif clássica', family: 'Playfair Display', label: 'Playfair Display' },
-  { group: 'Serif clássica', family: 'Lora', label: 'Lora' },
-  { group: 'Serif clássica', family: 'Merriweather', label: 'Merriweather' },
-  { group: 'Display / impacto', family: 'Bebas Neue', label: 'Bebas Neue' },
-  { group: 'Display / impacto', family: 'Oswald', label: 'Oswald' },
-  { group: 'Display / impacto', family: 'Archivo Black', label: 'Archivo Black' },
-];
-
-export function FontPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const groups = Array.from(new Set(FONT_OPTIONS.map((f) => f.group)));
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">Fonte</label>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-2 text-sm bg-white border border-slate-200 rounded hover:border-slate-300 focus:ring-1 focus:ring-[#FF5F39] outline-none"
-      >
-        <span style={{ fontFamily: `"${value}", sans-serif` }} className="truncate">{value}</span>
-        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-lg">
-          {groups.map((g) => (
-            <div key={g}>
-              <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 sticky top-0">
-                {g}
-              </div>
-              {FONT_OPTIONS.filter((f) => f.group === g).map((f) => {
-                const isActive = f.family === value;
-                return (
-                  <button
-                    key={f.family}
-                    type="button"
-                    onClick={() => { onChange(f.family); setOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-base transition-colors ${
-                      isActive ? 'bg-[#FFF1ED] text-[#212A46]' : 'hover:bg-slate-50 text-slate-800'
-                    }`}
-                    style={{ fontFamily: `"${f.family}", sans-serif` }}
-                  >
-                    {f.label}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
       )}
     </div>
   );

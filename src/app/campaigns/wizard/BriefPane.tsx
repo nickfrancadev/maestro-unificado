@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, Loader2, Upload, Settings2, CheckCircle2 } from 'lucide-react';
-import { FontPicker } from './CreativeStep';
+import { FontPicker } from './FontPicker';
 import { MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
 import type { BrandKit } from './brandKit';
 

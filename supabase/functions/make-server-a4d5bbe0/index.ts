@@ -58,37 +58,35 @@ app.get("/make-server-a4d5bbe0/logo-proxy", async (c) => {
   if (!domain) {
     return c.json({ error: "domain param required" }, 400);
   }
-  try {
-    // Try Clearbit first
-    const clearbitUrl = `https://logo.clearbit.com/${encodeURIComponent(domain)}`;
-    const res = await fetch(clearbitUrl, { redirect: "follow" });
-    if (res.ok && res.headers.get("content-type")?.startsWith("image")) {
-      const body = await res.arrayBuffer();
-      return new Response(body, {
-        headers: {
-          "Content-Type": res.headers.get("content-type") || "image/png",
-          "Cache-Control": "public, max-age=86400",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
+  // Cada provedor no seu próprio try: uma falha de REDE (DNS morto, timeout)
+  // lança em vez de responder não-ok, e um catch único em volta da cadeia
+  // inteira encerrava tudo com 500 sem nunca tentar o fallback — foi
+  // exatamente o que aconteceu quando a Clearbit desligou a Logo API (o
+  // domínio saiu do DNS e TODO logo passou a falhar). A Clearbit saiu da
+  // cadeia por isso; logo.dev entra primeiro por ser o provedor que o resto
+  // do servidor já usa, com o favicon do Google como último recurso.
+  const providers = [
+    `https://img.logo.dev/${encodeURIComponent(domain)}?token=${LOGO_DEV_KEY}`,
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`,
+  ];
+  for (const url of providers) {
+    try {
+      const res = await fetch(url, { redirect: "follow" });
+      if (res.ok && res.headers.get("content-type")?.startsWith("image")) {
+        const body = await res.arrayBuffer();
+        return new Response(body, {
+          headers: {
+            "Content-Type": res.headers.get("content-type") || "image/png",
+            "Cache-Control": "public, max-age=86400",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      }
+    } catch (e) {
+      console.log(`[logo-proxy] provedor falhou (${url.split("/")[2]}):`, (e as Error)?.message);
     }
-    // Fallback: Google Favicon
-    const googleUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
-    const gRes = await fetch(googleUrl, { redirect: "follow" });
-    if (gRes.ok) {
-      const body = await gRes.arrayBuffer();
-      return new Response(body, {
-        headers: {
-          "Content-Type": gRes.headers.get("content-type") || "image/png",
-          "Cache-Control": "public, max-age=86400",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-    }
-    return new Response(null, { status: 404 });
-  } catch (_e) {
-    return new Response(null, { status: 500 });
   }
+  return new Response(null, { status: 404 });
 });
 
 // ================================================
