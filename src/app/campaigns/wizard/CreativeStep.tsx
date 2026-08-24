@@ -444,9 +444,21 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     try {
       const data = withImageDefaults(creativeDataRef.current);
       const cfg = resolveImageConfig(data, company?.id);
+      // Com "Textos pela IA" ligado, os textos digitados entram no prompt e a
+      // IA os pinta direto na base — a composição depois sobrepõe só os logos.
+      const bakedTexts = cfg.imageMode === 'ai' && cfg.aiTexts
+        ? [
+            cfg.textoDestaque?.trim() && `texto principal: "${cfg.textoDestaque.trim()}"`,
+            cfg.textoComplementar?.trim() && `texto secundário: "${cfg.textoComplementar.trim()}"`,
+          ].filter(Boolean).join('; ')
+        : '';
+      const promptBrief = [
+        cfg.basePrompt?.trim() || '',
+        bakedTexts && `Renderize na própria imagem, de forma legível, bem integrada à arte e com hierarquia clara, os textos — ${bakedTexts}.`,
+      ].filter(Boolean).join('\n\n');
       const result = await generateBaseImage({
         client_brand_context: data.brandKit.context,
-        prompt_brief: cfg.basePrompt?.trim() || undefined,
+        prompt_brief: promptBrief || undefined,
         format: cfg.format,
       });
       if (company) {
@@ -533,9 +545,14 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       // destaque, 400 no complementar: são os pesos com que o preview e o
       // servidor desenham cada um — sem eles o teto subestima a largura do
       // texto em negrito.
+      // "Textos pela IA": a base já veio com os textos pintados pela geração,
+      // então a composição manda strings vazias e sobrepõe apenas os logos.
+      const composeAiTexts = cfg.imageMode === 'ai' && !!cfg.aiTexts;
+      const textoDestaque = composeAiTexts ? '' : cfg.textoDestaque;
+      const textoComplementar = composeAiTexts ? '' : cfg.textoComplementar;
       const measuredAtRecorded = {
-        destaqueWidthPx: measureTextWidthPx(cfg.textoDestaque, cfg.layout.destaque.sizePx, cfg.fontFamily, 700),
-        complementarWidthPx: measureTextWidthPx(cfg.textoComplementar, cfg.layout.complementar.sizePx, cfg.fontFamily, 400),
+        destaqueWidthPx: measureTextWidthPx(textoDestaque, cfg.layout.destaque.sizePx, cfg.fontFamily, 700),
+        complementarWidthPx: measureTextWidthPx(textoComplementar, cfg.layout.complementar.sizePx, cfg.fontFamily, 400),
       };
       // 2) `effectiveLayout` resolve o teto vivo (tamanho efetivo dos dois
       // textos) e o modo par (geometria do logo da conta segue o
@@ -551,8 +568,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       // encolheu nada, `layout.*.sizePx` é igual ao gravado e esta segunda
       // medição repete a primeira; quando encolheu, é a única largura
       // correta para a caixa que vai malhar de verdade.
-      const destaqueWidthPx = measureTextWidthPx(cfg.textoDestaque, layout.destaque.sizePx, cfg.fontFamily, 700);
-      const complementarWidthPx = measureTextWidthPx(cfg.textoComplementar, layout.complementar.sizePx, cfg.fontFamily, 400);
+      const destaqueWidthPx = measureTextWidthPx(textoDestaque, layout.destaque.sizePx, cfg.fontFamily, 700);
+      const complementarWidthPx = measureTextWidthPx(textoComplementar, layout.complementar.sizePx, cfg.fontFamily, 400);
       const result = await composeLogoOverlay({
         base_image_url: cfg.baseImageUrl,
         target_company_name: company.label,
@@ -563,8 +580,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         // `brandKit.logo` nasce `null` (o servidor resolve o logo pelo
         // domínio do jeito que já faz para a empresa-alvo).
         advertiser_domain: deriveWebsiteDomain(data.brandKit.websiteUrl),
-        texto_destaque: cfg.textoDestaque,
-        texto_complementar: cfg.textoComplementar,
+        texto_destaque: textoDestaque,
+        texto_complementar: textoComplementar,
         font_family: cfg.fontFamily,
         format: cfg.format,
         layout,
@@ -677,6 +694,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const imageOverrides = overriddenImageFields(imageCfgSource, editingCompany?.id);
   const needsBaseImage = imageCfg.imageMode === 'upload' && !imageCfg.baseImageUrl;
   const noVoice = !clientVoice.trim();
+  // Toggle "Textos pela IA" só faz sentido na origem 'ai': é a geração que
+  // pinta os textos na base. No upload, quem desenha texto é o compositor
+  // determinístico — que usa exatamente os controles que o toggle esconde.
+  const aiTextsOn = imageCfg.imageMode === 'ai' && !!imageCfg.aiTexts;
 
   // Logo do anunciante vem do Brand Kit. Logo da conta usa o que a segmentação
   // já trouxe e cai no logo.dev quando ela não trouxe nada. No Template global
@@ -740,6 +761,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const imageSummary = [
     imageCfg.format === 'square' ? 'Quadrado 1:1' : 'Banner 1.91:1',
     imageCfg.imageMode === 'ai' ? 'Gerada com IA' : 'Upload',
+    ...(aiTextsOn ? ['textos pela IA'] : []),
     ...(imageCfg.baseImageUrl ? [] : ['sem imagem-base']),
   ].join(' · ');
   const editorCtaLabel = CTA_OPTIONS.find((o) => o.value === editorCta)?.label || editorCta;
@@ -764,7 +786,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     updateOverride(editingCompany.id, {
       imageMode: undefined, baseImageUrl: undefined, baseImageSource: undefined,
       basePrompt: undefined, textoDestaque: undefined, textoComplementar: undefined,
-      showTargetLogo: undefined, fontFamily: undefined, format: undefined,
+      aiTexts: undefined, showTargetLogo: undefined, fontFamily: undefined, format: undefined,
       // `layout` também é um campo de IMAGE_OVERRIDE_FIELDS — faltando aqui,
       // um arrasto na empresa nunca voltava ao template mesmo depois deste
       // reset (o botão "Voltar ao template" ficava preso ligado para sempre).
@@ -1023,34 +1045,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               summary={imageSummary}
               open={openSection === 'image'}
               onToggle={() => toggleSection('image')}
-              action={
-                imageCfg.imageMode === 'ai' ? (
-                  <CardAction
-                    label={editingCompany ? 'Gerar imagem' : (
-                      imageCfg.baseImageUrl && imageCfg.baseImageSource === 'ai'
-                        ? 'Regerar imagem-base'
-                        : 'Gerar imagem-base'
-                    )}
-                    onClick={() => (editingCompany ? generateImageFor(editingCompany) : generateBaseImageFor(null))}
-                    loading={editingCompany ? !!aiImageLoading[editingCompany.id] : baseImageLoading}
-                  />
-                ) : editingCompany ? (
-                  <CardAction
-                    label="Gerar imagem"
-                    onClick={() => generateImageFor(editingCompany)}
-                    loading={!!aiImageLoading[editingCompany.id]}
-                    disabled={needsBaseImage}
-                    title={needsBaseImage ? 'Envie uma imagem-base primeiro' : `Compor a imagem para ${editingCompany.label}`}
-                  />
-                ) : (
-                  <CardAction
-                    label="Enviar arquivo"
-                    icon={<Upload className="w-3 h-3" />}
-                    onClick={() => adImageInputRef.current?.click()}
-                    loading={isUploadingImage}
-                  />
-                )
-              }
             >
               <input
                 type="file"
@@ -1187,7 +1181,11 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 <p className="text-[11px] text-slate-400 text-center py-1.5">
                   A imagem-base será criada quando você usar{' '}
                   <span className="font-semibold text-[#E54A26]">
-                    {editingCompany ? 'Gerar imagem' : 'Gerar imagem-base'}
+                    {editingCompany
+                      ? 'Gerar imagem'
+                      : imageCfg.aiTexts
+                        ? 'Gerar criativo com IA'
+                        : 'Gerar imagem com IA'}
                   </span>.
                 </p>
               )}
@@ -1197,13 +1195,83 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 </p>
               )}
 
+              {/* Toggle "Textos pela IA" — só na origem 'ai'. Ligado, a IA
+                  absorve os textos digitados e os aplica direto na composição;
+                  os controles manuais de estilo deixam de existir. */}
+              {imageCfg.imageMode === 'ai' && (
+                <div className="mt-3 flex items-center justify-between gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">Textos pela IA</div>
+                    <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
+                      A IA escreve os textos direto na imagem, absorvendo o que você digitou — sem controles manuais.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={!!imageCfg.aiTexts}
+                    aria-label="Textos pela IA"
+                    onClick={() => setImageField({ aiTexts: !imageCfg.aiTexts })}
+                    className={`relative w-9 h-5 rounded-full shrink-0 transition-colors ${
+                      imageCfg.aiTexts ? 'bg-[#FF5F39]' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${
+                        imageCfg.aiTexts ? 'left-[18px]' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+              )}
+
+              {/* A ação de gerar mora AQUI, no fluxo do conteúdo, e não no
+                  header do card: no upload a dropzone acima já É a ação, e o
+                  botão de gerar pertence ao passo que ele conclui. Só existe
+                  quando há o que gerar — template em modo IA, ou a composição
+                  de uma empresa. */}
+              {(imageCfg.imageMode === 'ai' || editingCompany) && (() => {
+                const generating = editingCompany ? !!aiImageLoading[editingCompany.id] : baseImageLoading;
+                const blocked = !!editingCompany && needsBaseImage;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => (editingCompany ? generateImageFor(editingCompany) : generateBaseImageFor(null))}
+                    disabled={generating || blocked}
+                    title={blocked
+                      ? 'Envie uma imagem-base primeiro'
+                      : editingCompany
+                        ? `Compor a imagem para ${editingCompany.label}`
+                        : imageCfg.aiTexts
+                          ? 'A IA cria a imagem já com os seus textos aplicados'
+                          : 'A IA cria a imagem-base a partir do prompt'}
+                    className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-colors ${
+                      generating || blocked
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        : 'bg-[#FF5F39] hover:bg-[#E54A26] text-white shadow-sm'
+                    }`}
+                  >
+                    {generating
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Sparkles className="w-3.5 h-3.5" />}
+                    {editingCompany
+                      ? 'Gerar imagem'
+                      : imageCfg.aiTexts
+                        ? 'Gerar criativo com IA'
+                        : 'Gerar imagem com IA'}
+                  </button>
+                );
+              })()}
+
               {/* 4 · Divisor */}
               <div className="h-px bg-slate-200 my-3" />
 
               {/* 5 · Textos, 6 · Fonte */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  {editingCompany
+                  {aiTextsOn
+                    ? 'A IA absorve estes textos e os aplica direto na imagem — estilo e posição por conta dela.'
+                    : editingCompany
                     ? `Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Alterar qualquer campo aqui vale só para ${editingCompany.label}.`
                     : 'Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Compartilhados entre todas as empresas da campanha.'}
                 </p>
@@ -1214,7 +1282,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     preview. Sem isso, os dois conjuntos de sliders empilhados
                     liam como um bloco só e afogavam o card. */}
                 <div className={`rounded-lg border bg-white p-2.5 transition-colors ${
-                  selectedLayer === 'destaque' ? 'border-slate-400 shadow-sm' : 'border-slate-200'
+                  !aiTextsOn && selectedLayer === 'destaque' ? 'border-slate-400 shadow-sm' : 'border-slate-200'
                 }`}>
                   <TextField
                     label="Texto destaque (principal)"
@@ -1223,7 +1291,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     placeholder="Texto principal na imagem"
                     onFocus={() => setSelectedLayer('destaque')}
                   />
-                  {selectedLayer === 'destaque' && (
+                  {!aiTextsOn && selectedLayer === 'destaque' && (
                     <TextLayerControls
                       id="destaque"
                       label="destaque"
@@ -1233,7 +1301,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       format={imageCfg.format}
                       weight={700}
                       palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
-                      selected
                       onSelect={() => setSelectedLayer('destaque')}
                       onChange={(next) => setLayout({ ...imageCfg.layout, destaque: next })}
                     />
@@ -1241,7 +1308,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 </div>
 
                 <div className={`rounded-lg border bg-white p-2.5 transition-colors ${
-                  selectedLayer === 'complementar' ? 'border-slate-400 shadow-sm' : 'border-slate-200'
+                  !aiTextsOn && selectedLayer === 'complementar' ? 'border-slate-400 shadow-sm' : 'border-slate-200'
                 }`}>
                   <TextField
                     label="Texto complementar"
@@ -1250,7 +1317,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     placeholder="Texto secundário na imagem"
                     onFocus={() => setSelectedLayer('complementar')}
                   />
-                  {selectedLayer === 'complementar' && (
+                  {!aiTextsOn && selectedLayer === 'complementar' && (
                     <TextLayerControls
                       id="complementar"
                       label="complementar"
@@ -1260,7 +1327,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       format={imageCfg.format}
                       weight={400}
                       palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
-                      selected
                       onSelect={() => setSelectedLayer('complementar')}
                       onChange={(next) => setLayout({ ...imageCfg.layout, complementar: next })}
                     />
@@ -1270,7 +1336,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 {/* Alinhamento e espaçamento são do BLOCO (os dois textos), não
                     de cada linha — por isso vivem num grupo próprio, e só
                     enquanto se edita texto. */}
-                {(selectedLayer === 'destaque' || selectedLayer === 'complementar') && (
+                {!aiTextsOn && (selectedLayer === 'destaque' || selectedLayer === 'complementar') && (
                   <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
                     <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide">
                       Bloco de texto (os dois juntos)
@@ -1298,10 +1364,13 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                         </button>
                       ))}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label htmlFor="text-gap" className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-                        Espaçamento entre os textos
-                      </label>
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <label htmlFor="text-gap" className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                          Espaçamento entre os textos
+                        </label>
+                        <span className="text-[10px] font-bold text-slate-600 tabular-nums">{imageCfg.layout.textGapPx}px</span>
+                      </div>
                       <input
                         id="text-gap"
                         type="range"
@@ -1310,17 +1379,18 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                         step={2}
                         value={imageCfg.layout.textGapPx}
                         onChange={(e) => setLayout({ ...imageCfg.layout, textGapPx: Number(e.target.value) })}
-                        className="flex-1 accent-slate-500"
+                        className="w-full accent-slate-500 mt-0.5"
                       />
-                      <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{imageCfg.layout.textGapPx}px</span>
                     </div>
                   </div>
                 )}
 
-                <FontPicker
-                  value={imageCfg.fontFamily}
-                  onChange={(v) => setImageField({ fontFamily: v })}
-                />
+                {!aiTextsOn && (
+                  <FontPicker
+                    value={imageCfg.fontFamily}
+                    onChange={(v) => setImageField({ fontFamily: v })}
+                  />
+                )}
               </div>
 
               {/* 7 · Divisor, e Logos */}
@@ -1548,8 +1618,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     baseImageUrl={imageCfg.baseImageUrl}
                     layout={imageCfg.layout}
                     fontFamily={imageCfg.fontFamily}
-                    destaque={imageCfg.textoDestaque}
-                    complementar={imageCfg.textoComplementar}
+                    destaque={aiTextsOn ? '' : imageCfg.textoDestaque}
+                    complementar={aiTextsOn ? '' : imageCfg.textoComplementar}
                     advertiserLogoUrl={advertiserLogoUrl}
                     targetLogoUrl={targetLogoUrl}
                     advertiserLabel={imageCfgSource.brandKit.context || 'Minha marca'}
@@ -1878,7 +1948,7 @@ function TextField({ label, value, onChange, placeholder, onFocus }: { label: st
 
 // Controles de uma camada de texto. Ficam no card e não flutuando sobre a
 // imagem: o preview é para arrastar e olhar, o card é onde se ajusta número.
-function TextLayerControls({ id, label, layer, text, fontFamily, format, weight, palette, selected, onSelect, onChange }: {
+function TextLayerControls({ id, label, layer, text, fontFamily, format, weight, palette, onSelect, onChange }: {
   id: string;
   label: string;
   layer: TextLayer;
@@ -1887,7 +1957,6 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
   format: AdFormat;
   weight: number;
   palette: string[];
-  selected: boolean;
   onSelect: () => void;
   onChange: (next: TextLayer) => void;
 }) {
@@ -1908,14 +1977,18 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
   const effectiveSize = effectiveTextSize(layer, measuredWidthPx, format);
 
   return (
-    <div
-      onFocus={onSelect}
-      className={`mt-1.5 pl-2 border-l-2 ${selected ? 'border-slate-500' : 'border-slate-200'}`}
-    >
-      <div className="flex items-center gap-2">
-        <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-          Tamanho do texto {label}
-        </label>
+    // Sem recuo próprio: a moldura do grupo (input + controles) já delimita a
+    // camada. Sliders em duas linhas — rótulo em cima, trilho na largura
+    // inteira — porque era a linha única (rótulo + trilho + valor) que vazava
+    // da moldura na horizontal.
+    <div onFocus={onSelect} className="mt-2 space-y-2">
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+            Tamanho do texto {label}
+          </label>
+          <span className="text-[10px] font-bold text-slate-600 tabular-nums">{effectiveSize}px</span>
+        </div>
         <input
           id={`${id}-size`}
           type="range"
@@ -1924,12 +1997,11 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
           step={1}
           value={effectiveSize}
           onChange={(e) => onChange({ ...layer, sizePx: Number(e.target.value) })}
-          className="flex-1 accent-slate-500"
+          className="w-full accent-slate-500 mt-0.5"
         />
-        <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{effectiveSize}px</span>
       </div>
 
-      <div className="flex items-center gap-2 mt-1">
+      <div className="flex items-center gap-2">
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Cor</span>
         {palette.filter(Boolean).map((c, i) => (
           <button
@@ -1950,7 +2022,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
         />
       </div>
 
-      <div className="flex items-center gap-1.5 mt-1">
+      <div className="flex items-center gap-1.5">
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Fundo</span>
         {(['box', 'shadow', 'none'] as const).map((b) => (
           <button
@@ -1972,7 +2044,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
       {/* A caixa é o que torna o texto legível sobre uma foto qualquer, então
           ela ganha controles próprios em vez de ficar presa no preto 55%. */}
       {layer.backdrop.mode === 'box' && (
-        <div className="mt-1 pl-2 border-l border-slate-200 space-y-1">
+        <div className="pl-2 border-l border-slate-200 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Cor da caixa</span>
             {palette.filter(Boolean).map((c, i) => (
@@ -1994,10 +2066,13 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${id}-bg-opacity`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-              Opacidade da caixa {label}
-            </label>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor={`${id}-bg-opacity`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                Opacidade da caixa {label}
+              </label>
+              <span className="text-[10px] font-bold text-slate-600 tabular-nums">{layer.backdrop.opacity}%</span>
+            </div>
             <input
               id={`${id}-bg-opacity`}
               type="range"
@@ -2006,15 +2081,17 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.opacity}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, opacity: Number(e.target.value) } })}
-              className="flex-1 accent-slate-500"
+              className="w-full accent-slate-500 mt-0.5"
             />
-            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.opacity}%</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${id}-bg-radius`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-              Cantos da caixa {label}
-            </label>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor={`${id}-bg-radius`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                Cantos da caixa {label}
+              </label>
+              <span className="text-[10px] font-bold text-slate-600 tabular-nums">{layer.backdrop.radius}px</span>
+            </div>
             <input
               id={`${id}-bg-radius`}
               type="range"
@@ -2023,15 +2100,26 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.radius}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, radius: Number(e.target.value) } })}
-              className="flex-1 accent-slate-500"
+              className="w-full accent-slate-500 mt-0.5"
             />
-            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.radius}px</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${id}-bg-border`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-              Contorno da caixa {label}
-            </label>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor={`${id}-bg-border`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                Contorno da caixa {label}
+              </label>
+              <span className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-600 tabular-nums">{layer.backdrop.borderWidth}px</span>
+                <input
+                  type="color"
+                  aria-label={`Cor do contorno da caixa para ${label}`}
+                  value={layer.backdrop.borderColor}
+                  onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderColor: e.target.value } })}
+                  className="w-6 h-5 rounded border border-slate-200 bg-white p-0 shrink-0"
+                />
+              </span>
+            </div>
             <input
               id={`${id}-bg-border`}
               type="range"
@@ -2040,15 +2128,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.borderWidth}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderWidth: Number(e.target.value) } })}
-              className="flex-1 accent-slate-500"
-            />
-            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.borderWidth}px</span>
-            <input
-              type="color"
-              aria-label={`Cor do contorno da caixa para ${label}`}
-              value={layer.backdrop.borderColor}
-              onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderColor: e.target.value } })}
-              className="w-6 h-5 rounded border border-slate-200 bg-white p-0 shrink-0"
+              className="w-full accent-slate-500 mt-0.5"
             />
           </div>
         </div>

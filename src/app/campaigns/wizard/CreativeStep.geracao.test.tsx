@@ -55,9 +55,12 @@ describe('CreativeStep — botões de geração por bloco', () => {
     renderStep();
     goTo(/Template global/);
 
-    // Card 1 e card 2 carregam a ação que preenche cada um.
+    // Card 1 carrega a ação no header; no card 2 a ação vive DENTRO do
+    // conteúdo — a dropzone é o upload, sem botão duplicado no header.
     expect(screen.getByRole('button', { name: /Gerar texto$/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Enviar arquivo/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Enviar arquivo/ })).not.toBeInTheDocument();
+    openCard('Imagem');
+    expect(screen.getByText(/Clique ou arraste a imagem-base/)).toBeInTheDocument();
     // Header carrega a ação do nível inteiro.
     expect(screen.getByRole('button', { name: /Gerar para todas \(1\)/ })).toBeInTheDocument();
     // ...e não a ação de uma empresa só.
@@ -74,7 +77,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
     goTo(/Gerar com IA/);
 
     expect(screen.getByPlaceholderText(/Descreva a imagem que deseja gerar/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Gerar imagem-base/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Gerar imagem com IA/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Enviar arquivo/ })).not.toBeInTheDocument();
   });
 
@@ -113,6 +116,8 @@ describe('CreativeStep — botões de geração por bloco', () => {
 
     expect(screen.getByRole('button', { name: /Gerar texto \+ imagem/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Gerar texto$/ })).toBeInTheDocument();
+    // A geração de imagem fica dentro do card, não no header dele.
+    openCard('Imagem');
     expect(screen.getByRole('button', { name: /^Gerar imagem$/ })).toBeInTheDocument();
   });
 
@@ -191,6 +196,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
   it('sem imagem-base e com origem upload, a empresa bloqueia a geração', () => {
     renderStep();
     goTo(/Nubank/);
+    openCard('Imagem');
 
     expect(screen.getByRole('button', { name: /^Gerar imagem$/ })).toBeDisabled();
     // O aviso vive dentro do card, não numa faixa no topo da página.
