@@ -195,7 +195,10 @@ export function CampaignWizard() {
 
       {/* Step Content */}
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-6xl mx-auto h-full">
+        {/* O step Criativos (4) é um workspace de 3 colunas — o teto de
+            largura que serve aos formulários dos outros steps só desperdiça
+            margem aqui, então ele ocupa a viewport inteira. */}
+        <div className={currentStep === 4 ? 'h-full' : 'max-w-6xl mx-auto h-full'}>
           {currentStep === 1 && (
             <ConfigStep
               config={campaignConfig}

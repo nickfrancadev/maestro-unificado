@@ -1233,7 +1233,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       format={imageCfg.format}
                       weight={700}
                       palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
-                      selected
                       onSelect={() => setSelectedLayer('destaque')}
                       onChange={(next) => setLayout({ ...imageCfg.layout, destaque: next })}
                     />
@@ -1260,7 +1259,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       format={imageCfg.format}
                       weight={400}
                       palette={[imageCfgSource.brandKit.colors.primary, imageCfgSource.brandKit.colors.secondary, imageCfgSource.brandKit.colors.accent, '#FFFFFF']}
-                      selected
                       onSelect={() => setSelectedLayer('complementar')}
                       onChange={(next) => setLayout({ ...imageCfg.layout, complementar: next })}
                     />
@@ -1298,10 +1296,13 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                         </button>
                       ))}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label htmlFor="text-gap" className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-                        Espaçamento entre os textos
-                      </label>
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <label htmlFor="text-gap" className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                          Espaçamento entre os textos
+                        </label>
+                        <span className="text-[10px] font-bold text-slate-600 tabular-nums">{imageCfg.layout.textGapPx}px</span>
+                      </div>
                       <input
                         id="text-gap"
                         type="range"
@@ -1310,9 +1311,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                         step={2}
                         value={imageCfg.layout.textGapPx}
                         onChange={(e) => setLayout({ ...imageCfg.layout, textGapPx: Number(e.target.value) })}
-                        className="flex-1 accent-slate-500"
+                        className="w-full accent-slate-500 mt-0.5"
                       />
-                      <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{imageCfg.layout.textGapPx}px</span>
                     </div>
                   </div>
                 )}
@@ -1878,7 +1878,7 @@ function TextField({ label, value, onChange, placeholder, onFocus }: { label: st
 
 // Controles de uma camada de texto. Ficam no card e não flutuando sobre a
 // imagem: o preview é para arrastar e olhar, o card é onde se ajusta número.
-function TextLayerControls({ id, label, layer, text, fontFamily, format, weight, palette, selected, onSelect, onChange }: {
+function TextLayerControls({ id, label, layer, text, fontFamily, format, weight, palette, onSelect, onChange }: {
   id: string;
   label: string;
   layer: TextLayer;
@@ -1887,7 +1887,6 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
   format: AdFormat;
   weight: number;
   palette: string[];
-  selected: boolean;
   onSelect: () => void;
   onChange: (next: TextLayer) => void;
 }) {
@@ -1908,14 +1907,18 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
   const effectiveSize = effectiveTextSize(layer, measuredWidthPx, format);
 
   return (
-    <div
-      onFocus={onSelect}
-      className={`mt-1.5 pl-2 border-l-2 ${selected ? 'border-slate-500' : 'border-slate-200'}`}
-    >
-      <div className="flex items-center gap-2">
-        <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-          Tamanho do texto {label}
-        </label>
+    // Sem recuo próprio: a moldura do grupo (input + controles) já delimita a
+    // camada. Sliders em duas linhas — rótulo em cima, trilho na largura
+    // inteira — porque era a linha única (rótulo + trilho + valor) que vazava
+    // da moldura na horizontal.
+    <div onFocus={onSelect} className="mt-2 space-y-2">
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor={`${id}-size`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+            Tamanho do texto {label}
+          </label>
+          <span className="text-[10px] font-bold text-slate-600 tabular-nums">{effectiveSize}px</span>
+        </div>
         <input
           id={`${id}-size`}
           type="range"
@@ -1924,12 +1927,11 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
           step={1}
           value={effectiveSize}
           onChange={(e) => onChange({ ...layer, sizePx: Number(e.target.value) })}
-          className="flex-1 accent-slate-500"
+          className="w-full accent-slate-500 mt-0.5"
         />
-        <span className="text-[10px] font-bold text-slate-600 tabular-nums w-10 text-right">{effectiveSize}px</span>
       </div>
 
-      <div className="flex items-center gap-2 mt-1">
+      <div className="flex items-center gap-2">
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Cor</span>
         {palette.filter(Boolean).map((c, i) => (
           <button
@@ -1950,7 +1952,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
         />
       </div>
 
-      <div className="flex items-center gap-1.5 mt-1">
+      <div className="flex items-center gap-1.5">
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Fundo</span>
         {(['box', 'shadow', 'none'] as const).map((b) => (
           <button
@@ -1972,7 +1974,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
       {/* A caixa é o que torna o texto legível sobre uma foto qualquer, então
           ela ganha controles próprios em vez de ficar presa no preto 55%. */}
       {layer.backdrop.mode === 'box' && (
-        <div className="mt-1 pl-2 border-l border-slate-200 space-y-1">
+        <div className="pl-2 border-l border-slate-200 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Cor da caixa</span>
             {palette.filter(Boolean).map((c, i) => (
@@ -1994,10 +1996,13 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${id}-bg-opacity`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-              Opacidade da caixa {label}
-            </label>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor={`${id}-bg-opacity`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                Opacidade da caixa {label}
+              </label>
+              <span className="text-[10px] font-bold text-slate-600 tabular-nums">{layer.backdrop.opacity}%</span>
+            </div>
             <input
               id={`${id}-bg-opacity`}
               type="range"
@@ -2006,15 +2011,17 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.opacity}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, opacity: Number(e.target.value) } })}
-              className="flex-1 accent-slate-500"
+              className="w-full accent-slate-500 mt-0.5"
             />
-            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.opacity}%</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${id}-bg-radius`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-              Cantos da caixa {label}
-            </label>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor={`${id}-bg-radius`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                Cantos da caixa {label}
+              </label>
+              <span className="text-[10px] font-bold text-slate-600 tabular-nums">{layer.backdrop.radius}px</span>
+            </div>
             <input
               id={`${id}-bg-radius`}
               type="range"
@@ -2023,15 +2030,26 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.radius}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, radius: Number(e.target.value) } })}
-              className="flex-1 accent-slate-500"
+              className="w-full accent-slate-500 mt-0.5"
             />
-            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.radius}px</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${id}-bg-border`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide shrink-0">
-              Contorno da caixa {label}
-            </label>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor={`${id}-bg-border`} className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                Contorno da caixa {label}
+              </label>
+              <span className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-600 tabular-nums">{layer.backdrop.borderWidth}px</span>
+                <input
+                  type="color"
+                  aria-label={`Cor do contorno da caixa para ${label}`}
+                  value={layer.backdrop.borderColor}
+                  onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderColor: e.target.value } })}
+                  className="w-6 h-5 rounded border border-slate-200 bg-white p-0 shrink-0"
+                />
+              </span>
+            </div>
             <input
               id={`${id}-bg-border`}
               type="range"
@@ -2040,15 +2058,7 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
               step={1}
               value={layer.backdrop.borderWidth}
               onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderWidth: Number(e.target.value) } })}
-              className="flex-1 accent-slate-500"
-            />
-            <span className="text-[10px] font-bold text-slate-600 tabular-nums w-9 text-right">{layer.backdrop.borderWidth}px</span>
-            <input
-              type="color"
-              aria-label={`Cor do contorno da caixa para ${label}`}
-              value={layer.backdrop.borderColor}
-              onChange={(e) => onChange({ ...layer, backdrop: { ...layer.backdrop, borderColor: e.target.value } })}
-              className="w-6 h-5 rounded border border-slate-200 bg-white p-0 shrink-0"
+              className="w-full accent-slate-500 mt-0.5"
             />
           </div>
         </div>
