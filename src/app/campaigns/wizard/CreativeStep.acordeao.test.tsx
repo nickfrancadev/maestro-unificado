@@ -4,6 +4,7 @@ import { render, screen, cleanup, fireEvent, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { CreativeStep } from './CreativeStep';
 import { createDefaultCreativeData, type CreativeData } from './types';
+import { generateBaseImage, composeLogoOverlay } from '@/lib/ai';
 
 afterEach(cleanup);
 
@@ -14,6 +15,8 @@ vi.mock('@/lib/ai', async (orig) => ({
     product_service: '', audience_market: '', persona: '',
   }),
   saveClientVoice: vi.fn().mockResolvedValue(undefined),
+  generateBaseImage: vi.fn().mockResolvedValue({ url: 'https://x/gerada.png', filename: 'gerada.png' }),
+  composeLogoOverlay: vi.fn().mockResolvedValue({ url: 'https://x/composta.png', filename: 'composta.png' }),
 }));
 
 const targeting = {
@@ -208,5 +211,88 @@ describe('CreativeStep — controles de camada só quando a camada está ativa',
     fireEvent.focus(screen.getByPlaceholderText('Texto principal na imagem'));
     expect(screen.getByText('Alinhamento')).toBeInTheDocument();
     expect(screen.getByLabelText(/Espaçamento entre os textos/)).toBeInTheDocument();
+  });
+});
+
+
+describe('CreativeStep — toggle Textos pela IA', () => {
+  const aiData = (patch: (d: CreativeData) => void = () => {}) => {
+    const d = createDefaultCreativeData();
+    d.imageMode = 'ai';
+    d.templateLogo.textoDestaque = 'WORKSHOP ABM';
+    d.templateLogo.textoComplementar = 'Convite VIP';
+    d.templateLogo.basePrompt = 'fundo azul abstrato';
+    patch(d);
+    return d;
+  };
+
+  it('só existe na origem "Gerar com IA"', () => {
+    renderStep(); // default: upload
+    goTo(/Template global/);
+    fireEvent.click(toggle('Imagem'));
+    expect(screen.queryByRole('switch', { name: /Textos pela IA/ })).toBeNull();
+
+    goTo(/Gerar com IA/);
+    expect(screen.getByRole('switch', { name: /Textos pela IA/ })).toBeInTheDocument();
+  });
+
+  it('ligado, os controles de estilo somem e só os inputs de texto ficam', () => {
+    renderStep(aiData((d) => { d.templateLogo.aiTexts = true; }));
+    goTo(/Template global/);
+    fireEvent.click(toggle('Imagem'));
+
+    const destaque = screen.getByPlaceholderText('Texto principal na imagem');
+    expect(destaque).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Texto secundário na imagem')).toBeInTheDocument();
+
+    // Nem focando o input os controles aparecem — a IA é quem estiliza.
+    fireEvent.focus(destaque);
+    expect(screen.queryByLabelText(/Tamanho do texto destaque/)).toBeNull();
+    expect(screen.queryByText('Alinhamento')).toBeNull();
+    expect(screen.queryByText('Fonte')).toBeNull();
+  });
+
+  it('os textos entram no prompt da geração quando ligado — e não entram desligado', async () => {
+    const spy = vi.mocked(generateBaseImage);
+    spy.mockClear();
+
+    const { unmount } = renderStep(aiData((d) => { d.templateLogo.aiTexts = true; }));
+    goTo(/Template global/);
+    fireEvent.click(toggle('Imagem'));
+    // Ligado, o CTA assume que o resultado é o criativo inteiro.
+    fireEvent.click(screen.getByRole('button', { name: /Gerar criativo com IA/ }));
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0].prompt_brief).toContain('fundo azul abstrato');
+    expect(spy.mock.calls[0][0].prompt_brief).toContain('WORKSHOP ABM');
+    expect(spy.mock.calls[0][0].prompt_brief).toContain('Convite VIP');
+    unmount();
+
+    spy.mockClear();
+    renderStep(aiData());
+    goTo(/Template global/);
+    fireEvent.click(toggle('Imagem'));
+    // Desligado, o CTA promete só a imagem — os textos seguem manuais.
+    expect(screen.queryByRole('button', { name: /Gerar criativo com IA/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Gerar imagem com IA/ }));
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0].prompt_brief).toContain('fundo azul abstrato');
+    expect(spy.mock.calls[0][0].prompt_brief).not.toContain('WORKSHOP ABM');
+  });
+
+  it('ligado, a composição não sobrepõe os textos (a IA já os pintou na base)', async () => {
+    const spy = vi.mocked(composeLogoOverlay);
+    spy.mockClear();
+
+    renderStep(aiData((d) => {
+      d.templateLogo.aiTexts = true;
+      d.templateLogo.baseImageUrl = 'https://x/base.png';
+      d.templateLogo.baseImageSource = 'ai';
+    }));
+    goTo(/Nubank/);
+    fireEvent.click(toggle('Imagem'));
+    fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0].texto_destaque).toBe('');
+    expect(spy.mock.calls[0][0].texto_complementar).toBe('');
   });
 });

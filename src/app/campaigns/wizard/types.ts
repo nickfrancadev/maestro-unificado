@@ -128,6 +128,7 @@ export interface CompanyCreativeOverride {
   basePrompt?: string;
   textoDestaque?: string;
   textoComplementar?: string;
+  aiTexts?: boolean;
   showTargetLogo?: boolean;
   fontFamily?: string;
   format?: AdFormat;
@@ -144,7 +145,7 @@ export interface CompanyCreativeOverride {
 // UI can tell the user exactly what it changed for this company.
 export const IMAGE_OVERRIDE_FIELDS = [
   'imageMode', 'baseImageUrl', 'basePrompt', 'textoDestaque',
-  'textoComplementar', 'showTargetLogo', 'fontFamily', 'format', 'layout',
+  'textoComplementar', 'aiTexts', 'showTargetLogo', 'fontFamily', 'format', 'layout',
 ] as const;
 
 export type ImageOverrideField = typeof IMAGE_OVERRIDE_FIELDS[number];
@@ -156,6 +157,8 @@ export interface ResolvedImageConfig {
   basePrompt: string;
   textoDestaque: string;
   textoComplementar: string;
+  /** Textos aplicados pela IA direto na imagem-base (só na origem 'ai'). */
+  aiTexts: boolean;
   showTargetLogo: boolean;
   fontFamily: string;
   format: AdFormat;
@@ -175,6 +178,7 @@ export function resolveImageConfig(data: CreativeData, companyId?: string): Reso
     basePrompt: ovr?.basePrompt ?? tpl.basePrompt,
     textoDestaque: ovr?.textoDestaque ?? tpl.textoDestaque,
     textoComplementar: ovr?.textoComplementar ?? tpl.textoComplementar,
+    aiTexts: ovr?.aiTexts ?? tpl.aiTexts ?? false,
     showTargetLogo,
     fontFamily: ovr?.fontFamily ?? data.brandKit.fontFamily,
     format: ovr?.format ?? tpl.format,
@@ -205,6 +209,7 @@ export interface TemplateLogoConfig {
   basePrompt: string;            // free-text direction for the AI base image (origin 'ai')
   textoDestaque: string;         // primary headline rendered into the image (e.g. "WORKSHOP ABM")
   textoComplementar: string;     // secondary line (e.g. "Convite exclusivo VIP")
+  aiTexts?: boolean;             // origem 'ai': a IA pinta os textos na própria base; overlay só de logos
   showTargetLogo: boolean;       // LEGADO: semeia layout.targetLogo.enabled na migração
   format: AdFormat;              // formato do canvas — honrado no servidor desde 2026-08-18
   layout: OverlayLayout;         // posições, tamanhos e wraps do overlay
