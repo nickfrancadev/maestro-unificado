@@ -8,7 +8,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Popover from '@radix-ui/react-popover';
-import { HelpCircle, LayoutGrid, Table2 } from 'lucide-react';
+import { CircleDollarSign, Gauge, HelpCircle, LayoutGrid, Table2 } from 'lucide-react';
 import { COMPANIES } from './data/mockData';
 import { periodSearch, usePeriodParam } from './usePeriodParam';
 import { WEIGHTS, computeHealth } from './lib/health';
@@ -19,27 +19,25 @@ import {
   pooledRate,
   previousPeriod,
 } from './lib/selectors';
-import { daysAgo, formatDelta } from './lib/format';
+import { antecedentSignals, bucketTenure } from './lib/cs';
+import { daysAgo, formatBRL, formatDelta } from './lib/format';
 import { PeriodFilter } from './components/PeriodFilter';
 import { StatTile } from './components/StatTile';
 import { CompanyTable, type CompanyRow } from './components/CompanyTable';
-import { RiskBoard, type RiskBoardRow } from './components/RiskBoard';
+import { RiskBoard, type BoardSort, type RiskBoardRow } from './components/RiskBoard';
+import { PortfolioTrend } from './components/PortfolioTrend';
 
 const ORANGE = '#FF5F39';
 const NAVY = '#212A46';
 const MUTED = '#64748B';
 
-/**
+/*
  * MRR é dinheiro e precisa do símbolo — "137.000" solto lê como contagem.
  * `StatTile.format` (frozen) não tem modo moeda, mas aceita `value: string`,
- * então formatamos aqui. (Trocamos a animação do `useCountUp` pelo símbolo:
- * um KPI de receita ambíguo é pior que um KPI que não anima.)
+ * então formatamos com `formatBRL` (fonte única em `lib/format`). (Trocamos a
+ * animação do `useCountUp` pelo símbolo: um KPI de receita ambíguo é pior que
+ * um KPI que não anima.)
  */
-const BRL = new Intl.NumberFormat('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-  maximumFractionDigits: 0,
-});
 
 /** Sparkline do card: 12 semanas. */
 const SPARK_WEEKS = 12;
@@ -139,26 +137,34 @@ function ScoreMethodPopover() {
   );
 }
 
-function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
-  const options: { id: View; label: string; icon: typeof LayoutGrid }[] = [
-    { id: 'board', label: 'Board', icon: LayoutGrid },
-    { id: 'table', label: 'Tabela', icon: Table2 },
-  ];
+/** Radiogroup visual compartilhado pelos toggles (vista e ordenação). */
+function ToggleGroup<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { id: T; label: string; icon: typeof LayoutGrid; title?: string }[];
+  label: string;
+}) {
   return (
     <div
       role="radiogroup"
-      aria-label="Modo de visualização"
+      aria-label={label}
       className="inline-flex items-center gap-1 rounded-xl border border-[#d8d8d8] bg-white p-1"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
-      {options.map(({ id, label, icon: Icon }) => {
-        const active = view === id;
+      {options.map(({ id, label: optLabel, icon: Icon, title }) => {
+        const active = value === id;
         return (
           <button
             key={id}
             type="button"
             role="radio"
             aria-checked={active}
+            title={title}
             onClick={() => onChange(id)}
             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-['Euclid_Circular_A',sans-serif] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39]"
             style={{
@@ -170,7 +176,7 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
             }}
           >
             <Icon size={14} aria-hidden="true" />
-            {label}
+            {optLabel}
           </button>
         );
       })}
@@ -178,26 +184,113 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
   );
 }
 
+function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  return (
+    <ToggleGroup
+      value={view}
+      onChange={onChange}
+      label="Modo de visualização"
+      options={[
+        { id: 'board', label: 'Board', icon: LayoutGrid },
+        { id: 'table', label: 'Tabela', icon: Table2 },
+      ]}
+    />
+  );
+}
+
+/** Ordenação DENTRO das colunas do board (feedback Spina: MRR × renovação). */
+function BoardSortToggle({ sort, onChange }: { sort: BoardSort; onChange: (s: BoardSort) => void }) {
+  return (
+    <ToggleGroup
+      value={sort}
+      onChange={onChange}
+      label="Ordenação dos cards"
+      options={[
+        { id: 'score', label: 'Pior score', icon: Gauge, title: 'Score ascendente — o mais crítico no topo' },
+        {
+          id: 'priority',
+          label: 'MRR × renovação',
+          icon: CircleDollarSign,
+          title: 'MRR ÷ dias até a renovação — o dinheiro mais urgente no topo',
+        },
+      ]}
+    />
+  );
+}
+
+/** Filtro por dono da conta (feedback Spina: "minha carteira primeiro"). */
+function CsmFilter({
+  csms,
+  value,
+  onChange,
+}: {
+  csms: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label
+      className="inline-flex items-center gap-2 rounded-xl border border-[#d8d8d8] bg-white px-2.5 py-1.5 font-['Euclid_Circular_A',sans-serif]"
+      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)', fontSize: 13, fontWeight: 600, color: MUTED }}
+    >
+      CSM
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F39] rounded cursor-pointer"
+        style={{ fontSize: 13, fontWeight: 600, color: NAVY }}
+      >
+        <option value="all">Todos</option>
+        {csms.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function UsagePortfolio() {
   const navigate = useNavigate();
   const [period, setPeriod] = usePeriodParam();
   const [view, setView] = useState<View>('board');
+  const [boardSort, setBoardSort] = useState<BoardSort>('score');
+  const [csmFilter, setCsmFilter] = useState<string>('all');
 
-  const rows = useMemo(
+  const allRows = useMemo(
     () =>
       COMPANIES.map((company) => {
         const prev = previousPeriod(period);
         return {
           company,
           health: computeHealth(company, period),
-          // Saúde no período ANTERIOR — base do Δ de "MRR em risco".
+          // Saúde no período ANTERIOR — base do Δ de "MRR em risco" e do
+          // gatilho de transição de faixa no card.
           prevHealth: computeHealth(company, prev),
           metrics: computeMetrics(company, period),
           prevMetrics: computeMetrics(company, prev),
           sparkline: activityByWeek(company, SPARK_WEEKS),
+          tenure: bucketTenure(company, period),
+          antecedents: antecedentSignals(company, period),
         };
       }),
     [period],
+  );
+
+  const csms = useMemo(
+    () =>
+      [...new Set(allRows.map((r) => r.company.csm).filter((c): c is string => !!c))].sort(
+        (a, b) => a.localeCompare(b, 'pt-BR'),
+      ),
+    [allRows],
+  );
+
+  // O filtro de CSM recorta TUDO abaixo dele — KPIs inclusive: com um CSM
+  // selecionado, a tela vira "a carteira daquele CSM", não um híbrido.
+  const rows = useMemo(
+    () => (csmFilter === 'all' ? allRows : allRows.filter((r) => r.company.csm === csmFilter)),
+    [allRows, csmFilter],
   );
 
   const kpis = useMemo(() => {
@@ -290,8 +383,10 @@ export function UsagePortfolio() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <PeriodFilter period={period} onChange={setPeriod} />
+            <CsmFilter csms={csms} value={csmFilter} onChange={setCsmFilter} />
+            {view === 'board' && <BoardSortToggle sort={boardSort} onChange={setBoardSort} />}
             <ViewToggle view={view} onChange={setView} />
           </div>
         </div>
@@ -301,7 +396,7 @@ export function UsagePortfolio() {
           {/* MRR em risco SOBE = piora → invertDelta. */}
           <StatTile
             label="MRR em risco"
-            value={BRL.format(kpis.mrrAtRisk)}
+            value={formatBRL(kpis.mrrAtRisk)}
             delta={formatDelta(kpis.mrrAtRisk, kpis.mrrAtRiskPrev)}
             invertDelta
             hint="Soma do MRR de clientes em Crítico + Em risco · Δ vs. período anterior"
@@ -347,8 +442,11 @@ export function UsagePortfolio() {
           />
         </div>
 
+        {/* tendência da carteira (feedback Spina): a carteira está piorando? */}
+        <PortfolioTrend rows={rows} period={period} />
+
         {view === 'board' ? (
-          <RiskBoard rows={boardRows} onSelect={openCompany} />
+          <RiskBoard rows={boardRows} sort={boardSort} onSelect={openCompany} />
         ) : (
           <CompanyTable rows={tableRows} onRowClick={openCompany} />
         )}

@@ -43,6 +43,21 @@ export function formatNumber(n: number): string {
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(n);
 }
 
+const BRL = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  maximumFractionDigits: 0,
+});
+
+/**
+ * MRR é dinheiro e precisa do símbolo — "137.000" solto lê como contagem.
+ * Fonte única para portfólio, card, tabela e detalhe.
+ */
+export function formatBRL(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return BRL.format(n);
+}
+
 /**
  * Variação percentual de `prev` para `curr`.
  * - `prev === 0 && curr > 0` → +100% (up)

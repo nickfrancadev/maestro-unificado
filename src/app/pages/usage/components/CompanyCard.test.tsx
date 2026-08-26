@@ -42,8 +42,13 @@ function health(score: number, bucket: Health['bucket'], signals: Health['signal
   return { score, bucket, breakdown: { recency: 0, trend: 0, depth: 0, concentration: 0 }, signals };
 }
 
+/** O botão-âncora do card: aria-label começa com o nome (como a tabela). */
+function nameButton(name: string): HTMLElement {
+  return screen.getByRole('button', { name: new RegExp(`^${name} —`) });
+}
+
 describe('CompanyCard', () => {
-  it('renderiza uma company real com score, plano e rodapé', () => {
+  it('renderiza uma company real com score, plano, MRR e rodapé', () => {
     render(
       <CompanyCard
         company={real}
@@ -55,7 +60,12 @@ describe('CompanyCard', () => {
     );
     expect(screen.getByText(real.name)).toBeTruthy();
     expect(screen.getByText(/plays ·/)).toBeTruthy();
-    expect(screen.getByRole('button').getAttribute('aria-label')).toContain(String(realHealth.score));
+    // priorização (feedback Spina): MRR como moeda + dias até a renovação
+    expect(screen.getByText(/R\$/)).toBeTruthy();
+    expect(screen.getByText(/renova em \d+d/)).toBeTruthy();
+    // dono e último contato
+    expect(screen.getByText(new RegExp(`CSM ${real.csm}`))).toBeTruthy();
+    expect(nameButton(real.name).getAttribute('aria-label')).toContain(String(realHealth.score));
   });
 
   it('renderiza sparkline toda-zero sem quebrar (ghost)', () => {
@@ -70,6 +80,9 @@ describe('CompanyCard', () => {
     );
     expect(screen.getByText('Fantasma SA')).toBeTruthy();
     expect(screen.getByText(/^0 plays · 0 touch · 0 usuários$/)).toBeTruthy();
+    // ghost construído não tem csm/renewalAt: o card degrada, não quebra
+    expect(screen.getByText('Sem CSM')).toBeTruthy();
+    expect(screen.queryByText(/renova em/)).toBeNull();
   });
 
   it('aguenta signals vazios, score 0, score 100 e sparkline vazia', () => {
@@ -92,10 +105,10 @@ describe('CompanyCard', () => {
         onClick={() => {}}
       />,
     );
-    expect(screen.getByRole('button').getAttribute('aria-label')).toContain('100');
+    expect(nameButton('Fantasma SA').getAttribute('aria-label')).toContain('100');
   });
 
-  it('é um <button> operável por teclado (Enter dispara onClick)', () => {
+  it('o nome é um <button>-âncora operável por teclado (Enter dispara onClick)', () => {
     const onClick = vi.fn();
     render(
       <CompanyCard
@@ -106,10 +119,55 @@ describe('CompanyCard', () => {
         onClick={onClick}
       />,
     );
-    const btn = screen.getByRole('button');
+    const btn = nameButton(real.name);
     expect(btn.tagName).toBe('BUTTON');
     fireEvent.click(btn); // Enter/Space em <button> nativo → click
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('o botão de ação do playbook NÃO navega (stopPropagation) e registra a ação', () => {
+    const onClick = vi.fn();
+    render(
+      <CompanyCard
+        company={real}
+        health={health(10, 'critical', [])}
+        metrics={realMetrics}
+        sparkline={activityByWeek(real, 12)}
+        onClick={onClick}
+      />,
+    );
+    // crítico → "Alerta + call obrigatória" com CTA de call
+    const action = screen.getByRole('button', { name: 'Agendar call' });
+    fireEvent.click(action);
+    expect(onClick).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Ação registrada/ })).toBeTruthy();
+  });
+
+  it('saudável não tem botão de ação — não há ação a disparar', () => {
+    render(
+      <CompanyCard
+        company={real}
+        health={health(90, 'healthy', [])}
+        metrics={realMetrics}
+        sparkline={activityByWeek(real, 12)}
+        onClick={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/Agendar call|Criar tarefa|Enviar e-mail/)).toBeNull();
+  });
+
+  it('transição de faixa vira badge com gatilho de intervenção', () => {
+    render(
+      <CompanyCard
+        company={real}
+        health={health(60, 'watch', [])}
+        prevHealth={health(80, 'healthy', [])}
+        metrics={realMetrics}
+        sparkline={activityByWeek(real, 12)}
+        onClick={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Saudável → Atenção — intervir cedo/)).toBeTruthy();
   });
 });
 
@@ -138,9 +196,9 @@ describe('CompanyTable', () => {
     prevMetrics: computeMetrics(c, previousPeriod(DEFAULT_PERIOD)),
   }));
 
-  it('renderiza 16 colunas e todas as linhas', () => {
+  it('renderiza 19 colunas (16 + MRR/Renovação/CSM) e todas as linhas', () => {
     render(<CompanyTable rows={rows} onRowClick={() => {}} />);
-    expect(screen.getAllByRole('columnheader')).toHaveLength(16);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(19);
     expect(screen.getByText(rows[0].company.name)).toBeTruthy();
   });
 
@@ -202,6 +260,8 @@ describe('CompanyTable', () => {
     );
     expect(screen.getByText('Fantasma SA')).toBeTruthy();
     expect(screen.getAllByText('Nunca').length).toBe(2); // último acesso + última atividade
-    expect(screen.getByText('—')).toBeTruthy(); // dias p/ fechar = null
+    // "—" aparece em dias p/ fechar (null) E nas colunas novas sem dado
+    // (renovação/CSM ausentes no ghost construído)
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -10,8 +10,10 @@
  * varre este diretório e falharia. Cabeçalho de coluna = ícone + rótulo + cor.
  */
 import { motion, useReducedMotion } from 'motion/react';
-import type { Company, Health, RiskBucket } from '../data/types';
+import type { Company, Health, RiskBucket, Signal } from '../data/types';
 import type { UsageMetrics } from '../lib/selectors';
+import type { BucketTenure } from '../lib/cs';
+import { renewalPriority } from '../lib/cs';
 import { BUCKET_META } from '../lib/health';
 import { BUCKET_ICON } from './icons';
 import { CompanyCard } from './CompanyCard';
@@ -21,13 +23,27 @@ const MUTED = '#64748B';
 export interface RiskBoardRow {
   company: Company;
   health: Health;
+  /** saúde do período anterior — badge de transição no card */
+  prevHealth?: Health;
   metrics: UsageMetrics;
   /** atividade por semana — `activityByWeek(company, 12)` */
   sparkline: number[];
+  /** tempo no bucket atual */
+  tenure?: BucketTenure | null;
+  /** sinais antecedentes (champion, tickets, NPS) */
+  antecedents?: Signal[];
 }
+
+/**
+ * Ordenação DENTRO da coluna: 'score' (pior primeiro — default histórico) ou
+ * 'priority' (MRR ÷ dias até a renovação, maior primeiro — feedback Spina:
+ * entre dois críticos, o de mais dinheiro renovando antes fura a fila).
+ */
+export type BoardSort = 'score' | 'priority';
 
 interface RiskBoardProps {
   rows: RiskBoardRow[];
+  sort?: BoardSort;
   onSelect: (companyId: string) => void;
 }
 
@@ -37,7 +53,7 @@ const BUCKET_ORDER: RiskBucket[] = ['critical', 'at_risk', 'watch', 'healthy'];
 /** Stagger de 40ms entre cards (spec). */
 const STAGGER_MS = 40;
 
-export function RiskBoard({ rows, onSelect }: RiskBoardProps) {
+export function RiskBoard({ rows, sort = 'score', onSelect }: RiskBoardProps) {
   const reduceMotion = useReducedMotion();
 
   const byBucket: Record<RiskBucket, RiskBoardRow[]> = {
@@ -47,9 +63,14 @@ export function RiskBoard({ rows, onSelect }: RiskBoardProps) {
     healthy: [],
   };
   for (const row of rows) byBucket[row.health.bucket].push(row);
-  // Score ascendente: o mais crítico no topo da sua coluna.
+  // 'score': ascendente — o mais crítico no topo da sua coluna.
+  // 'priority': MRR ÷ dias até renovação, descendente — o dinheiro mais urgente primeiro.
   for (const b of BUCKET_ORDER) {
-    byBucket[b].sort((a, c) => a.health.score - c.health.score);
+    byBucket[b].sort((a, c) =>
+      sort === 'priority'
+        ? renewalPriority(c.company) - renewalPriority(a.company)
+        : a.health.score - c.health.score,
+    );
   }
 
   return (
@@ -120,8 +141,11 @@ export function RiskBoard({ rows, onSelect }: RiskBoardProps) {
                     <CompanyCard
                       company={row.company}
                       health={row.health}
+                      prevHealth={row.prevHealth}
                       metrics={row.metrics}
                       sparkline={row.sparkline}
+                      tenure={row.tenure}
+                      antecedents={row.antecedents}
                       onClick={() => onSelect(row.company.id)}
                     />
                   </motion.div>
