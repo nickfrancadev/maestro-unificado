@@ -6,6 +6,7 @@
  */
 import type {
   Company,
+  LateTouchpointEmail,
   Period,
   Play,
   PlayType,
@@ -16,9 +17,9 @@ import type {
 } from './types';
 import { TODAY } from './types';
 
-// Re-export por compatibilidade: a constante vive em `types.ts` para que `lib/`
-// não precise importar este módulo (e executar o gerador) só para saber "hoje".
-export { TODAY };
+// Re-export por compatibilidade: as constantes vivem em `types.ts` para que
+// `lib/` não precise importar este módulo (e executar o gerador) para lê-las.
+export { PILOT_COMPANY_ID, TODAY } from './types';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -526,6 +527,82 @@ function deriveActivity(users: User[], plays: Play[]): void {
   }
 }
 
+/** CSMs da carteira (mock — viria do CRM). Atribuição round-robin determinística. */
+export const CSMS = [
+  'Marina Duarte',
+  'Rafael Pinto',
+  'Camila Nogueira',
+  'Otávio Ramos',
+] as const;
+
+/** Próximo aniversário anual de `onboardedAt` estritamente depois de `today`. */
+function nextAnniversary(onboardedAt: Date, today: Date): Date {
+  const r = new Date(onboardedAt.getTime());
+  while (r.getTime() <= today.getTime()) {
+    r.setUTCFullYear(r.getUTCFullYear() + 1);
+  }
+  return r;
+}
+
+/** Engajamento com os e-mails automáticos, por perfil (taxas de abertura/clique). */
+const EMAIL_ENGAGEMENT: Record<ProfileKind, { open: number; click: number }> = {
+  ghost: { open: 0.05, click: 0 },
+  hoarder: { open: 0.25, click: 0.05 },
+  hostage: { open: 0.3, click: 0.1 },
+  declining: { open: 0.35, click: 0.1 },
+  watch: { open: 0.5, click: 0.2 },
+  healthy: { open: 0.8, click: 0.5 },
+};
+
+/** Faixas de mock por perfil para os campos de CRM/suporte (não instrumentados). */
+const CS_FIELDS: Record<
+  ProfileKind,
+  { contactDays: [number, number]; tickets: [number, number]; nps: [number, number] | null }
+> = {
+  ghost: { contactDays: [30, 60], tickets: [0, 1], nps: null }, // sumiu: nem NPS responde
+  hoarder: { contactDays: [15, 45], tickets: [1, 4], nps: [4, 7] },
+  hostage: { contactDays: [15, 45], tickets: [1, 5], nps: [3, 6] },
+  declining: { contactDays: [10, 35], tickets: [0, 3], nps: [3, 6] },
+  watch: { contactDays: [7, 25], tickets: [0, 3], nps: [6, 8] },
+  healthy: { contactDays: [2, 15], tickets: [0, 2], nps: [8, 10] },
+};
+
+/**
+ * E-mails automáticos de touchpoints atrasados (novo dado — feedback Bernardo).
+ *
+ * Um digest semanal nas últimas 9 semanas (cobre o período padrão E o anterior,
+ * para o Δ ter base), SÓ para quem tem touchpoint atrasado — sem atraso não há
+ * e-mail a fabricar. Aberturas/cliques seguem o engajamento do perfil.
+ */
+function makeLateTpEmails(
+  rng: Rng,
+  seed: CompanySeed,
+  kind: ProfileKind,
+  users: User[],
+  plays: Play[],
+): LateTouchpointEmail[] {
+  const lateNow = plays
+    .flatMap((p) => p.touchpoints)
+    .filter((tp) => tp.endDate === null && tp.dueDate.getTime() < TODAY.getTime()).length;
+  if (lateNow === 0) return [];
+
+  const recipients = users.filter((u) => u.lastAccessAt !== null).length || 1;
+  const { open, click } = EMAIL_ENGAGEMENT[kind];
+  const out: LateTouchpointEmail[] = [];
+  for (let week = 0; week < 9; week++) {
+    const opens = Math.min(recipients, Math.round(recipients * open + (rng() < 0.4 ? 1 : 0)));
+    const clicks = Math.min(opens, Math.round(opens * click + (rng() < 0.2 ? 1 : 0)));
+    out.push({
+      id: `${seed.slug}-ltp-email-${week + 1}`,
+      sentAt: daysBefore(week * 7 + randInt(rng, 0, 2)),
+      recipients,
+      opens,
+      clicks,
+    });
+  }
+  return out;
+}
+
 function makeCompany(seedIndex: number, seed: CompanySeed): Company {
   const rng = mulberry32(0x9e3779b9 + seedIndex * 7919);
   const cfg = KIND_CONFIG[seed.kind];
@@ -550,18 +627,32 @@ function makeCompany(seedIndex: number, seed: CompanySeed): Company {
   const contactsCount = accountsCount * randInt(rng, 2, 5);
   const dossiersCount = Math.round(accountsCount * (0.3 + rng() * 0.7));
 
+  const onboardedAt = daysBefore(randInt(rng, 90, 900), 0);
+
+  // PRNG PRÓPRIO para os campos novos de CS: adicionar sorteios ao `rng`
+  // principal deslocaria TODOS os valores já semeados (plays, datas, nomes) e
+  // mudaria a tela inteira num commit que só deveria acrescentar campos.
+  const csRng = mulberry32(0x51f0a1 + seedIndex * 104729);
+  const cs = CS_FIELDS[seed.kind];
+
   return {
     id: seed.slug,
     name: seed.name,
     plan,
     seats,
-    onboardedAt: daysBefore(randInt(rng, 90, 900), 0),
+    onboardedAt,
     mrr,
     users,
     plays,
     accountsCount,
     contactsCount,
     dossiersCount,
+    renewalAt: nextAnniversary(onboardedAt, TODAY),
+    csm: CSMS[seedIndex % CSMS.length],
+    lastCsContactAt: daysBefore(randInt(csRng, cs.contactDays[0], cs.contactDays[1]), 12, csRng),
+    openTickets: randInt(csRng, cs.tickets[0], cs.tickets[1]),
+    nps: cs.nps === null ? null : randInt(csRng, cs.nps[0], cs.nps[1]),
+    lateTouchpointEmails: makeLateTpEmails(csRng, seed, seed.kind, users, plays),
   };
 }
 

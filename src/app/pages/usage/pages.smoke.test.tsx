@@ -14,7 +14,7 @@ import { render, screen, cleanup, fireEvent, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { UsagePortfolio } from './UsagePortfolio';
 import { UsageCompanyDetail } from './UsageCompanyDetail';
-import { COMPANIES, DEFAULT_PERIOD } from './data/mockData';
+import { COMPANIES, DEFAULT_PERIOD, PILOT_COMPANY_ID } from './data/mockData';
 import { computeMetrics } from './lib/selectors';
 import { WEIGHTS } from './lib/health';
 import { fromISODate, periodLabel, toISODate } from './components/PeriodFilter';
@@ -198,6 +198,42 @@ describe('UsageCompanyDetail', () => {
     ).toBeTruthy();
     const back = screen.getByRole('link', { name: 'Voltar ao portfólio' });
     expect(back.getAttribute('href')).toBe('/uso-clientes');
+  });
+});
+
+/**
+ * O layout novo (referência do time de CS) roda como PILOTO: só a conta
+ * `PILOT_COMPANY_ID` abre a variante nova; as demais seguem no layout atual.
+ * Estes testes guardam exatamente o escopo — se o piloto vazar para todas as
+ * contas (ou sumir da conta-piloto), aqui fica vermelho.
+ */
+describe('piloto de layout do detalhe', () => {
+  it('a conta-piloto abre o layout novo, com as seções do feedback', () => {
+    renderDetail(PILOT_COMPANY_ID);
+    expect(screen.getByText('layout piloto')).toBeTruthy();
+    // novos dados (Bernardo)
+    expect(screen.getByText('E-mails de touchpoints atrasados')).toBeTruthy();
+    expect(screen.getByText('Inputs qualitativos')).toBeTruthy();
+    // Conta enriquecida (Spina)
+    expect(screen.getByText('MRR')).toBeTruthy();
+    expect(screen.getByText('CSM')).toBeTruthy();
+    // a referência não traz a composição do score nem a evolução
+    expect(screen.queryByText('Composição do score')).toBeNull();
+    expect(screen.queryByText('Evolução do score')).toBeNull();
+    // o funil da referência começa em Contatos — cadastro mora no card Conta
+    expect(screen.getByText('Funil de adoção')).toBeTruthy();
+    expect(screen.queryByText('Contas')).toBeNull();
+  });
+
+  it('as DEMAIS contas seguem no layout atual, sem as seções do piloto', () => {
+    const other = COMPANIES[COMPANIES.length - 1];
+    expect(other.id).not.toBe(PILOT_COMPANY_ID);
+    renderDetail(other.id);
+    expect(screen.queryByText('layout piloto')).toBeNull();
+    expect(screen.queryByText('Inputs qualitativos')).toBeNull();
+    expect(screen.queryByText('E-mails de touchpoints atrasados')).toBeNull();
+    expect(screen.getByText('Composição do score')).toBeTruthy();
+    expect(screen.getByText('Evolução do score')).toBeTruthy();
   });
 });
 

@@ -13,12 +13,14 @@ import type { Company, Health } from '../data/types';
 import type { UsageMetrics } from '../lib/selectors';
 import { BUCKET_META } from '../lib/health';
 import {
+  formatBRL,
   formatDaysAgo,
   formatDelta,
   formatNumber,
   formatPct,
 } from '../lib/format';
 import { lastAccessAt, lastActivityAt } from '../lib/selectors';
+import { daysToRenewal } from '../lib/cs';
 import { BUCKET_ICON } from './icons';
 import { PendingMarker } from './PendingMarker';
 import { TREND_BAD, TREND_FLAT, TREND_GOOD } from './colors';
@@ -88,6 +90,17 @@ function activityOf(m: UsageMetrics): number {
 const COLUMNS: Column[] = [
   { id: 'name', label: 'Cliente', sortValue: (r) => r.company.name.toLowerCase() },
   { id: 'score', label: 'Score', numeric: true, sortValue: (r) => r.health.score },
+  // Priorização (feedback Spina): MRR e renovação ao lado do score — ordenar
+  // por qualquer um dos dois é o gesto de "onde está o dinheiro em risco".
+  { id: 'mrr', label: 'MRR', numeric: true, sortValue: (r) => r.company.mrr },
+  {
+    id: 'renewal',
+    label: 'Renovação',
+    numeric: true,
+    sortValue: (r) => daysToRenewal(r.company),
+    hint: 'Dias até a próxima renovação do contrato. Ordene junto com MRR para priorizar a fila.',
+  },
+  { id: 'csm', label: 'CSM', sortValue: (r) => r.company.csm?.toLowerCase() ?? null },
   {
     id: 'lastAccess',
     label: 'Último acesso',
@@ -350,6 +363,19 @@ export function CompanyTable({ rows, onRowClick }: CompanyTableProps) {
                       </span>
                       <BucketBadge bucket={health.bucket} />
                     </span>
+                  </td>
+
+                  <td className={`${TD_BASE} text-right tabular-nums`} style={{ fontWeight: 600, color: '#212A46' }}>
+                    {formatBRL(company.mrr)}
+                  </td>
+                  <td className={`${TD_BASE} text-right tabular-nums`} style={{ color: '#64748B' }}>
+                    {(() => {
+                      const d = daysToRenewal(company);
+                      return d === null ? '—' : `em ${d}d`;
+                    })()}
+                  </td>
+                  <td className={`${TD_BASE} text-left`} style={{ color: '#64748B' }}>
+                    {company.csm ?? '—'}
                   </td>
 
                   <td className={`${TD_BASE} text-right tabular-nums`} style={{ color: '#64748B' }}>

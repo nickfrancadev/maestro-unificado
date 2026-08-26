@@ -9,6 +9,7 @@ import { useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, Users } from 'lucide-react';
 import { getCompany } from './data/mockData';
+import { PILOT_COMPANY_ID } from './data/types';
 import { periodSearch, usePeriodParam } from './usePeriodParam';
 import { BUCKET_META, WEIGHTS, computeHealth } from './lib/health';
 import {
@@ -21,16 +22,17 @@ import {
   userStats,
 } from './lib/selectors';
 import { scoreTimeline } from './lib/timeline';
-import { formatDaysAgo, formatDelta, formatNumber } from './lib/format';
+import { formatDaysAgo, formatNumber } from './lib/format';
 import { PeriodFilter } from './components/PeriodFilter';
-import { StatTile } from './components/StatTile';
 import { HealthScoreRing } from './components/HealthScoreRing';
 import { SignalChips } from './components/SignalChips';
-import { PendingMarker } from './components/PendingMarker';
 import { AdoptionFunnel } from './components/AdoptionFunnel';
 import { PlayTypeMix } from './components/PlayTypeMix';
 import { ScoreTimeline } from './components/ScoreTimeline';
 import { UsersTable } from './components/UsersTable';
+import { MetricTiles } from './components/MetricTiles';
+import { FactRow } from './components/FactRow';
+import { UsageCompanyDetailPilot } from './UsageCompanyDetailPilot';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
@@ -117,63 +119,6 @@ function DimensionBar({
   );
 }
 
-/**
- * Δ só existe onde existe DENOMINADOR — nos dois períodos.
- *
- * Um cliente que morreu vê `touchpointsLate` cair de 7 para 0 e
- * `touchpointsLateRate` de 100% para 0%. Com `invertDelta`, "menos atraso" é
- * bom, e os dois tiles pintavam VERDE — a página cuja única função é gritar
- * "esta conta está morrendo" parabenizava o defunto. O número não caiu porque o
- * cliente melhorou; caiu porque ele parou de existir: sem touchpoints criados,
- * não há atraso a medir.
- *
- * Idem para as médias `por play`: `safeDiv(0, 0) = 0` não é "zero contatos por
- * play", é a ausência de razão. Renderizar isso como "-100%" inventa uma queda.
- *
- * Um tile sem Δ é honesto. Um tile verde num cliente moribundo não é.
- *
- * @param delta  o Δ calculado
- * @param currDen denominador no período atual
- * @param prevDen denominador no período anterior
- */
-function deltaIfMeasurable(
-  delta: ReturnType<typeof formatDelta>,
-  currDen: number,
-  prevDen: number,
-): ReturnType<typeof formatDelta> | undefined {
-  return currDen > 0 && prevDen > 0 ? delta : undefined;
-}
-
-/** Texto que explica a AUSÊNCIA do Δ — o vazio precisa se justificar. */
-function noDeltaHint(currDen: number, prevDen: number, unit: string): string | undefined {
-  if (currDen > 0 && prevDen > 0) return undefined;
-  if (currDen === 0 && prevDen === 0) return `Sem ${unit} em nenhum dos dois períodos`;
-  if (currDen === 0) return `Sem ${unit} no período — não há razão a medir`;
-  return `Sem ${unit} no período anterior — não há base de comparação`;
-}
-
-function FactRow({
-  label,
-  value,
-  pending = false,
-}: {
-  label: string;
-  value: string;
-  pending?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-1.5 border-b last:border-b-0" style={{ borderColor: GRID }}>
-      <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12, color: MUTED }}>
-        {label}
-        {pending && <PendingMarker />}
-      </span>
-      <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
 export function UsageCompanyDetail() {
   const { companyId } = useParams<{ companyId: string }>();
   const navigate = useNavigate();
@@ -199,6 +144,13 @@ export function UsageCompanyDetail() {
   }, [company, period]);
 
   if (!company || !data) return <NotFound companyId={companyId} />;
+
+  // Piloto do layout novo (referência do time de CS): SÓ a conta-piloto abre a
+  // variante nova; as demais seguem nesta página até o teste ser validado.
+  // Depois de TODOS os hooks — a ordem de hooks não pode depender da conta.
+  if (company.id === PILOT_COMPANY_ID) {
+    return <UsageCompanyDetailPilot company={company} />;
+  }
 
   const { health, metrics: m, prevMetrics: p, funnel, mix, timeline, users } = data;
   const meta = BUCKET_META[health.bucket];
@@ -296,103 +248,9 @@ export function UsageCompanyDetail() {
           </div>
         </section>
 
-        {/* 2 — StatTiles com Δ vs. período anterior */}
+        {/* 2 — StatTiles com Δ vs. período anterior (compartilhados com o piloto) */}
         <section aria-label="Métricas do período">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-            <StatTile
-              label="Plays criadas"
-              value={m.playsCreated}
-              delta={formatDelta(m.playsCreated, p.playsCreated)}
-            />
-            {/*
-             * Coorte diferente da de "Plays criadas": fecha no período quem
-             * fecha no período, tenha nascido quando tiver nascido. Por isso
-             * "fechadas" pode passar de "criadas" sem que nada esteja errado —
-             * e por isso o rótulo diz de quem está falando.
-             */}
-            <StatTile
-              label="Plays fechadas no período"
-              value={m.playsClosed}
-              delta={formatDelta(m.playsClosed, p.playsClosed)}
-              hint="Fechadas dentro do período, independente de quando foram criadas"
-            />
-            <StatTile
-              label="Touchpoints criados"
-              value={m.touchpointsCreated}
-              delta={formatDelta(m.touchpointsCreated, p.touchpointsCreated)}
-            />
-            <StatTile
-              label="Touchpoints finalizados no período"
-              value={m.touchpointsClosed}
-              delta={formatDelta(m.touchpointsClosed, p.touchpointsClosed)}
-              hint="Finalizados dentro do período, independente de quando foram criados"
-            />
-            {/*
-             * subir é RUIM: invertDelta. Mas o Δ SÓ aparece se houver
-             * touchpoints criados nos dois períodos — ver `deltaIfMeasurable`.
-             * Sem denominador, "0 atrasados" não é uma melhora, é um vazio.
-             */}
-            <StatTile
-              label="Touchpoints atrasados"
-              value={m.touchpointsLate}
-              delta={deltaIfMeasurable(
-                formatDelta(m.touchpointsLate, p.touchpointsLate),
-                m.touchpointsCreated,
-                p.touchpointsCreated,
-              )}
-              hint={noDeltaHint(m.touchpointsCreated, p.touchpointsCreated, 'touchpoints criados')}
-              invertDelta
-            />
-            <StatTile
-              label="% de touchpoints atrasados"
-              value={m.touchpointsLateRate}
-              format="pct"
-              delta={deltaIfMeasurable(
-                formatDelta(m.touchpointsLateRate, p.touchpointsLateRate),
-                m.touchpointsCreated,
-                p.touchpointsCreated,
-              )}
-              hint={noDeltaHint(m.touchpointsCreated, p.touchpointsCreated, 'touchpoints criados')}
-              invertDelta
-            />
-            {/* Médias "por play": o denominador é `playsCreated`. */}
-            <StatTile
-              label="Média de touchpoints por play"
-              value={m.avgTouchpointsPerPlay}
-              delta={deltaIfMeasurable(
-                formatDelta(m.avgTouchpointsPerPlay, p.avgTouchpointsPerPlay),
-                m.playsCreated,
-                p.playsCreated,
-              )}
-              hint={noDeltaHint(m.playsCreated, p.playsCreated, 'plays criadas')}
-            />
-            <StatTile
-              label="Média de contatos por play"
-              value={m.avgContactsPerPlay}
-              delta={deltaIfMeasurable(
-                formatDelta(m.avgContactsPerPlay, p.avgContactsPerPlay),
-                m.playsCreated,
-                p.playsCreated,
-              )}
-              hint={noDeltaHint(m.playsCreated, p.playsCreated, 'plays criadas')}
-            />
-            <StatTile
-              label="Média de interações por play"
-              value={m.avgInteractionsPerPlay}
-              delta={deltaIfMeasurable(
-                formatDelta(m.avgInteractionsPerPlay, p.avgInteractionsPerPlay),
-                m.playsCreated,
-                p.playsCreated,
-              )}
-              hint={noDeltaHint(m.playsCreated, p.playsCreated, 'plays criadas')}
-            />
-            <StatTile
-              label="Dias até fechamento"
-              value={m.avgDaysToClose === null ? '—' : m.avgDaysToClose}
-              format="days"
-              hint={m.avgDaysToClose === null ? 'Nenhuma play fechada no período' : undefined}
-            />
-          </div>
+          <MetricTiles m={m} p={p} />
         </section>
 
         {/* 3 — funil + mix (ambos já trazem o próprio card) */}
