@@ -25,6 +25,7 @@ import { TrendingDown } from 'lucide-react';
 import type { FunnelStage } from '../lib/selectors';
 import { formatNumber } from '../lib/format';
 import { TREND_FLAT } from './colors';
+import { CardHeader } from './CardHeader';
 
 const NAVY = '#212A46';
 const NAVY_LIGHT = '#8A93AD';
@@ -140,26 +141,26 @@ export function AdoptionFunnel({ stages }: AdoptionFunnelProps) {
 
   return (
     <div
-      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif]"
+      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif] h-full flex flex-col"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold" style={{ color: NAVY }}>
-          Funil de adoção
-        </h3>
-        {/* O subtítulo não promete "conversão entre etapas": só uma das
-            transições é uma conversão. As outras são razões por unidade. */}
-        <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-          Etapas do período · % só onde uma etapa é subconjunto da outra
-        </p>
-      </div>
+      {/* O subtítulo não promete "conversão entre etapas": só uma das
+          transições é uma conversão. As outras são razões por unidade. */}
+      <CardHeader
+        title="Funil de adoção"
+        subtitle="Etapas do período · % só onde uma etapa é subconjunto da outra"
+      />
 
       {!hasData ? (
         <p className="text-sm py-6 text-center" style={{ color: MUTED }}>
           Sem atividade no período — o cliente não avançou em nenhuma etapa do funil.
         </p>
       ) : (
-        <ol className="flex flex-col gap-1">
+        /* `flex-1 justify-between`: o card acompanha a altura da coluna vizinha
+           e as etapas se distribuem nela. Um funil é uma escada — espaçar os
+           degraus não atrapalha a leitura (ao contrário das barras comparativas
+           do mix), e evita que a coluna termine com um vão. */
+        <ol className="flex flex-col gap-1 flex-1 justify-between">
           {stages.map((s, i) => {
             const rel = relations[i];
             const isWorst = i === worstIndex;

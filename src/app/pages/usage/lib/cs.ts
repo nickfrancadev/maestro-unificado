@@ -236,6 +236,14 @@ export interface LateTpEmailStats {
   clickRate: number;
   /** Data do envio mais recente do período, se houver. */
   lastSentAt: Date | null;
+  /**
+   * Maior número de touchpoints vencidos que um único envio cobrou no período.
+   * NÃO é soma: o mesmo touchpoint vencido aparece em envios consecutivos até
+   * ser resolvido, então somar contaria a mesma pendência várias vezes.
+   */
+  maxOverdue: number;
+  /** Os envios do período, do mais recente ao mais antigo. */
+  sends: LateTouchpointEmail[];
 }
 
 /** Agregado dos envios cujo `sentAt` cai no período (taxas pooled, como o resto da tela). */
@@ -261,5 +269,7 @@ export function lateTpEmailStats(company: Company, period: Period): LateTpEmailS
     openRate: recipients === 0 ? 0 : opens / recipients,
     clickRate: recipients === 0 ? 0 : clicks / recipients,
     lastSentAt,
+    maxOverdue: emails.reduce((max, e) => Math.max(max, e.overdueCount ?? 0), 0),
+    sends: [...emails].sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime()),
   };
 }

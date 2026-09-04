@@ -12,6 +12,7 @@ import { lateTpEmailStats } from '../lib/cs';
 import { previousPeriod } from '../lib/selectors';
 import { formatDaysAgo, formatDelta, formatNumber, formatPct } from '../lib/format';
 import { TREND_BAD, TREND_FLAT, TREND_GOOD } from './colors';
+import { CardHeader } from './CardHeader';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
@@ -32,6 +33,32 @@ function DeltaText({ curr, prev }: { curr: number; prev: number }) {
   );
 }
 
+/** Uma métrica do card, no mesmo desenho dos demais blocos numéricos. */
+function EmailStat({
+  label,
+  value,
+  foot,
+}: {
+  label: string;
+  value: string;
+  foot: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border p-3 flex flex-col h-full" style={{ borderColor: GRID }}>
+      <dt style={{ fontSize: 11, fontWeight: 600, color: MUTED }}>{label}</dt>
+      <dd
+        className="tabular-nums mt-0.5"
+        style={{ fontSize: 22, fontWeight: 700, color: NAVY, lineHeight: 1.1 }}
+      >
+        {value}
+      </dd>
+      <dd className="mt-auto pt-1" style={{ fontSize: 11, color: MUTED }}>
+        {foot}
+      </dd>
+    </div>
+  );
+}
+
 export function LateTpEmailsCard({ company, period }: LateTpEmailsCardProps) {
   const stats = lateTpEmailStats(company, period);
   const prev = lateTpEmailStats(company, previousPeriod(period));
@@ -41,71 +68,119 @@ export function LateTpEmailsCard({ company, period }: LateTpEmailsCardProps) {
 
   return (
     <div
-      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif]"
+      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif] h-full flex flex-col"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
-      <div className="mb-4 flex items-start gap-2">
-        <Mail size={16} style={{ color: NAVY }} aria-hidden="true" className="mt-0.5 shrink-0" />
-        <div>
-          <h3 className="text-sm font-semibold" style={{ color: NAVY }}>
-            E-mails de touchpoints atrasados
-          </h3>
-          <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-            Interações com os avisos automáticos enviados no período
-          </p>
-        </div>
-      </div>
+      <CardHeader
+        icon={Mail}
+        title="E-mails de touchpoints atrasados"
+        subtitle="Interações com os avisos automáticos enviados no período"
+      />
 
       {stats.sent === 0 ? (
         <p className="text-sm py-6 text-center" style={{ color: MUTED }}>
-          Nenhum e-mail de touchpoint atrasado enviado no período — sem atraso,
-          sem aviso.
+          Nenhum e-mail de touchpoint atrasado enviado no período — nada venceu
+          em aberto na janela.
         </p>
       ) : (
         <>
-          <dl className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg border p-3" style={{ borderColor: GRID }}>
-              <dt style={{ fontSize: 11, fontWeight: 600, color: MUTED }}>Envios</dt>
-              <dd className="tabular-nums mt-0.5" style={{ fontSize: 22, fontWeight: 700, color: NAVY }}>
-                {formatNumber(stats.sent)}
-              </dd>
-              <dd style={{ fontSize: 11, color: MUTED }}>
-                último {formatDaysAgo(stats.lastSentAt)}
-              </dd>
-            </div>
-            <div className="rounded-lg border p-3" style={{ borderColor: GRID }}>
-              <dt style={{ fontSize: 11, fontWeight: 600, color: MUTED }}>Taxa de abertura</dt>
-              <dd className="tabular-nums mt-0.5" style={{ fontSize: 22, fontWeight: 700, color: NAVY }}>
-                {formatPct(stats.openRate)}
-              </dd>
-              <dd>
-                {comparable ? (
+          <dl className="grid grid-cols-3 gap-3 auto-rows-fr">
+            <EmailStat
+              label="Envios"
+              value={formatNumber(stats.sent)}
+              foot={`último ${formatDaysAgo(stats.lastSentAt)}`}
+            />
+            <EmailStat
+              label="Taxa de abertura"
+              value={formatPct(stats.openRate)}
+              foot={
+                comparable ? (
                   <DeltaText curr={stats.openRate} prev={prev.openRate} />
                 ) : (
-                  <span style={{ fontSize: 11, color: MUTED }}>sem base no período anterior</span>
-                )}
-              </dd>
-            </div>
-            <div className="rounded-lg border p-3" style={{ borderColor: GRID }}>
-              <dt style={{ fontSize: 11, fontWeight: 600, color: MUTED }}>Taxa de clique</dt>
-              <dd className="tabular-nums mt-0.5" style={{ fontSize: 22, fontWeight: 700, color: NAVY }}>
-                {formatPct(stats.clickRate)}
-              </dd>
-              <dd>
-                {comparable ? (
+                  'sem base no período anterior'
+                )
+              }
+            />
+            <EmailStat
+              label="Taxa de clique"
+              value={formatPct(stats.clickRate)}
+              foot={
+                comparable ? (
                   <DeltaText curr={stats.clickRate} prev={prev.clickRate} />
                 ) : (
-                  <span style={{ fontSize: 11, color: MUTED }}>sem base no período anterior</span>
-                )}
-              </dd>
-            </div>
+                  'sem base no período anterior'
+                )
+              }
+            />
           </dl>
 
+          {/*
+           * A conta pode mostrar "0 touchpoints atrasados" HOJE e ainda assim ter
+           * recebido cobrança: o e-mail é histórico, e o que ele cobrou foi
+           * resolvido. Sem esta linha, os dois números pareceriam se contradizer.
+           */}
           <p className="mt-3 tabular-nums" style={{ fontSize: 11, color: MUTED }}>
-            {formatNumber(stats.opens)} aberturas e {formatNumber(stats.clicks)} cliques
-            sobre {formatNumber(stats.recipients)} destinatários somados · taxas
-            pooled (Σ aberturas ÷ Σ destinatários)
+            Os avisos cobraram até {formatNumber(stats.maxOverdue)}{' '}
+            {stats.maxOverdue === 1 ? 'touchpoint vencido' : 'touchpoints vencidos'} em
+            aberto · taxas pooled (Σ aberturas ÷ Σ destinatários)
           </p>
+
+          {/* envio a envio: a taxa agregada esconde qual disparo funcionou */}
+          <table className="w-full mt-4 border-collapse">
+            <caption className="text-left pb-1" style={{ fontSize: 11, fontWeight: 600, color: MUTED }}>
+              Envios do período
+            </caption>
+            <thead>
+              <tr>
+                {['Data', 'Cobrou', 'Enviados', 'Aberturas', 'Cliques'].map((h, i) => (
+                  <th
+                    key={h}
+                    scope="col"
+                    className={`border-b py-1 ${i === 0 ? 'text-left' : 'text-right'}`}
+                    style={{ borderColor: GRID, fontSize: 11, fontWeight: 600, color: MUTED }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {stats.sends.map((e) => (
+                <tr key={e.id}>
+                  <td
+                    className="border-b py-1.5 tabular-nums text-left"
+                    style={{ borderColor: GRID, fontSize: 12, color: NAVY }}
+                  >
+                    {formatDaysAgo(e.sentAt)}
+                  </td>
+                  <td
+                    className="border-b py-1.5 tabular-nums text-right"
+                    style={{ borderColor: GRID, fontSize: 12, color: NAVY }}
+                  >
+                    {formatNumber(e.overdueCount)}
+                  </td>
+                  <td
+                    className="border-b py-1.5 tabular-nums text-right"
+                    style={{ borderColor: GRID, fontSize: 12, color: MUTED }}
+                  >
+                    {formatNumber(e.recipients)}
+                  </td>
+                  <td
+                    className="border-b py-1.5 tabular-nums text-right"
+                    style={{ borderColor: GRID, fontSize: 12, color: MUTED }}
+                  >
+                    {formatNumber(e.opens)}
+                  </td>
+                  <td
+                    className="border-b py-1.5 tabular-nums text-right"
+                    style={{ borderColor: GRID, fontSize: 12, color: MUTED }}
+                  >
+                    {formatNumber(e.clicks)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </>
       )}
     </div>

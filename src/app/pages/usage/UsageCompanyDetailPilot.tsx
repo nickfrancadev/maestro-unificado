@@ -47,6 +47,7 @@ import { PlayTypeMix } from './components/PlayTypeMix';
 import { UsersTable } from './components/UsersTable';
 import { MetricTiles } from './components/MetricTiles';
 import { FactRow } from './components/FactRow';
+import { CardHeader } from './components/CardHeader';
 import { LateTpEmailsCard } from './components/LateTpEmailsCard';
 import { QualitativeNotes } from './components/QualitativeNotes';
 
@@ -126,46 +127,55 @@ export function UsageCompanyDetailPilot({ company }: { company: Company }) {
           <PeriodFilter period={period} onChange={setPeriod} />
         </div>
 
-        {/* topo: mix + saúde à esquerda, funil na coluna direita (referência) */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4 items-start">
-          <div className="space-y-4 min-w-0">
+        {/*
+         * FAIXAS 1+2 — mix | saúde à esquerda, funil na coluna da direita
+         * acompanhando a altura inteira (é o desenho da referência).
+         *
+         * `items-stretch` no grid externo + `h-full` no funil: a borda de baixo
+         * do funil cai EXATAMENTE onde cai a dos tiles. Antes o funil parava na
+         * altura do próprio conteúdo e a coluna da direita terminava no meio da
+         * página; e pôr o funil como terceira coluna da faixa de cima resolvia o
+         * recorte mas esticava o card de mix, abrindo um vão embaixo dele.
+         */}
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-4 items-stretch">
+          <div className="flex flex-col gap-4 min-w-0">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
               <PlayTypeMix mix={mix} />
 
               <section
                 aria-label="Saúde do cliente"
-                className="bg-white rounded-xl border border-[#d8d8d8] p-5 flex flex-col items-center justify-center gap-3"
+                className="bg-white rounded-xl border border-[#d8d8d8] p-5 flex flex-col items-center justify-center gap-3 h-full"
                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
               >
-                <HealthScoreRing score={health.score} bucket={health.bucket} size={120} showLabel />
-                <h1 className="text-center leading-tight" style={{ fontSize: 18, fontWeight: 700, color: NAVY }}>
-                  {company.name}
-                </h1>
+            <HealthScoreRing score={health.score} bucket={health.bucket} size={120} showLabel />
+            <h1 className="text-center leading-tight" style={{ fontSize: 18, fontWeight: 700, color: NAVY }}>
+              {company.name}
+            </h1>
 
-                {/* tempo no estado + estágio: "crítico há 3d" ≠ "há 60d" */}
-                <p className="text-center" style={{ fontSize: 12, color: MUTED }}>
-                  <span style={{ color: meta.color, fontWeight: 600 }}>
-                    {meta.label}
-                    {tenureLabel ? ` ${tenureLabel}` : ''}
-                  </span>
+            {/* tempo no estado + estágio: "crítico há 3d" ≠ "há 60d" */}
+            <p className="text-center" style={{ fontSize: 12, color: MUTED }}>
+              <span style={{ color: meta.color, fontWeight: 600 }}>
+                {meta.label}
+                {tenureLabel ? ` ${tenureLabel}` : ''}
+              </span>
+              {' · '}
+              {data.stage.label}
+              {transition && (
+                <>
                   {' · '}
-                  {data.stage.label}
-                  {transition && (
-                    <>
-                      {' · '}
-                      <span style={{ fontWeight: 600, color: transition.dir === 'worsened' ? '#92400E' : MUTED }}>
-                        {BUCKET_META[transition.from].label} → {BUCKET_META[transition.to].label} no período
-                      </span>
-                    </>
-                  )}
-                </p>
+                  <span style={{ fontWeight: 600, color: transition.dir === 'worsened' ? '#92400E' : MUTED }}>
+                    {BUCKET_META[transition.from].label} → {BUCKET_META[transition.to].label} no período
+                  </span>
+                </>
+              )}
+            </p>
 
-                <SignalChips
-                  signals={[...health.signals, ...data.antecedents].sort(
-                    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
-                  )}
-                  max={3}
-                />
+            <SignalChips
+              signals={[...health.signals, ...data.antecedents].sort(
+                (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+              )}
+              max={3}
+            />
 
                 <p className="text-center" style={{ fontSize: 11, color: MUTED }}>
                   Playbook: {playbook.label}
@@ -173,7 +183,8 @@ export function UsageCompanyDetailPilot({ company }: { company: Company }) {
               </section>
             </div>
 
-            {/* os MESMOS 10 tiles do layout atual (fonte única: MetricTiles) */}
+            {/* os MESMOS 10 tiles do layout atual (fonte única: `MetricTiles`):
+                5 colunas de mesma largura e, com `auto-rows-fr`, de mesma altura */}
             <section aria-label="Métricas do período">
               <MetricTiles m={m} p={p} />
             </section>
@@ -182,16 +193,16 @@ export function UsageCompanyDetailPilot({ company }: { company: Company }) {
           <AdoptionFunnel stages={funnel} />
         </div>
 
-        {/* base: Conta (enriquecida) + usuários */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,380px)_1fr] gap-4 items-start">
+        {/* FAIXA 3 — Conta (enriquecida) + usuários */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,380px)_1fr] gap-4 items-stretch">
           <section
             aria-label="Conta"
-            className="bg-white rounded-xl border border-[#d8d8d8] p-5"
+            className="bg-white rounded-xl border border-[#d8d8d8] p-5 h-full"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
           >
-            <h2 className="mb-1" style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>
-              Conta
-            </h2>
+            {/* mesmo cabeçalho dos demais blocos: título + subtítulo DENTRO do
+                box (antes esta seção tinha h2 dentro e a de usuários, fora) */}
+            <CardHeader title="Conta" subtitle="Contrato, dono e sinais fora do produto" />
             <FactRow label="Último acesso" value={formatDaysAgo(lastAccessAt(company))} pending />
             <FactRow label="Última atividade" value={formatDaysAgo(lastActivityAt(company))} />
             <FactRow label="Plano" value={company.plan} />
@@ -224,23 +235,26 @@ export function UsageCompanyDetailPilot({ company }: { company: Company }) {
               pending
               pendingText="Suporte ainda não integrado ao produto — valor de exemplo."
             />
-            <p className="mt-2 inline-flex items-center gap-1.5" style={{ fontSize: 11, color: MUTED }}>
+            <p className="mt-3 inline-flex items-center gap-1.5" style={{ fontSize: 11, color: MUTED }}>
               <Users size={12} aria-hidden="true" />
               {formatNumber(company.accountsCount)} contas ·{' '}
               {formatNumber(company.contactsCount)} contatos
             </p>
           </section>
 
+          {/* título DENTRO do card, como todos os outros blocos da página */}
           <section aria-label="Usuários" className="min-w-0">
-            <h2 className="mb-3" style={{ fontSize: 15, fontWeight: 700, color: NAVY }}>
-              Usuários
-            </h2>
-            <UsersTable rows={users} />
+            <UsersTable
+              rows={users}
+              title="Usuários"
+              subtitle="Atividade por usuário no período"
+            />
           </section>
         </div>
 
-        {/* novos dados (Bernardo): e-mails de touchpoints atrasados + qualitativo */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* FAIXA 4 — novos dados (Bernardo): e-mails de touchpoints atrasados +
+            inputs qualitativos, em duas colunas de mesma altura */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
           <LateTpEmailsCard company={company} period={period} />
           <QualitativeNotes companyId={company.id} />
         </div>

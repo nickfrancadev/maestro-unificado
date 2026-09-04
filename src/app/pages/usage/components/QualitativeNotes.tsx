@@ -14,6 +14,7 @@ import {
   type QualiNote,
   type QualiNoteKind,
 } from '../lib/notes';
+import { CardHeader } from './CardHeader';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
@@ -53,20 +54,14 @@ export function QualitativeNotes({ companyId }: QualitativeNotesProps) {
 
   return (
     <div
-      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif]"
+      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif] h-full flex flex-col"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
-      <div className="mb-4 flex items-start gap-2">
-        <MessageSquarePlus size={16} style={{ color: NAVY }} aria-hidden="true" className="mt-0.5 shrink-0" />
-        <div>
-          <h3 className="text-sm font-semibold" style={{ color: NAVY }}>
-            Inputs qualitativos
-          </h3>
-          <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-            O contexto que os números não capturam — calls, verbatims, percepção de risco
-          </p>
-        </div>
-      </div>
+      <CardHeader
+        icon={MessageSquarePlus}
+        title="Inputs qualitativos"
+        subtitle="O contexto que os números não capturam — calls, verbatims, percepção de risco"
+      />
 
       <form onSubmit={submit} className="flex flex-col gap-2">
         <div className="flex items-center gap-2">

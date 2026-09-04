@@ -9,6 +9,7 @@
  */
 import { Info, Sparkles, TriangleAlert } from 'lucide-react';
 import type { PlayType } from '../data/types';
+import { CardHeader } from './CardHeader';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
@@ -50,17 +51,10 @@ export function PlayTypeMix({ mix }: PlayTypeMixProps) {
 
   return (
     <div
-      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif]"
+      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif] h-full flex flex-col"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold" style={{ color: NAVY }}>
-          Mix de tipos de play
-        </h3>
-        <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-          Plays criadas no período, por tipo
-        </p>
-      </div>
+      <CardHeader title="Mix de tipos de play" subtitle="Plays criadas no período, por tipo" />
 
       {total === 0 ? (
         <p className="text-sm py-6 text-center" style={{ color: MUTED }}>
@@ -68,6 +62,10 @@ export function PlayTypeMix({ mix }: PlayTypeMixProps) {
         </p>
       ) : (
         <>
+          {/* Espaçamento natural: esticar as barras para preencher o card
+              afastava uma da outra e a comparação entre elas — que é a função do
+              gráfico — ficava mais difícil de fazer com o olho. O card estica
+              (borda alinhada com os irmãos); o conteúdo, não. */}
           <ul className="flex flex-col gap-2.5">
             {mix.map((m) => {
               const width = max > 0 ? Math.max((m.count / max) * 100, m.count > 0 ? 1.5 : 0) : 0;

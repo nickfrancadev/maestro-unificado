@@ -54,7 +54,12 @@ interface MetricTilesProps {
 
 export function MetricTiles({ m, p }: MetricTilesProps) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+    /*
+     * `auto-rows-fr` + `h-full` no `StatTile`: TODAS as linhas do grid têm a
+     * mesma altura, então os 10 tiles ficam do mesmo tamanho. Sem isso, a linha
+     * que tem hints de coorte cresce e o conjunto deixa de ler como um bloco só.
+     */
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 auto-rows-fr">
       <StatTile
         label="Plays criadas"
         value={m.playsCreated}
