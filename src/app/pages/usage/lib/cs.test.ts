@@ -4,7 +4,7 @@
  * de bucket, playbook, sinais antecedentes e e-mails de touchpoints atrasados.
  */
 import { describe, expect, it } from 'vitest';
-import { COMPANIES, DEFAULT_PERIOD, TODAY } from '../data/mockData';
+import { COMPANIES, DEFAULT_PERIOD, PILOT_COMPANY_ID, TODAY } from '../data/mockData';
 import type { Company, Health, Period, Play, Touchpoint, User } from '../data/types';
 import { computeHealth } from './health';
 import { previousPeriod } from './selectors';
@@ -234,9 +234,10 @@ describe('championStatus / antecedentSignals', () => {
 
 describe('lateTpEmailStats', () => {
   const emails = [
-    { id: 'e1', sentAt: d(2), recipients: 4, opens: 3, clicks: 1 },
-    { id: 'e2', sentAt: d(9), recipients: 4, opens: 1, clicks: 0 },
-    { id: 'e3', sentAt: d(40), recipients: 4, opens: 4, clicks: 4 }, // fora do período
+    { id: 'e1', sentAt: d(2), recipients: 4, opens: 3, clicks: 1, overdueCount: 5 },
+    { id: 'e2', sentAt: d(9), recipients: 4, opens: 1, clicks: 0, overdueCount: 2 },
+    // fora do período
+    { id: 'e3', sentAt: d(40), recipients: 4, opens: 4, clicks: 4, overdueCount: 9 },
   ];
 
   it('agrega SÓ os envios do período, com taxas pooled', () => {
@@ -247,6 +248,18 @@ describe('lateTpEmailStats', () => {
     expect(s.openRate).toBeCloseTo(0.5);
     expect(s.clickRate).toBeCloseTo(1 / 8);
     expect(s.lastSentAt?.getTime()).toBe(d(2).getTime());
+  });
+
+  /**
+   * O mesmo touchpoint vencido é cobrado em envios consecutivos até alguém
+   * resolvê-lo. Somar `overdueCount` contaria a mesma pendência várias vezes
+   * ("cobraram 7 touchpoints" quando eram 5, dos quais 2 seguiram pendentes):
+   * o número que significa alguma coisa é o PICO.
+   */
+  it('maxOverdue é o pico de um envio, nunca a soma dos envios', () => {
+    const s = lateTpEmailStats(company({ lateTouchpointEmails: emails }), PERIOD);
+    expect(s.maxOverdue).toBe(5);
+    expect(s.maxOverdue).not.toBe(7); // 5 + 2
   });
 
   it('o envio fora do período entra no período ANTERIOR (base do Δ)', () => {
@@ -268,18 +281,66 @@ describe('lateTpEmailStats', () => {
       openRate: 0,
       clickRate: 0,
       lastSentAt: null,
+      maxOverdue: 0,
+      sends: [],
     });
   });
 
-  it('no mock: quem tem touchpoint atrasado tem e-mail; quem não tem, não tem', () => {
+  /**
+   * O e-mail é HISTÓRICO: ele cobra o que estava vencido NA DATA do envio.
+   *
+   * Daí as duas metades desta asserção não serem simétricas. Quem tem
+   * touchpoint vencido HOJE necessariamente já foi cobrado (o vencimento é
+   * anterior a hoje). Mas o inverso não vale: uma conta pode mostrar "0
+   * atrasados" e ter recebido vários avisos — foi cobrada e resolveu. É
+   * exatamente o caso da conta-piloto, e uma asserção simétrica aqui obrigaria
+   * o produto a esquecer o que aconteceu assim que o cliente se corrige.
+   */
+  it('no mock: quem tem atraso hoje já foi cobrado; quem resolveu mantém o histórico', () => {
+    let resolvedWithHistory = 0;
+
     for (const c of COMPANIES) {
-      const late = c.plays
+      const emails = c.lateTouchpointEmails ?? [];
+      const lateNow = c.plays
         .flatMap((p) => p.touchpoints)
         .filter((t) => t.endDate === null && t.dueDate.getTime() < TODAY.getTime()).length;
-      const emailCount = (c.lateTouchpointEmails ?? []).length;
-      if (late === 0) expect(emailCount).toBe(0);
-      else expect(emailCount).toBeGreaterThan(0);
+
+      if (lateNow > 0) expect(emails.length, `${c.id} tem atraso hoje`).toBeGreaterThan(0);
+      if (lateNow === 0 && emails.length > 0) resolvedWithHistory += 1;
+
+      // nenhum envio vazio: o produto não manda cobrança sem nada a cobrar
+      for (const e of emails) expect(e.overdueCount).toBeGreaterThan(0);
     }
+
+    // e o caso que motiva o modelo existe de fato na carteira
+    expect(resolvedWithHistory).toBeGreaterThan(0);
+  });
+
+  /**
+   * Um touchpoint resolvido com atraso NÃO é um touchpoint atrasado. Se algum
+   * dia ele passar a contar, o tile "Touchpoints atrasados" muda sozinho em
+   * todas as contas — inclusive nas saudáveis, que exibiriam atraso do nada.
+   */
+  it('touchpoint finalizado depois do prazo não conta como atrasado', () => {
+    const finishedLate = COMPANIES.flatMap((c) => c.plays)
+      .flatMap((p) => p.touchpoints)
+      .filter((t) => t.endDate !== null && t.dueDate.getTime() < t.endDate!.getTime());
+
+    expect(finishedLate.length, 'o mock precisa conter o caso').toBeGreaterThan(0);
+    for (const t of finishedLate) {
+      expect(t.endDate).not.toBeNull(); // `isLate` exige endDate === null
+    }
+  });
+
+  /** A conta-piloto abre o card do novo dado COM conteúdo, não no estado vazio. */
+  it('a conta-piloto tem envios no período (o card do piloto não abre vazio)', () => {
+    const pilot = COMPANIES.find((c) => c.id === PILOT_COMPANY_ID)!;
+    const s = lateTpEmailStats(pilot, DEFAULT_PERIOD);
+    expect(s.sent).toBeGreaterThan(0);
+    expect(s.recipients).toBeGreaterThan(0);
+    expect(s.maxOverdue).toBeGreaterThan(0);
+    // e há base nos dois períodos, então o Δ das taxas é exibível
+    expect(lateTpEmailStats(pilot, previousPeriod(DEFAULT_PERIOD)).recipients).toBeGreaterThan(0);
   });
 });
 

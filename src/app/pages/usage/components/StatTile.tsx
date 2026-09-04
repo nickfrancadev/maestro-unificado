@@ -88,8 +88,14 @@ export function StatTile({
   const color = delta ? deltaColor(delta.dir, invertDelta) : MUTED;
 
   return (
+    /*
+     * `h-full`: o tile preenche a linha do grid. Com `auto-rows-fr` no
+     * container, todos os tiles ficam do MESMO tamanho — antes, a linha com
+     * hints de coorte (3 linhas de texto) ficava visivelmente mais alta que a
+     * linha sem hint, e o bloco de números lia como dois blocos diferentes.
+     */
     <div
-      className="bg-white rounded-xl border border-[#d8d8d8] p-4 flex flex-col gap-1"
+      className="bg-white rounded-xl border border-[#d8d8d8] p-4 flex flex-col gap-1 h-full"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
       <div className="flex items-center gap-1.5">
@@ -128,9 +134,12 @@ export function StatTile({
         </p>
       )}
 
+      {/* Ancorado na base: com todos os tiles da mesma altura, o hint alinha
+          entre cards em vez de flutuar logo abaixo de números de tamanhos
+          diferentes. */}
       {hint && (
         <p
-          className="font-['Euclid_Circular_A',sans-serif] leading-snug"
+          className="font-['Euclid_Circular_A',sans-serif] leading-snug mt-auto pt-1"
           style={{ fontSize: 11, color: MUTED }}
         >
           {hint}

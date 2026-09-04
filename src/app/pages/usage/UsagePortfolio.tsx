@@ -391,8 +391,9 @@ export function UsagePortfolio() {
           </div>
         </div>
 
-        {/* 5 KPIs agregados */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+        {/* 5 KPIs agregados — `auto-rows-fr`: hints de tamanhos diferentes não
+            fazem os cards da faixa crescerem de forma desigual */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 auto-rows-fr">
           {/* MRR em risco SOBE = piora → invertDelta. */}
           <StatTile
             label="MRR em risco"

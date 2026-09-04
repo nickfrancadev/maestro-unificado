@@ -3,6 +3,7 @@ import { ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import type { Profile, User } from '../data/types';
 import { formatDaysAgo, formatNumber, formatPct } from '../lib/format';
 import { PendingMarker } from './PendingMarker';
+import { CardHeader } from './CardHeader';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
@@ -21,6 +22,14 @@ export interface UserRow {
 
 interface UsersTableProps {
   rows: UserRow[];
+  /**
+   * Título DENTRO do card, na mesma convenção dos demais blocos (h3 + subtítulo).
+   * Omitido, o card não tem cabeçalho e quem chama põe o título por fora — é o
+   * que a tela antiga faz. O piloto passa o título para que todos os blocos da
+   * página tenham o cabeçalho no mesmo lugar.
+   */
+  title?: string;
+  subtitle?: string;
 }
 
 type SortKey =
@@ -116,7 +125,7 @@ function ShareBar({ share }: { share: number }) {
   );
 }
 
-export function UsersTable({ rows }: UsersTableProps) {
+export function UsersTable({ rows, title, subtitle }: UsersTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('plays');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -137,9 +146,10 @@ export function UsersTable({ rows }: UsersTableProps) {
 
   return (
     <div
-      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif]"
+      className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif] h-full"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
+      {title && <CardHeader title={title} subtitle={subtitle} />}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse" style={{ minWidth: 720 }}>
           <caption className="sr-only">

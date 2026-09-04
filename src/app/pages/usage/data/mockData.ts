@@ -29,6 +29,20 @@ export const DEFAULT_PERIOD: Period = {
   end: TODAY,
 };
 
+/**
+ * Hash determinístico de string (FNV-1a, 32 bits) — semente estável a partir de
+ * um id. Serve para sortear algo NOVO sem consumir o `rng` principal (o que
+ * deslocaria toda a sequência já semeada).
+ */
+function hashSeed(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
 /** PRNG determinístico (mulberry32). */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -203,6 +217,12 @@ interface KindConfig {
   tpCloseRate: number;
   /** fração dos touchpoints em aberto que estão vencidos */
   lateRate: number;
+  /**
+   * Fração dos touchpoints FECHADOS que foi resolvida com atraso (venceu, ficou
+   * dias vencida, depois finalizou). Não conta como "atrasado" hoje — é o
+   * histórico que dispara os e-mails automáticos de cobrança.
+   */
+  finishedLateRate: number;
   /** interações / contatos envolvidos */
   interactionRate: number;
   /** dias desde o último acesso do usuário mais ativo */
@@ -231,6 +251,7 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
     closeRate: 0,
     tpCloseRate: 0,
     lateRate: 1,
+    finishedLateRate: 0.6,
     interactionRate: 0.05,
     accessDays: [45, 70],
     currentWindow: [1, 28],
@@ -251,6 +272,7 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
     closeRate: 0, // ZERO plays fechadas — endDate: null em todas
     tpCloseRate: 0.05,
     lateRate: 0.95,
+    finishedLateRate: 0.7,
     interactionRate: 0.08,
     accessDays: [11, 16],
     currentWindow: [10, 28], // parou de mexer há ~10d
@@ -268,6 +290,7 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
     closeRate: 0.15,
     tpCloseRate: 0.25,
     lateRate: 0.75,
+    finishedLateRate: 0.6,
     interactionRate: 0.22,
     accessDays: [12, 18],
     currentWindow: [12, 28],
@@ -284,6 +307,7 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
     closeRate: 0.3,
     tpCloseRate: 0.35,
     lateRate: 0.6,
+    finishedLateRate: 0.5,
     interactionRate: 0.3,
     accessDays: [8, 12],
     currentWindow: [8, 28],
@@ -304,6 +328,7 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
     closeRate: 0.22,
     tpCloseRate: 0.3,
     lateRate: 0.6,
+    finishedLateRate: 0.45,
     interactionRate: 0.32,
     accessDays: [5, 8],
     currentWindow: [5, 28],
@@ -319,6 +344,7 @@ const KIND_CONFIG: Record<ProfileKind, KindConfig> = {
     closeRate: 0.65, // ≥50% das plays fechadas
     tpCloseRate: 0.85,
     lateRate: 0.08,
+    finishedLateRate: 0.3,
     interactionRate: 0.78,
     accessDays: [0, 2], // acesso nos últimos 3 dias
     currentWindow: [1, 28],
@@ -400,7 +426,6 @@ function makeTouchpoints(
     // dueDate vencida (passado) para os que sobram em aberto → touchpoint atrasado.
     const late = !closed && rng() < cfg.lateRate;
     const dueDays = late ? Math.max(0, tpDaysAgo - randInt(rng, 2, 6)) : -randInt(rng, 2, 10);
-    const dueDate = new Date(TODAY.getTime() - dueDays * MS_PER_DAY);
 
     const endDate = closed
       ? new Date(
@@ -410,6 +435,37 @@ function makeTouchpoints(
           ),
         )
       : null;
+
+    /**
+     * Parte dos touchpoints FECHADOS foi resolvida com atraso: venceu, ficou
+     * alguns dias vencida e só então foi finalizada.
+     *
+     * Sem isso, todo touchpoint fechado nascia com `dueDate` no futuro e nenhuma
+     * conta jamais tinha histórico de atraso — o cliente saudável não gerava um
+     * único e-mail automático de "touchpoints atrasados", e o card do novo dado
+     * abria vazio para sempre. Atraso resolvido é o caso mais comum de todos, e
+     * é exatamente o que esses e-mails cobram.
+     *
+     * NÃO altera nenhuma métrica da tela: "atrasado" (`isLate`) exige
+     * `endDate === null`, então um touchpoint já finalizado nunca entra na
+     * contagem, tenha vencido antes ou não.
+     *
+     * O sorteio usa um PRNG PRÓPRIO (semeado pelo id do play): consumir o `rng`
+     * principal deslocaria toda a sequência seguinte e mudaria os dados já
+     * semeados de todas as companies.
+     */
+    const lateRng = mulberry32(hashSeed(`${playId}-tp${i + 1}`));
+    const finishedLate = endDate !== null && lateRng() < cfg.finishedLateRate;
+    const dueDate =
+      endDate !== null && finishedLate
+        ? new Date(
+            // vencida de 1 a 8 dias antes de ser finalizada, nunca antes de nascer
+            Math.max(
+              createdAt.getTime() + MS_PER_DAY,
+              endDate.getTime() - randInt(lateRng, 1, 8) * MS_PER_DAY,
+            ),
+          )
+        : new Date(TODAY.getTime() - dueDays * MS_PER_DAY);
 
     const contactsInvolved = randInt(rng, 2, 6);
     const interactions = Math.min(
@@ -551,7 +607,7 @@ const EMAIL_ENGAGEMENT: Record<ProfileKind, { open: number; click: number }> = {
   hostage: { open: 0.3, click: 0.1 },
   declining: { open: 0.35, click: 0.1 },
   watch: { open: 0.5, click: 0.2 },
-  healthy: { open: 0.8, click: 0.5 },
+  healthy: { open: 0.62, click: 0.34 },
 };
 
 /** Faixas de mock por perfil para os campos de CRM/suporte (não instrumentados). */
@@ -570,9 +626,16 @@ const CS_FIELDS: Record<
 /**
  * E-mails automáticos de touchpoints atrasados (novo dado — feedback Bernardo).
  *
- * Um digest semanal nas últimas 9 semanas (cobre o período padrão E o anterior,
- * para o Δ ter base), SÓ para quem tem touchpoint atrasado — sem atraso não há
- * e-mail a fabricar. Aberturas/cliques seguem o engajamento do perfil.
+ * Digest SEMANAL das últimas 9 semanas (cobre o período padrão e o anterior,
+ * para o Δ ter base). Cada envio é derivado do estado real da base NAQUELA
+ * data: um touchpoint estava vencido na semana W se já tinha nascido, o prazo
+ * já havia passado e ele ainda não fora finalizado.
+ *
+ * É por isso que uma conta saudável TAMBÉM recebe esses e-mails: ela resolve os
+ * atrasos (e por isso hoje mostra "0 atrasados"), mas resolveu depois de ser
+ * cobrada. Olhar só para o presente esconderia justamente o que o e-mail fez.
+ *
+ * Semana sem nada vencido não gera envio — o produto não manda cobrança vazia.
  */
 function makeLateTpEmails(
   rng: Rng,
@@ -581,23 +644,32 @@ function makeLateTpEmails(
   users: User[],
   plays: Play[],
 ): LateTouchpointEmail[] {
-  const lateNow = plays
-    .flatMap((p) => p.touchpoints)
-    .filter((tp) => tp.endDate === null && tp.dueDate.getTime() < TODAY.getTime()).length;
-  if (lateNow === 0) return [];
-
+  const touchpoints = plays.flatMap((p) => p.touchpoints);
   const recipients = users.filter((u) => u.lastAccessAt !== null).length || 1;
   const { open, click } = EMAIL_ENGAGEMENT[kind];
+
   const out: LateTouchpointEmail[] = [];
   for (let week = 0; week < 9; week++) {
+    const sentAt = daysBefore(week * 7);
+    const at = sentAt.getTime();
+
+    const overdueCount = touchpoints.filter(
+      (tp) =>
+        tp.createdAt.getTime() <= at &&
+        tp.dueDate.getTime() < at &&
+        (tp.endDate === null || tp.endDate.getTime() > at),
+    ).length;
+    if (overdueCount === 0) continue;
+
     const opens = Math.min(recipients, Math.round(recipients * open + (rng() < 0.4 ? 1 : 0)));
     const clicks = Math.min(opens, Math.round(opens * click + (rng() < 0.2 ? 1 : 0)));
     out.push({
       id: `${seed.slug}-ltp-email-${week + 1}`,
-      sentAt: daysBefore(week * 7 + randInt(rng, 0, 2)),
+      sentAt,
       recipients,
       opens,
       clicks,
+      overdueCount,
     });
   }
   return out;

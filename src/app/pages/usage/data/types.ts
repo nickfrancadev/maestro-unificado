@@ -65,6 +65,8 @@ export interface LateTouchpointEmail {
   opens: number;
   /** Cliques únicos (≤ opens). */
   clicks: number;
+  /** Touchpoints vencidos e em aberto NA DATA do envio — o que o e-mail cobrou. */
+  overdueCount: number;
 }
 
 export interface User {

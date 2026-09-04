@@ -225,6 +225,51 @@ describe('piloto de layout do detalhe', () => {
     expect(screen.queryByText('Contas')).toBeNull();
   });
 
+  /**
+   * Os 10 tiles do bloco numérico têm que ler como UM bloco: mesma largura
+   * (colunas iguais) e mesma altura (`auto-rows-fr` + `h-full` no tile). Sem
+   * isso a linha que carrega hints de coorte cresce e o conjunto se parte em
+   * dois blocos de tamanhos diferentes — foi o defeito apontado na revisão.
+   */
+  it('os tiles numéricos ficam todos do mesmo tamanho', () => {
+    renderDetail(PILOT_COMPANY_ID);
+
+    const grid = screen.getByText('Plays criadas').closest('.grid');
+    expect(grid).not.toBeNull();
+    expect(grid!.className).toMatch(/auto-rows-fr/);
+    // 5 colunas de mesma largura (fração igual), não larguras por conteúdo
+    expect(grid!.className).toMatch(/grid-cols-\d/);
+
+    for (const label of ['Plays criadas', 'Dias até fechamento', 'Touchpoints atrasados']) {
+      const tile = screen.getByText(label).closest('.rounded-xl');
+      expect(tile, label).not.toBeNull();
+      expect(tile!.className, `${label} precisa preencher a linha do grid`).toMatch(/h-full/);
+    }
+  });
+
+  /** Todo bloco da página carrega o título DENTRO do próprio box. */
+  it('os títulos dos blocos ficam dentro dos cards, não soltos acima', () => {
+    renderDetail(PILOT_COMPANY_ID);
+
+    for (const title of ['Conta', 'Usuários', 'Funil de adoção', 'Inputs qualitativos']) {
+      const heading = screen.getByText(title);
+      const card = heading.closest('.rounded-xl');
+      expect(card, `"${title}" deveria estar dentro de um card`).not.toBeNull();
+      expect(card!.className).toMatch(/bg-white/);
+    }
+  });
+
+  it('o card de e-mails de touchpoints atrasados vem preenchido no piloto', () => {
+    renderDetail(PILOT_COMPANY_ID);
+    // não é o estado vazio
+    expect(screen.queryByText(/Nenhum e-mail de touchpoint atrasado/)).toBeNull();
+    expect(screen.getByText('Envios')).toBeTruthy();
+    expect(screen.getByText('Taxa de abertura')).toBeTruthy();
+    expect(screen.getByText('Taxa de clique')).toBeTruthy();
+    // e explica por que há cobrança numa conta com 0 atrasados hoje
+    expect(screen.getByText(/Os avisos cobraram até/)).toBeTruthy();
+  });
+
   it('as DEMAIS contas seguem no layout atual, sem as seções do piloto', () => {
     const other = COMPANIES[COMPANIES.length - 1];
     expect(other.id).not.toBe(PILOT_COMPANY_ID);

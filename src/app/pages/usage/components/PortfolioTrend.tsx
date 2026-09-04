@@ -26,6 +26,7 @@ import { BUCKET_META } from '../lib/health';
 import { scoreTimeline } from '../lib/timeline';
 import { bucketTransition } from '../lib/cs';
 import { TREND_BAD, TREND_GOOD } from './colors';
+import { CardHeader } from './CardHeader';
 
 const NAVY = '#212A46';
 const MUTED = '#64748B';
@@ -116,27 +117,23 @@ export function PortfolioTrend({ rows, period, weeks = 12 }: PortfolioTrendProps
       className="bg-white rounded-xl p-5 border border-[#d8d8d8] font-['Euclid_Circular_A',sans-serif]"
       style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
     >
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold" style={{ color: NAVY }}>
-            Tendência da carteira
-          </h3>
-          <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-            Clientes por faixa de risco, semana a semana
+      <CardHeader
+        title="Tendência da carteira"
+        subtitle="Clientes por faixa de risco, semana a semana"
+        /* Gatilhos por TRANSIÇÃO (não por estado): quem mudou de faixa no período */
+        aside={
+          <p className="text-xs tabular-nums text-right shrink-0" style={{ color: MUTED }}>
+            vs. período anterior:{' '}
+            <span style={{ fontWeight: 600, color: movements.worsened > 0 ? TREND_BAD : MUTED }}>
+              {movements.worsened} {movements.worsened === 1 ? 'piorou' : 'pioraram'} de faixa
+            </span>
+            {' · '}
+            <span style={{ fontWeight: 600, color: movements.improved > 0 ? TREND_GOOD : MUTED }}>
+              {movements.improved} {movements.improved === 1 ? 'melhorou' : 'melhoraram'}
+            </span>
           </p>
-        </div>
-        {/* Gatilhos por TRANSIÇÃO (não por estado): quem mudou de faixa no período */}
-        <p className="text-xs tabular-nums" style={{ color: MUTED }}>
-          vs. período anterior:{' '}
-          <span style={{ fontWeight: 600, color: movements.worsened > 0 ? TREND_BAD : MUTED }}>
-            {movements.worsened} {movements.worsened === 1 ? 'piorou' : 'pioraram'} de faixa
-          </span>
-          {' · '}
-          <span style={{ fontWeight: 600, color: movements.improved > 0 ? TREND_GOOD : MUTED }}>
-            {movements.improved} {movements.improved === 1 ? 'melhorou' : 'melhoraram'}
-          </span>
-        </p>
-      </div>
+        }
+      />
 
       {points.length === 0 ? (
         <p className="text-sm py-6 text-center" style={{ color: MUTED }}>
