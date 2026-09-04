@@ -128,8 +128,12 @@ export function UsageCompanyDetailPilot({ company }: { company: Company }) {
         </div>
 
         {/*
-         * FAIXAS 1+2 — mix | saúde à esquerda, funil na coluna da direita
-         * acompanhando a altura inteira (é o desenho da referência).
+         * FAIXAS 1+2 — saúde | mix à esquerda, funil na coluna da direita
+         * acompanhando a altura inteira.
+         *
+         * A saúde vem PRIMEIRO: é a identidade da conta (nome, score, faixa,
+         * ação sugerida) e o motivo de a página ter sido aberta. O mix é uma
+         * das evidências, e evidência não abre a leitura.
          *
          * `items-stretch` no grid externo + `h-full` no funil: a borda de baixo
          * do funil cai EXATAMENTE onde cai a dos tiles. Antes o funil parava na
@@ -140,47 +144,47 @@ export function UsageCompanyDetailPilot({ company }: { company: Company }) {
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-4 items-stretch">
           <div className="flex flex-col gap-4 min-w-0">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
-              <PlayTypeMix mix={mix} />
-
               <section
                 aria-label="Saúde do cliente"
                 className="bg-white rounded-xl border border-[#d8d8d8] p-5 flex flex-col items-center justify-center gap-3 h-full"
                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
               >
-            <HealthScoreRing score={health.score} bucket={health.bucket} size={120} showLabel />
-            <h1 className="text-center leading-tight" style={{ fontSize: 18, fontWeight: 700, color: NAVY }}>
-              {company.name}
-            </h1>
+                <HealthScoreRing score={health.score} bucket={health.bucket} size={120} showLabel />
+                <h1 className="text-center leading-tight" style={{ fontSize: 18, fontWeight: 700, color: NAVY }}>
+                  {company.name}
+                </h1>
 
-            {/* tempo no estado + estágio: "crítico há 3d" ≠ "há 60d" */}
-            <p className="text-center" style={{ fontSize: 12, color: MUTED }}>
-              <span style={{ color: meta.color, fontWeight: 600 }}>
-                {meta.label}
-                {tenureLabel ? ` ${tenureLabel}` : ''}
-              </span>
-              {' · '}
-              {data.stage.label}
-              {transition && (
-                <>
-                  {' · '}
-                  <span style={{ fontWeight: 600, color: transition.dir === 'worsened' ? '#92400E' : MUTED }}>
-                    {BUCKET_META[transition.from].label} → {BUCKET_META[transition.to].label} no período
+                {/* tempo no estado + estágio: "crítico há 3d" ≠ "há 60d" */}
+                <p className="text-center" style={{ fontSize: 12, color: MUTED }}>
+                  <span style={{ color: meta.color, fontWeight: 600 }}>
+                    {meta.label}
+                    {tenureLabel ? ` ${tenureLabel}` : ''}
                   </span>
-                </>
-              )}
-            </p>
+                  {' · '}
+                  {data.stage.label}
+                  {transition && (
+                    <>
+                      {' · '}
+                      <span style={{ fontWeight: 600, color: transition.dir === 'worsened' ? '#92400E' : MUTED }}>
+                        {BUCKET_META[transition.from].label} → {BUCKET_META[transition.to].label} no período
+                      </span>
+                    </>
+                  )}
+                </p>
 
-            <SignalChips
-              signals={[...health.signals, ...data.antecedents].sort(
-                (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
-              )}
-              max={3}
-            />
+                <SignalChips
+                  signals={[...health.signals, ...data.antecedents].sort(
+                    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+                  )}
+                  max={3}
+                />
 
                 <p className="text-center" style={{ fontSize: 11, color: MUTED }}>
                   Playbook: {playbook.label}
                 </p>
               </section>
+
+              <PlayTypeMix mix={mix} />
             </div>
 
             {/* os MESMOS 10 tiles do layout atual (fonte única: `MetricTiles`):
