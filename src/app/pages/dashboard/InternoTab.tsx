@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useCountUp } from "./useCountUp";
 import { ConsumoHistorico } from "./ConsumoHistorico";
+import { PlaysDashboard } from "./internal/PlaysDashboard";
 
 interface StatCard {
   id: string;
@@ -22,6 +23,9 @@ interface StatCard {
 
 const ORANGE = "#FF5F39";
 const RED = "#EF4444";
+const INK = "#212A46";
+const INK_MUTED = "#6B7280";
+const BORDER = "#E5E7EB";
 
 const stats: StatCard[] = [
   { id: "contas", label: "Contas cadastradas", value: 34, icon: Building2 },
@@ -55,6 +59,14 @@ const stats: StatCard[] = [
   },
 ];
 
+/**
+ * Contador da operação.
+ *
+ * Mais compacto do que era: agora divide a aba com o Dashboard de plays, que é
+ * o bloco que responde "como estamos indo". Estes números são o inventário —
+ * contexto, não manchete —, então passaram a caber em quatro colunas sem virar
+ * uma parede de dígitos de 40px.
+ */
 function StatCardItem({ stat }: { stat: StatCard }) {
   const animated = useCountUp(stat.value);
   const Icon = stat.icon;
@@ -63,50 +75,78 @@ function StatCardItem({ stat }: { stat: StatCard }) {
 
   return (
     <div
-      className="bg-white rounded-xl p-5 border border-[#d8d8d8] flex flex-col gap-4"
-      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
+      className="bg-white rounded-xl p-4 border flex items-center gap-3"
+      style={{ borderColor: BORDER, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
     >
-      <div className="flex items-center gap-3">
-        <div
-          className="flex items-center justify-center rounded-lg shrink-0"
+      <div
+        className="flex items-center justify-center rounded-lg shrink-0"
+        style={{
+          width: 36,
+          height: 36,
+          background: isAlert ? "#FEF2F2" : "#FFF1ED",
+        }}
+      >
+        <Icon size={18} style={{ color: accent }} />
+      </div>
+      <div className="min-w-0">
+        <p
+          className="font-['Euclid_Circular_A',sans-serif] tabular-nums leading-none"
           style={{
-            width: 40,
-            height: 40,
-            background: isAlert ? "#FEF2F2" : "#FFF5F3",
+            fontSize: 26,
+            fontWeight: 700,
+            color: isAlert ? RED : INK,
           }}
         >
-          <Icon size={20} style={{ color: accent }} />
-        </div>
+          {animated}
+        </p>
         <p
-          className="font-['Euclid_Circular_A',sans-serif] leading-tight"
-          style={{ fontSize: 13, fontWeight: 600, color: "#212A46" }}
+          className="font-['Euclid_Circular_A',sans-serif] leading-tight mt-1 truncate"
+          style={{ fontSize: 12, fontWeight: 500, color: INK_MUTED }}
+          title={stat.label}
         >
           {stat.label}
         </p>
       </div>
-      <p
-        className="font-['Euclid_Circular_A',sans-serif] tabular-nums"
-        style={{
-          fontSize: 40,
-          fontWeight: 700,
-          color: isAlert ? RED : "#212A46",
-          lineHeight: 1,
-        }}
-      >
-        {animated}
-      </p>
     </div>
   );
 }
 
+/**
+ * Aba "Interno" do Dashboard.
+ *
+ * Três blocos, do mais acionável para o mais estático:
+ *  1. Dashboard de plays — os dados de `/admin/health` do produto real
+ *  2. Operação — o inventário da conta (contas, contatos, dossiês, plays, TPs)
+ *  3. Consumo de IA — o histórico de créditos do time
+ */
 export function InternoTab() {
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => (
-          <StatCardItem key={stat.id} stat={stat} />
-        ))}
-      </div>
+    <div className="space-y-8">
+      <PlaysDashboard />
+
+      <section className="space-y-4">
+        <div>
+          <h2
+            className="font-['Euclid_Circular_A',sans-serif]"
+            style={{ fontSize: 20, fontWeight: 700, color: INK }}
+          >
+            Operação
+          </h2>
+          <p
+            className="font-['Euclid_Circular_A',sans-serif] mt-0.5"
+            style={{ fontSize: 13, color: INK_MUTED }}
+          >
+            O que já está cadastrado e em andamento na conta
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {stats.map((stat) => (
+            <StatCardItem key={stat.id} stat={stat} />
+          ))}
+        </div>
+      </section>
+
       <ConsumoHistorico />
     </div>
   );
