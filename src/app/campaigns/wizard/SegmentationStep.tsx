@@ -51,6 +51,7 @@ import {
   resolveTargetingForAccount,
   PERSON_FACET_KEYS,
   FACET_URN_MAP,
+  setAccountFacet,
 } from "./segmentation/targeting";
 import { useAudienceCount } from "./segmentation/useAudienceCount";
 import { useLinkedInTypeahead } from "./segmentation/useLinkedInTypeahead";
@@ -498,7 +499,7 @@ function CompanyHeroCard({
             )}
             {exc > 0 && (
               <span className="text-xs font-bold bg-red-500 text-white px-2.5 py-1 rounded-full shadow-sm">
-                {exc} excluida{exc !== 1 ? "s" : ""}
+                {exc} excluída{exc !== 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -525,7 +526,7 @@ function CompanyHeroCard({
                 typeahead.query.length >= 2 &&
                 typeahead.setIsOpen(true)
               }
-              placeholder="Buscar empresa por nome ou dominio..."
+              placeholder="Buscar empresa por nome ou domínio..."
               className="w-full pl-12 pr-4 py-3.5 text-sm border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 bg-white shadow-sm placeholder:text-slate-400"
             />
           </div>
@@ -535,7 +536,7 @@ function CompanyHeroCard({
             typeahead.query.length >= 2 && (
               <div className="absolute z-50 top-full mt-2 w-full bg-white rounded-xl border border-slate-200 shadow-lg p-4 flex items-center justify-center gap-2 text-sm text-slate-500">
                 <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                Buscando organizacoes no LinkedIn...
+                Buscando organizações no LinkedIn...
               </div>
             )}
 
@@ -580,12 +581,12 @@ function CompanyHeroCard({
                           </span>
                           {status === "included" && (
                             <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full shrink-0">
-                              incluido
+                              incluído
                             </span>
                           )}
                           {status === "excluded" && (
                             <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full shrink-0">
-                              excluido
+                              excluído
                             </span>
                           )}
                         </div>
@@ -618,6 +619,32 @@ function CompanyHeroCard({
                 })}
               </div>
             )}
+
+          {/* Busca sem resultado ou com erro: mensagem explícita no lugar do dropdown */}
+          {typeahead.isOpen &&
+            !typeahead.isLoading &&
+            (typeahead.status === "empty" ||
+              typeahead.status === "error") && (
+              <div
+                role="status"
+                className={`absolute z-50 top-full mt-2 w-full bg-white rounded-xl border shadow-lg p-4 flex items-start gap-2 text-sm ${
+                  typeahead.status === "error"
+                    ? "border-red-200 text-red-700"
+                    : "border-slate-200 text-slate-600"
+                }`}
+              >
+                {typeahead.status === "error" ? (
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                ) : (
+                  <Search className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />
+                )}
+                <span>
+                  {typeahead.status === "error"
+                    ? "Não foi possível buscar no LinkedIn agora. Verifique a conexão em Integrações."
+                    : `Nenhuma empresa encontrada para “${typeahead.query}”. Confira a grafia ou busque pelo domínio.`}
+                </span>
+              </div>
+            )}
         </div>
 
         {/* Selected Companies - Rich Cards */}
@@ -626,7 +653,7 @@ function CompanyHeroCard({
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-blue-600" />
               <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">
-                Empresas Incluidas ({selection.included.length})
+                Empresas Incluídas ({selection.included.length})
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -727,7 +754,7 @@ function CompanyHeroCard({
             <div className="flex items-center gap-2">
               <Minus className="w-4 h-4 text-red-500" />
               <p className="text-xs font-bold text-red-600 uppercase tracking-wider">
-                Empresas Excluidas ({selection.excluded.length})
+                Empresas Excluídas ({selection.excluded.length})
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -863,7 +890,7 @@ function CompanyHeroCard({
               <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
                 Comece digitando o nome da empresa no campo de
                 busca acima para segmentar profissionais de
-                empresas especificas
+                empresas específicas
               </p>
             </div>
           )}
@@ -1099,12 +1126,12 @@ function FacetCard({
                           </div>
                           {status === "included" && (
                             <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                              incluido
+                              incluído
                             </span>
                           )}
                           {status === "excluded" && (
                             <span className="text-[10px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
-                              excluido
+                              excluído
                             </span>
                           )}
                         </button>
@@ -1127,7 +1154,7 @@ function FacetCard({
                     onChange={(e) =>
                       setFilterText(e.target.value)
                     }
-                    placeholder="Filtrar opcoes..."
+                    placeholder="Filtrar opções..."
                     className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -1211,6 +1238,9 @@ function FacetCard({
 // Audience Summary Panel
 // ===============================
 
+// Mínimo de membros que o LinkedIn aceita por conjunto de anúncio.
+const MIN_AUDIENCE = 300;
+
 function AudienceSummary({ data }: { data: TargetingData }) {
   const {
     count: estimatedSize,
@@ -1222,39 +1252,42 @@ function AudienceSummary({ data }: { data: TargetingData }) {
 
   const getStatus = () => {
     if (!hasAnySelection || estimatedSize === null) return null;
-    if (isPrivacyFloor)
+    // O LinkedIn exige no mínimo 300 membros por conjunto de anúncio. O
+    // privacy floor (API devolve 0) significa justamente "menos de 300".
+    if (isPrivacyFloor || estimatedSize < MIN_AUDIENCE)
       return {
-        color: "amber",
-        icon: <Info className="w-4 h-4" />,
-        label: "Abaixo do limite de privacidade do LinkedIn",
+        color: "red",
+        icon: <AlertTriangle className="w-4 h-4" />,
+        label:
+          "Público abaixo de 300 pessoas: o LinkedIn não aceita. Adicione localizações ou remova filtros de senioridade/função.",
       };
     if (estimatedSize >= 5000)
       return {
         color: "green",
         icon: <CheckCircle2 className="w-4 h-4" />,
-        label: "Publico saudavel",
+        label: "Público saudável",
       };
     if (estimatedSize >= 1000)
       return {
         color: "amber",
         icon: <Zap className="w-4 h-4" />,
-        label: "Segmentacao precisa",
+        label: "Segmentação precisa",
       };
     return {
       color: "red",
       icon: <AlertTriangle className="w-4 h-4" />,
-      label: "Publico pequeno",
+      label: "Público pequeno: a entrega pode ficar limitada",
     };
   };
 
   const status = getStatus();
 
   const facetLabels: Record<keyof PersonTargeting, string> = {
-    locations: "Localizacao",
+    locations: "Localização",
     seniorities: "Senioridade",
-    jobFunctions: "Funcao / Area",
+    jobFunctions: "Função / Área",
     jobTitles: "Cargo",
-    yearsOfExperience: "Anos de Experiencia",
+    yearsOfExperience: "Anos de Experiência",
   };
 
   // The sidebar summarizes the DEFAULT person facets ("Padrão — todas as
@@ -1273,7 +1306,7 @@ function AudienceSummary({ data }: { data: TargetingData }) {
       {/* Estimated Audience */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-          Audiencia Estimada
+          Audiência Estimada
         </p>
         {hasAnySelection && estimatedSize !== null ? (
           <>
@@ -1295,7 +1328,7 @@ function AudienceSummary({ data }: { data: TargetingData }) {
             </p>
             {status && (
               <div
-                className={`mt-3 flex items-center gap-2 text-sm font-medium rounded-lg px-3 py-2 ${
+                className={`mt-3 flex items-start gap-2 text-sm font-medium rounded-lg px-3 py-2 [&>svg]:shrink-0 [&>svg]:mt-0.5 ${
                   status.color === "green"
                     ? "bg-green-50 text-green-700"
                     : status.color === "amber"
@@ -1314,7 +1347,7 @@ function AudienceSummary({ data }: { data: TargetingData }) {
               <Target className="w-6 h-6 text-slate-400" />
             </div>
             <p className="text-sm text-slate-400">
-              Selecione facets para estimar o publico
+              Selecione critérios para estimar o público
             </p>
           </div>
         )}
@@ -1415,8 +1448,8 @@ function AudienceSummary({ data }: { data: TargetingData }) {
           <p className="text-xs text-slate-500">
             A estimativa usa a API de Audience Count do LinkedIn
             quando conectado. Quando offline, exibe uma
-            estimativa local aproximada. O numero final pode
-            variar apos a publicacao.
+            estimativa local aproximada. O número final pode
+            variar após a publicação.
           </p>
         </div>
       </div>
@@ -1444,8 +1477,8 @@ const PERSON_FACET_CONFIG: Array<{
   {
     key: "locations",
     icon: <MapPin className="w-4 h-4" />,
-    label: "Localizacao",
-    description: "Regioes geograficas dos profissionais",
+    label: "Localização",
+    description: "Regiões geográficas dos profissionais",
     type: "typeahead",
     required: true,
   },
@@ -1453,15 +1486,15 @@ const PERSON_FACET_CONFIG: Array<{
     key: "seniorities",
     icon: <Target className="w-4 h-4" />,
     label: "Senioridade",
-    description: "Nivel hierarquico do profissional",
+    description: "Nível hierárquico do profissional",
     type: "fixed",
     options: SENIORITY_OPTIONS,
   },
   {
     key: "jobFunctions",
     icon: <Briefcase className="w-4 h-4" />,
-    label: "Funcao / Area",
-    description: "Area funcional do profissional",
+    label: "Função / Área",
+    description: "Área funcional do profissional",
     type: "filtered-fixed",
     options: JOB_FUNCTION_OPTIONS,
   },
@@ -1469,14 +1502,14 @@ const PERSON_FACET_CONFIG: Array<{
     key: "jobTitles",
     icon: <User className="w-4 h-4" />,
     label: "Cargo (Job Title)",
-    description: "Titulo especifico do profissional",
+    description: "Título específico do profissional",
     type: "typeahead",
   },
   {
     key: "yearsOfExperience",
     icon: <Clock className="w-4 h-4" />,
-    label: "Anos de Experiencia",
-    description: "Tempo de experiencia profissional",
+    label: "Anos de Experiência",
+    description: "Tempo de experiência profissional",
     type: "fixed",
     options: EXPERIENCE_OPTIONS,
   },
@@ -1524,7 +1557,7 @@ export function SegmentationStep({
 
   // Edit a facet of the active ad set. On the default panel, write to
   // defaultTargeting. On an account, create/update its override (seeded from
-  // the default the first time it diverges).
+  // the default the first time it diverges; dropped again when it matches).
   const updateActiveFacet = useCallback(
     (facetKey: keyof PersonTargeting, sel: FacetSelection) => {
       if (isDefault) {
@@ -1534,14 +1567,8 @@ export function SegmentationStep({
         });
         return;
       }
-      const base = data.overrides[activeId] ?? data.defaultTargeting;
-      onChange({
-        ...data,
-        overrides: {
-          ...data.overrides,
-          [activeId]: { ...base, [facetKey]: sel },
-        },
-      });
+      // Override igual ao padrão é descartado (ver setAccountFacet).
+      onChange(setAccountFacet(data, activeId, facetKey, sel));
     },
     [activeId, isDefault, data, onChange],
   );
@@ -1573,9 +1600,9 @@ export function SegmentationStep({
       <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
         <p className="text-xs text-amber-800">
-          Ferramentas do LinkedIn nao podem ser usadas para
-          discriminar com base em caracteristicas pessoais como
-          genero, idade, raca ou etnia.
+          Ferramentas do LinkedIn não podem ser usadas para
+          discriminar com base em características pessoais como
+          gênero, idade, raça ou etnia.
         </p>
       </div>
 

@@ -74,7 +74,9 @@ export function createDefaultCampaignConfig(): CampaignConfig {
     campaignType: 'SPONSORED_UPDATES',
     costType: 'CPM',
     budgetType: 'daily',
-    budgetAmount: '500',
+    // Sem valor padrão: o '500' pré-preenchido gerava campanhas caras sem o
+    // anunciante perceber. O mínimo do LinkedIn (10/dia) é cobrado no gate.
+    budgetAmount: '',
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
     autoActivate: false,
@@ -291,10 +293,13 @@ export function resolveCreativeForCompany(
 }
 
 // Objective → API type + costType mapping (synced with server CAMPAIGN_OBJECTIVE_MAP)
+/** Mínimo de orçamento por conjunto aceito pelo LinkedIn (diário ou total). */
+export const MIN_BUDGET_PER_AD_SET = 10;
+
 export const OBJECTIVE_MAP: Record<string, { type: string; costType: string; label: string; description: string }> = {
-  brand_awareness:  { type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Brand Awareness', description: 'Maximiza impressões nas contas-alvo. Recomendado para ABM.' },
-  website_visits:   { type: 'SPONSORED_UPDATES', costType: 'CPC', label: 'Website Visits', description: 'Direciona tráfego para landing pages personalizadas.' },
-  engagement:       { type: 'SPONSORED_UPDATES', costType: 'CPC', label: 'Engagement', description: 'Aumenta interações com o conteúdo do anúncio.' },
-  lead_generation:  { type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Lead Generation', description: 'Coleta leads diretamente no LinkedIn via Lead Gen Forms.' },
-  video_views:      { type: 'SPONSORED_UPDATES', costType: 'CPV', label: 'Video Views', description: 'Otimiza para reproduções de vídeo.' },
+  brand_awareness:  { type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Reconhecimento da marca', description: 'Maximiza impressões nas contas-alvo. Recomendado para ABM.' },
+  website_visits:   { type: 'SPONSORED_UPDATES', costType: 'CPC', label: 'Visitas ao site', description: 'Direciona tráfego para landing pages personalizadas.' },
+  engagement:       { type: 'SPONSORED_UPDATES', costType: 'CPC', label: 'Engajamento', description: 'Aumenta interações com o conteúdo do anúncio.' },
+  lead_generation:  { type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Geração de leads', description: 'Coleta leads diretamente no LinkedIn via formulário nativo.' },
+  video_views:      { type: 'SPONSORED_UPDATES', costType: 'CPV', label: 'Visualizações de vídeo', description: 'Otimiza para reproduções de vídeo.' },
 };

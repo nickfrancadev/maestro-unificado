@@ -4,7 +4,7 @@ import type { AccountAnalytics } from '@/lib/linkedin';
 import { sumTotals } from '@/lib/linkedin';
 import { accountColor, buildAccountRows } from './accountAnalytics';
 import { AccountDetailPanel } from './AccountDetailPanel';
-import { fmtCurrency, fmtNum } from './format';
+import { fmtCurrency, fmtNum, fmtPct, fmtOptional } from './format';
 
 interface AccountPerformanceTableProps {
   accounts: AccountAnalytics[];   // todas as contas, na ordem original (cores estáveis)
@@ -19,10 +19,10 @@ type SortKey = 'spend' | 'impressions' | 'clicks' | 'ctr' | 'cpc' | 'conv' | 'le
 export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, expandInline, currency }: AccountPerformanceTableProps) {
   const rows = useMemo(() => buildAccountRows(accounts), [accounts]);
   const totals = useMemo(() => sumTotals(accounts), [accounts]);
-  const totalCtr = totals.impressions > 0 ? ((totals.clicks / totals.impressions) * 100).toFixed(2) : '0';
-  const totalCpc = totals.clicks > 0 ? (totals.costInLocalCurrency / totals.clicks).toFixed(2) : '0';
-  const totalCpl = totals.oneClickLeads > 0 ? (totals.costInLocalCurrency / totals.oneClickLeads).toFixed(2) : null;
-  const cy = currency === 'BRL' ? 'R$' : '$';
+  const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+  const totalCpc = totals.clicks > 0 ? totals.costInLocalCurrency / totals.clicks : 0;
+  const totalCpl = totals.oneClickLeads > 0 ? totals.costInLocalCurrency / totals.oneClickLeads : null;
+  const money = (v: number) => fmtCurrency(v, currency);
 
   const [sortKey, setSortKey] = React.useState<SortKey>('spend');
   const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc');
@@ -33,11 +33,11 @@ export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, ex
       case 'spend': return t.costInLocalCurrency;
       case 'impressions': return t.impressions;
       case 'clicks': return t.clicks;
-      case 'ctr': return parseFloat(r.ctr);
-      case 'cpc': return parseFloat(r.cpc);
+      case 'ctr': return r.ctr;
+      case 'cpc': return r.cpc;
       case 'conv': return t.externalWebsiteConversions;
       case 'leads': return t.oneClickLeads;
-      case 'cpl': return r.cpl ? parseFloat(r.cpl) : -1;
+      case 'cpl': return r.cpl ?? -1;
     }
   };
 
@@ -78,15 +78,16 @@ export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, ex
         </h3>
         <p className="text-xs text-slate-400 mt-0.5">Cada empresa-alvo tem seu próprio conjunto de anúncios. Clique numa linha para ver o detalhe.</p>
       </div>
+      {/* Valores em pt-BR ("R$ 1.234,56") não quebram linha; a tabela rola na horizontal */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm whitespace-nowrap">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
               <th className="px-4 py-2.5 w-6" />
               <th className="px-2 py-2.5 font-medium">Empresa</th>
-              <SortableTh k="spend">Spend</SortableTh>
+              <SortableTh k="spend">Investimento</SortableTh>
               <SortableTh k="impressions">Impressões</SortableTh>
-              <SortableTh k="clicks">Clicks</SortableTh>
+              <SortableTh k="clicks">Cliques</SortableTh>
               <SortableTh k="ctr">CTR</SortableTh>
               <SortableTh k="cpc">CPC</SortableTh>
               <SortableTh k="conv">Conv.</SortableTh>
@@ -128,11 +129,11 @@ export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, ex
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right text-slate-600">{fmtNum(account.totals.clicks)}</td>
-                    <td className="px-3 py-3 text-right text-slate-600">{ctr}%</td>
-                    <td className="px-3 py-3 text-right text-slate-600">{cy}{cpc}</td>
-                    <td className="px-3 py-3 text-right text-slate-600">{account.totals.externalWebsiteConversions}</td>
-                    <td className="px-3 py-3 text-right text-slate-600">{account.totals.oneClickLeads}</td>
-                    <td className="px-4 py-3 text-right text-slate-600">{cpl ? `${cy}${cpl}` : '—'}</td>
+                    <td className="px-3 py-3 text-right text-slate-600">{fmtPct(ctr)}</td>
+                    <td className="px-3 py-3 text-right text-slate-600">{money(cpc)}</td>
+                    <td className="px-3 py-3 text-right text-slate-600">{fmtOptional(account.totals.externalWebsiteConversions)}</td>
+                    <td className="px-3 py-3 text-right text-slate-600">{fmtOptional(account.totals.oneClickLeads)}</td>
+                    <td className="px-4 py-3 text-right text-slate-600">{fmtOptional(cpl, money)}</td>
                   </tr>
                   {expandInline && expanded && (
                     <tr>
@@ -152,11 +153,11 @@ export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, ex
               <td className="px-3 py-3 text-right">{fmtCurrency(totals.costInLocalCurrency, currency)}</td>
               <td className="px-3 py-3 text-right">{fmtNum(totals.impressions)}</td>
               <td className="px-3 py-3 text-right">{fmtNum(totals.clicks)}</td>
-              <td className="px-3 py-3 text-right">{totalCtr}%</td>
-              <td className="px-3 py-3 text-right">{cy}{totalCpc}</td>
-              <td className="px-3 py-3 text-right">{totals.externalWebsiteConversions}</td>
-              <td className="px-3 py-3 text-right">{totals.oneClickLeads}</td>
-              <td className="px-4 py-3 text-right">{totalCpl ? `${cy}${totalCpl}` : '—'}</td>
+              <td className="px-3 py-3 text-right">{fmtPct(totalCtr)}</td>
+              <td className="px-3 py-3 text-right">{money(totalCpc)}</td>
+              <td className="px-3 py-3 text-right">{fmtOptional(totals.externalWebsiteConversions)}</td>
+              <td className="px-3 py-3 text-right">{fmtOptional(totals.oneClickLeads)}</td>
+              <td className="px-4 py-3 text-right">{fmtOptional(totalCpl, money)}</td>
             </tr>
           </tfoot>
         </table>

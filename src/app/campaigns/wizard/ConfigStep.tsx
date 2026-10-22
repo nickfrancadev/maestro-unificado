@@ -10,7 +10,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import type { CampaignConfig } from './types';
-import { OBJECTIVE_MAP } from './types';
+import { OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET } from './types';
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 
 interface ConfigStepProps {
@@ -96,7 +96,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                 type="text"
                 value={config.campaignName}
                 onChange={(e) => update({ campaignName: e.target.value })}
-                placeholder="Ex: Nubank — Q1 2026 Brand Awareness"
+                placeholder="Ex.: Nubank — Q1 2026 Reconhecimento"
                 className="w-full p-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-[#FF5F39] outline-none placeholder:text-slate-400"
               />
             </div>
@@ -173,7 +173,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
 
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">
-                Valor por campanha ({currency})
+                Orçamento por conjunto ({currency})
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-slate-500 text-sm font-medium">{currencySymbol}</span>
@@ -181,8 +181,9 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                   type="number"
                   value={config.budgetAmount}
                   onChange={(e) => update({ budgetAmount: e.target.value })}
-                  min="10"
+                  min={MIN_BUDGET_PER_AD_SET}
                   step="10"
+                  placeholder="Ex.: 50"
                   className="w-full p-2.5 pl-10 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 outline-none focus:ring-2 focus:ring-[#FF5F39]"
                 />
               </div>
@@ -191,8 +192,8 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                   Orçamento por conjunto de anúncio (cada empresa-alvo).
                 </p>
               )}
-              {parseFloat(config.budgetAmount) > 0 && parseFloat(config.budgetAmount) < 10 && (
-                <p className="text-xs text-red-500 mt-1">Budget mínimo: {currencySymbol}10{config.budgetType === 'daily' ? '/dia' : ''}</p>
+              {parseFloat(config.budgetAmount) > 0 && parseFloat(config.budgetAmount) < MIN_BUDGET_PER_AD_SET && (
+                <p className="text-xs text-red-500 mt-1">O LinkedIn aceita no mínimo {currencySymbol}{MIN_BUDGET_PER_AD_SET}{config.budgetType === 'daily' ? '/dia' : ''} por conjunto.</p>
               )}
             </div>
 
@@ -309,7 +310,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                     <p className="text-xs text-slate-500 mt-0.5">
                       {config.autoActivate
                         ? 'Todas as campanhas serão ativadas automaticamente.'
-                        : 'Campanhas criadas como PAUSED. Ative manualmente depois.'}
+                        : 'As campanhas são criadas pausadas. Ative quando quiser.'}
                     </p>
                   </div>
                   <button
@@ -347,8 +348,8 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
                     <span className="font-medium">{OBJECTIVE_MAP[config.objective]?.label || config.objective}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#FF5F39]">Budget/conjunto:</span>
-                    <span className="font-medium">{currencySymbol}{config.budgetAmount} {config.budgetType === 'daily' ? '/dia' : 'total'}</span>
+                    <span className="text-[#FF5F39]">Orçamento por conjunto:</span>
+                    <span className="font-medium">{config.budgetAmount ? `${currencySymbol}${config.budgetAmount} ${config.budgetType === 'daily' ? '/dia' : 'total'}` : '—'}</span>
                   </div>
                 </div>
               </div>

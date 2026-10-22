@@ -27,6 +27,8 @@ import {
 } from '@/lib/linkedin';
 import type { LinkedInCampaign, CampaignAnalyticsSummary } from '@/lib/linkedin';
 import { MOCK_CAMPAIGN, MOCK_CAMPAIGN_SUMMARY, MOCK_CAMPAIGN_ID, isMockCampaign } from '@/lib/mockCampaignData';
+import { fmtCurrency, fmtNum, fmtOptional, fmtPct } from './format';
+import { statusLabel, plural } from './labels';
 
 interface CampaignRow {
   id: string;
@@ -40,6 +42,8 @@ interface CampaignRow {
   endDate: number | null;
   analytics?: CampaignAnalyticsSummary | null;
   analyticsLoading?: boolean;
+  /** O resumo de performance não carregou: mostra "—" em vez de zeros falsos. */
+  analyticsFailed?: boolean;
   actionLoading?: boolean;
 }
 
@@ -68,16 +72,56 @@ function formatDate(ts: number | null): string {
   return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-function formatCurrency(amount: number, currency: string): string {
-  const symbol = currency === 'BRL' ? 'R$' : '$';
-  return `${symbol} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const DAY_MS = 1000 * 60 * 60 * 24;
+
+/** Janela do resumo de performance (/linkedin/campaign-analytics-summary): últimos 90 dias. */
+export const SUMMARY_WINDOW_DAYS = 90;
+
+function getDaysActive(startTs: number | null, endTs: number | null, now = Date.now()): number | null {
+  if (!startTs) return null;
+  const until = endTs ? Math.min(endTs, now) : now;
+  const diff = until - startTs;
+  if (diff < 0) return 0;
+  return Math.ceil(diff / DAY_MS);
 }
 
-function getDaysActive(startTs: number | null): number | null {
-  if (!startTs) return null;
-  const diff = Date.now() - startTs;
-  if (diff < 0) return 0;
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+export interface BudgetUsage {
+  /** Orçamento esperado no mesmo período do gasto. */
+  base: number;
+  /** Gasto / base em %, sem teto (pode passar de 100). */
+  pct: number;
+  /** Dias considerados quando o orçamento é diário. */
+  days: number | null;
+}
+
+/**
+ * Compara o gasto com o orçamento do MESMO período. O gasto vem do resumo dos
+ * últimos 90 dias (ou da vida toda, na campanha de demonstração), então:
+ * - orçamento total: compara direto com o total;
+ * - orçamento diário: compara com diário × dias em que a campanha rodou dentro
+ *   da janela do resumo — começa no maior entre (agora − janela) e o início da
+ *   campanha, e termina no menor entre agora e o fim da campanha.
+ * Antes o gasto de 90 dias era dividido pelo orçamento de UM dia e a barra
+ * saturava em 100% para qualquer campanha com mais de um dia no ar.
+ * `windowDays = null` = o gasto cobre a vida toda da campanha.
+ */
+export function budgetUsage(
+  row: Pick<CampaignRow, 'budget' | 'budgetType' | 'startDate' | 'endDate'>,
+  spent: number,
+  windowDays: number | null = SUMMARY_WINDOW_DAYS,
+  now = Date.now(),
+): BudgetUsage | null {
+  if (row.budget <= 0) return null;
+  if (row.budgetType === 'total') {
+    return { base: row.budget, pct: (spent / row.budget) * 100, days: null };
+  }
+  const windowStart = windowDays == null ? -Infinity : now - windowDays * DAY_MS;
+  const from = row.startDate ? Math.max(row.startDate, windowStart) : windowStart;
+  const to = row.endDate ? Math.min(row.endDate, now) : now;
+  if (!Number.isFinite(from) || to <= from) return null;
+  const days = Math.max(1, Math.ceil((to - from) / DAY_MS));
+  const base = row.budget * days;
+  return { base, pct: (spent / base) * 100, days };
 }
 
 // Confirmation Dialog
@@ -171,11 +215,23 @@ export function CampaignList() {
             if (result.status === 'fulfilled') {
               const idx = updated.findIndex(r => r.id === result.value.id);
               if (idx >= 0) {
-                updated[idx] = { ...updated[idx], analytics: result.value.summary, analyticsLoading: false };
+                // O servidor devolve `error` quando a chamada ao LinkedIn quebra.
+                const failed = !!(result.value.summary as { error?: string }).error;
+                updated[idx] = {
+                  ...updated[idx],
+                  analytics: failed ? null : result.value.summary,
+                  analyticsFailed: failed,
+                  analyticsLoading: false,
+                };
               }
             }
           }
-          return updated;
+          // Requisições rejeitadas: tira o "Carregando..." e marca como falha.
+          return updated.map(r =>
+            r.analyticsLoading && toFetch.some(t => t.id === r.id)
+              ? { ...r, analyticsLoading: false, analyticsFailed: true }
+              : r
+          );
         });
       }
     } catch (err) {
@@ -265,8 +321,7 @@ export function CampaignList() {
   // Summary counters
   const activeCount = campaigns.filter(c => c.status === 'Active').length;
   const pausedCount = campaigns.filter(c => c.status === 'Paused').length;
-  const totalSpend = campaigns.reduce((s, c) => s + (c.analytics?.cost || 0), 0);
-
+  
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
@@ -375,9 +430,13 @@ export function CampaignList() {
                 </>
               )}
               {!loading && filteredCampaigns.map((campaign) => {
-                const daysActive = getDaysActive(campaign.startDate);
-                const spent = campaign.analytics?.cost || 0;
-                const budgetPct = campaign.budget > 0 ? Math.min((spent / campaign.budget) * 100, 100) : 0;
+                const daysActive = getDaysActive(campaign.startDate, campaign.endDate);
+                // null = gasto desconhecido (sem dados ou falha) → "—", nunca R$ 0,00 falso.
+                const spent = campaign.analytics && !campaign.analyticsFailed ? campaign.analytics.cost : null;
+                const usage = spent != null
+                  ? budgetUsage(campaign, spent, isMockCampaign(campaign.id) ? null : SUMMARY_WINDOW_DAYS)
+                  : null;
+                const fmtMoney = (n: number) => fmtCurrency(n, campaign.budgetCurrency);
 
                 return (
                   <tr key={campaign.id} className="hover:bg-slate-50 group transition-colors">
@@ -395,7 +454,7 @@ export function CampaignList() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(campaign.status)}`}>
-                          {campaign.status}
+                          {statusLabel(campaign.status)}
                         </span>
                         {campaign.actionLoading && (
                           <Loader2 className="w-3.5 h-3.5 text-[#FF5F39] animate-spin" />
@@ -406,21 +465,29 @@ export function CampaignList() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-1 text-sm font-medium text-slate-900">
                           <Wallet className="w-3.5 h-3.5 text-slate-400" />
-                          {formatCurrency(campaign.budget, campaign.budgetCurrency)}
+                          {fmtMoney(campaign.budget)}
                           <span className="text-xs text-slate-400 font-normal ml-1">
                             ({campaign.budgetType === 'daily' ? '/dia' : 'total'})
                           </span>
                         </div>
-                        {campaign.budget > 0 && (
+                        {campaign.status !== 'Draft' && !campaign.analyticsLoading && (
+                          <div className="text-xs text-slate-600">
+                            Gasto: <span className="font-semibold text-slate-900">{fmtOptional(spent, fmtMoney)}</span>
+                          </div>
+                        )}
+                        {usage && (
                           <>
                             <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                               <div 
                                 className="h-full bg-[#FF5F39] rounded-full" 
-                                style={{ width: `${budgetPct}%` }}
+                                style={{ width: `${Math.min(usage.pct, 100)}%` }}
                               ></div>
                             </div>
-                            <span className="text-xs text-slate-500">
-                              {budgetPct.toFixed(0)}% consumido
+                            <span
+                              className="text-xs text-slate-500"
+                              title={`Gasto comparado com ${fmtMoney(usage.base)}${usage.days != null ? ` (${fmtMoney(campaign.budget)} × ${plural(usage.days, 'dia')})` : ''}`}
+                            >
+                              {fmtPct(usage.pct, 0)} {usage.days != null ? `do previsto em ${plural(usage.days, 'dia')}` : 'do orçamento'}
                             </span>
                           </>
                         )}
@@ -434,20 +501,22 @@ export function CampaignList() {
                           <Loader2 className="w-3 h-3 animate-spin" />
                           Carregando...
                         </div>
+                      ) : campaign.analyticsFailed ? (
+                        <span className="text-xs text-slate-400" title="Não foi possível carregar a performance">—</span>
                       ) : campaign.analytics ? (
                         <div className="space-y-1">
                           <div className="flex gap-4">
                             <div className="text-xs">
                               <span className="text-slate-500 block">Impr.</span>
-                              <span className="font-semibold text-slate-700">{campaign.analytics.impressions.toLocaleString()}</span>
+                              <span className="font-semibold text-slate-700">{fmtNum(campaign.analytics.impressions)}</span>
                             </div>
                             <div className="text-xs">
-                              <span className="text-slate-500 block">Clicks</span>
-                              <span className="font-semibold text-slate-700">{campaign.analytics.clicks.toLocaleString()}</span>
+                              <span className="text-slate-500 block">Cliques</span>
+                              <span className="font-semibold text-slate-700">{fmtNum(campaign.analytics.clicks)}</span>
                             </div>
                             <div className="text-xs">
                               <span className="text-slate-500 block">CTR</span>
-                              <span className="font-semibold text-slate-700">{campaign.analytics.ctr}%</span>
+                              <span className="font-semibold text-slate-700">{fmtPct(parseFloat(campaign.analytics.ctr) || 0)}</span>
                             </div>
                           </div>
                         </div>
@@ -468,7 +537,7 @@ export function CampaignList() {
                         )}
                         {daysActive !== null && campaign.status !== 'Draft' && (
                           <div className="text-xs text-slate-400 pl-6">
-                            {daysActive} dias ativa
+                            {plural(daysActive, 'dia')} ativa
                           </div>
                         )}
                       </div>

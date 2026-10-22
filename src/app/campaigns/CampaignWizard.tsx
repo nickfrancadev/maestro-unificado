@@ -17,7 +17,7 @@ import { OrchestrationStep } from './wizard/OrchestrationStep';
 import { SegmentationStep, createEmptyTargeting } from './wizard/SegmentationStep';
 import { canProceedFromStep } from './wizard/wizardGates';
 import type { TargetingData } from './wizard/SegmentationStep';
-import { TargetAccount, CampaignConfig, createDefaultCampaignConfig } from './wizard/types';
+import { TargetAccount, CampaignConfig, createDefaultCampaignConfig, MIN_BUDGET_PER_AD_SET } from './wizard/types';
 import { CreativeData, createDefaultCreativeData } from './wizard/types';
 import type { BriefDraft } from './wizard/BriefPane';
 import { getLinkedInStatus } from '@/lib/linkedin';
@@ -94,13 +94,19 @@ export function CampaignWizard() {
     canProceedFromStep(currentStep, { campaignConfig, targetingData, creativeData });
 
   const getStepSummary = () => {
+    // Com o botão desabilitado, a frase diz o que falta; liberado, resume o passo.
     if (currentStep === 1) {
-      return campaignConfig.campaignName.trim() ? 'Campanha nomeada' : 'Nomeie a campanha';
+      if (!campaignConfig.campaignName.trim()) return 'Nomeie a campanha';
+      if (!(parseFloat(campaignConfig.budgetAmount) >= MIN_BUDGET_PER_AD_SET)) {
+        return `Defina o orçamento por conjunto (mínimo ${MIN_BUDGET_PER_AD_SET})`;
+      }
+      return 'Campanha configurada';
     }
     if (currentStep === 2) {
       const n = targetingData.companies.included.length;
       const custom = Object.keys(targetingData.overrides).length;
-      if (n === 0) return 'Selecione ao menos 1 conta';
+      if (n === 0) return 'Selecione ao menos 1 empresa-alvo';
+      if (!canProceed()) return 'Defina a localização de cada conjunto';
       return `${n} conjunto${n !== 1 ? 's' : ''} de anúncio${custom > 0 ? ` · ${custom} personalizado${custom !== 1 ? 's' : ''}` : ''}`;
     }
     if (currentStep === 3) {
@@ -109,6 +115,10 @@ export function CampaignWizard() {
       // explicação, já que o campo na tela *parece* preenchido.
       if (briefDraft.voice.trim()) return 'Salve a marca para continuar';
       return 'Defina o tom de voz da marca';
+    }
+    if (currentStep === 4 && !canProceed()) {
+      if (!creativeData.landingPageUrl?.trim()) return 'Defina a URL de destino';
+      return 'Complete título, texto e imagem do template (ou de cada empresa)';
     }
     return '';
   };
@@ -140,7 +150,7 @@ export function CampaignWizard() {
                   step.id < currentStep ? 'cursor-pointer' : 'cursor-default'
                 } ${
                   currentStep === step.id
-                    ? 'text-blue-600'
+                    ? 'text-[#FF5F39]'
                     : currentStep > step.id
                       ? 'text-green-600'
                       : 'text-slate-400'
@@ -150,7 +160,7 @@ export function CampaignWizard() {
                   className={`w-7 h-7 rounded-full flex items-center justify-center border-2 font-bold text-xs transition-colors
                   ${
                     currentStep === step.id
-                      ? 'border-blue-600 bg-blue-50'
+                      ? 'border-[#FF5F39] bg-orange-50'
                       : currentStep > step.id
                         ? 'border-green-600 bg-green-50'
                         : 'border-slate-300'
@@ -269,8 +279,8 @@ export function CampaignWizard() {
               disabled={!canProceed()}
               className={`px-6 py-2.5 rounded-lg font-medium shadow-sm transition-colors flex items-center gap-2 ${
                 !canProceed()
-                  ? 'bg-blue-300 text-white cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  ? 'bg-[#FF5F39]/40 text-white cursor-not-allowed'
+                  : 'bg-[#FF5F39] hover:bg-[#E54A26] text-white'
               }`}
             >
               Próximo Passo
@@ -278,7 +288,7 @@ export function CampaignWizard() {
             </button>
           ) : (
             // No button here — the Go Live is inside OrchestrationStep
-            <span className="text-xs text-slate-400">Use o botão "Go Live" acima para lançar.</span>
+            <span className="text-xs text-slate-400">Use o botão "Publicar campanha" acima para lançar.</span>
           )}
         </div>
       </div>

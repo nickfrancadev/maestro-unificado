@@ -209,20 +209,20 @@ describe('CreativeStep — botões de geração por bloco', () => {
     openCard('Destino');
 
     const url = screen.getByDisplayValue('/p/campanha-geral');
-    expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Saiba mais')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Voltar ao template/ })).not.toBeInTheDocument();
 
     fireEvent.change(url, { target: { value: '/p/nubank' } });
-    fireEvent.change(screen.getByDisplayValue('Learn More'), { target: { value: 'REQUEST_DEMO' } });
+    fireEvent.change(screen.getByDisplayValue('Saiba mais'), { target: { value: 'REQUEST_DEMO' } });
 
     expect(screen.getByDisplayValue('/p/nubank')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Request Demo')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Solicitar demonstração')).toBeInTheDocument();
 
     // O template segue intocado. (Trocar de alvo recolhe o acordeão.)
     goTo(/Template global/);
     openCard('Destino');
     expect(screen.getByDisplayValue('/p/campanha-geral')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Learn More')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Saiba mais')).toBeInTheDocument();
   });
 
   it('o CTA do preview segue o override da empresa, não o do template', () => {
@@ -232,7 +232,7 @@ describe('CreativeStep — botões de geração por bloco', () => {
     });
     goTo(/Nubank/);
 
-    expect(screen.getByRole('button', { name: 'Request Demo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Solicitar demonstração' })).toBeInTheDocument();
   });
 
   it('o Brand Brief sai do header e passa a ser acessível pelo card de Texto', () => {

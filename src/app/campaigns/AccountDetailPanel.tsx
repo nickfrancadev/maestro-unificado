@@ -3,7 +3,7 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tool
 import { ArrowLeft, DollarSign, Eye, MousePointerClick, TrendingUp, Heart, Share2, MessageCircle, UserPlus, Users, Megaphone } from 'lucide-react';
 import type { AccountAnalytics } from '@/lib/linkedin';
 import { accountColor } from './accountAnalytics';
-import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
+import { fmtCurrency, fmtNum, fmtPct, fmtOptional, fmtDateLabel } from './format';
 
 export interface AccountDetailPanelProps {
   account: AccountAnalytics;
@@ -16,14 +16,14 @@ export interface AccountDetailPanelProps {
 export function AccountDetailPanel({ account, colorIndex, currency, variant, onBack }: AccountDetailPanelProps) {
   const t = account.totals;
   const color = accountColor(colorIndex);
-  const cy = currency === 'BRL' ? 'R$' : '$';
-  const ctr = t.impressions > 0 ? ((t.clicks / t.impressions) * 100).toFixed(2) : '0';
-  const cpc = t.clicks > 0 ? (t.costInLocalCurrency / t.clicks).toFixed(2) : '0';
-  const cpm = t.impressions > 0 ? ((t.costInLocalCurrency / t.impressions) * 1000).toFixed(2) : '0';
+  const money = (v: number) => fmtCurrency(v, currency);
+  const ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0;
+  const cpc = t.clicks > 0 ? t.costInLocalCurrency / t.clicks : 0;
+  const cpm = t.impressions > 0 ? (t.costInLocalCurrency / t.impressions) * 1000 : 0;
   const engagementRate = t.impressions > 0
-    ? (((t.clicks + t.likes + t.comments + t.shares + t.follows) / t.impressions) * 100).toFixed(2)
-    : '0';
-  const cpl = t.oneClickLeads > 0 ? (t.costInLocalCurrency / t.oneClickLeads).toFixed(2) : null;
+    ? ((t.clicks + t.likes + t.comments + t.shares + t.follows) / t.impressions) * 100
+    : 0;
+  const cpl = t.oneClickLeads > 0 ? t.costInLocalCurrency / t.oneClickLeads : null;
   const gradId = React.useId();
   const series = account.timeSeries.map(p => ({ ...p, dateLabel: fmtDateLabel(p.date) }));
 
@@ -44,7 +44,7 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-          <p className="text-xs text-slate-500 flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5" style={{ color }} /> Spend</p>
+          <p className="text-xs text-slate-500 flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5" style={{ color }} /> Investimento</p>
           <p className="text-lg font-bold text-slate-900">{fmtCurrency(t.costInLocalCurrency, currency)}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
@@ -52,12 +52,12 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
           <p className="text-lg font-bold text-slate-900">{fmtNum(t.impressions)}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-          <p className="text-xs text-slate-500 flex items-center gap-1.5"><MousePointerClick className="w-3.5 h-3.5 text-purple-600" /> Clicks</p>
+          <p className="text-xs text-slate-500 flex items-center gap-1.5"><MousePointerClick className="w-3.5 h-3.5 text-purple-600" /> Cliques</p>
           <p className="text-lg font-bold text-slate-900">{fmtNum(t.clicks)}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
           <p className="text-xs text-slate-500 flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-green-600" /> CTR · CPC</p>
-          <p className="text-lg font-bold text-slate-900">{ctr}% · {cy}{cpc}</p>
+          <p className="text-lg font-bold text-slate-900">{fmtPct(ctr)} · {money(cpc)}</p>
         </div>
       </div>
 
@@ -87,24 +87,24 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><Heart className="w-3.5 h-3.5 text-rose-500" /> Likes</p><p className="text-base font-bold text-slate-900">{fmtNum(t.likes)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><Share2 className="w-3.5 h-3.5 text-blue-500" /> Shares</p><p className="text-base font-bold text-slate-900">{fmtNum(t.shares)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5 text-amber-500" /> Comments</p><p className="text-base font-bold text-slate-900">{fmtNum(t.comments)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><UserPlus className="w-3.5 h-3.5 text-green-500" /> Follows</p><p className="text-base font-bold text-slate-900">{fmtNum(t.follows)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><Heart className="w-3.5 h-3.5 text-rose-500" /> Curtidas</p><p className="text-base font-bold text-slate-900">{fmtNum(t.likes)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><Share2 className="w-3.5 h-3.5 text-blue-500" /> Compartilhamentos</p><p className="text-base font-bold text-slate-900">{fmtNum(t.shares)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5 text-amber-500" /> Comentários</p><p className="text-base font-bold text-slate-900">{fmtNum(t.comments)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500 flex items-center gap-1.5"><UserPlus className="w-3.5 h-3.5 text-green-500" /> Seguidores</p><p className="text-base font-bold text-slate-900">{fmtNum(t.follows)}</p></div>
       </div>
 
       {/* Custo e Eficiência */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPM</p><p className="text-base font-bold text-slate-900">{cy}{cpm}</p><p className="text-[11px] text-slate-400">Custo por mil impressões</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Engagement Rate</p><p className="text-base font-bold text-slate-900">{engagementRate}%</p><p className="text-[11px] text-slate-400">Engajamento / impressões</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPL</p><p className="text-base font-bold text-slate-900">{cpl ? `${cy}${cpl}` : '—'}</p><p className="text-[11px] text-slate-400">Custo por lead</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPM</p><p className="text-base font-bold text-slate-900">{money(cpm)}</p><p className="text-[11px] text-slate-400">Custo por mil impressões</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Taxa de engajamento</p><p className="text-base font-bold text-slate-900">{fmtPct(engagementRate)}</p><p className="text-[11px] text-slate-400">Engajamento / impressões</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPL</p><p className="text-base font-bold text-slate-900">{fmtOptional(cpl, money)}</p><p className="text-[11px] text-slate-400">Custo por lead</p></div>
       </div>
 
       {/* Conversões */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Conversões</p><p className="text-base font-bold text-slate-900">{fmtNum(t.externalWebsiteConversions)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Pós-Clique</p><p className="text-base font-bold text-slate-900">{fmtNum(t.externalWebsitePostClickConversions)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Leads</p><p className="text-base font-bold text-slate-900">{fmtNum(t.oneClickLeads)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Conversões</p><p className="text-base font-bold text-slate-900">{fmtOptional(t.externalWebsiteConversions)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Pós-Clique</p><p className="text-base font-bold text-slate-900">{fmtOptional(t.externalWebsitePostClickConversions)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Leads</p><p className="text-base font-bold text-slate-900">{fmtOptional(t.oneClickLeads)}</p></div>
       </div>
 
       {/* Alcance e Virais */}
@@ -112,15 +112,15 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
           <div className="flex items-center gap-2 text-sm text-slate-500 font-medium"><Users className="w-4 h-4 text-[#FF5F39]" /> Alcance e Virais</div>
           <div className="grid grid-cols-2 gap-3">
-            <div><p className="text-xs text-slate-500">Alcance Estimado</p><p className="text-base font-bold text-slate-900">{fmtNum(t.approximateMemberReach)}</p></div>
+            <div><p className="text-xs text-slate-500">Alcance estimado</p><p className="text-base font-bold text-slate-900">{fmtOptional(t.approximateMemberReach)}</p></div>
             <div><p className="text-xs text-slate-500">Impressões Virais</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralImpressions)}</p></div>
           </div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
           <div className="flex items-center gap-2 text-sm text-slate-500 font-medium"><Megaphone className="w-4 h-4 text-purple-500" /> Amplificação Viral</div>
           <div className="grid grid-cols-2 gap-3">
-            <div><p className="text-xs text-slate-500">Viral Clicks</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralClicks)}</p></div>
-            <div><p className="text-xs text-slate-500">Viral Likes</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralLikes)}</p></div>
+            <div><p className="text-xs text-slate-500">Cliques virais</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralClicks)}</p></div>
+            <div><p className="text-xs text-slate-500">Curtidas virais</p><p className="text-base font-bold text-slate-900">{fmtNum(t.viralLikes)}</p></div>
           </div>
         </div>
       </div>

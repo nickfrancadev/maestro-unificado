@@ -12,7 +12,7 @@ export type ComparisonMetric = 'impressions' | 'clicks' | 'cost';
 
 export const COMPARISON_METRICS: { key: ComparisonMetric; label: string }[] = [
   { key: 'impressions', label: 'Impressões' },
-  { key: 'clicks', label: 'Clicks' },
+  { key: 'clicks', label: 'Cliques' },
   { key: 'cost', label: 'Investimento' },
 ];
 
@@ -32,15 +32,16 @@ export function buildComparisonData(
   return [...byDate.values()].sort((x, y) => String(x.date).localeCompare(String(y.date)));
 }
 
+// Métricas derivadas em número (CTR já ×100); a formatação fica na tela (format.ts).
 export interface AccountRow {
   account: AccountAnalytics;
   colorIndex: number;
-  ctr: string;
-  cpc: string;
-  cpl: string | null;
+  ctr: number;
+  cpc: number;
+  cpl: number | null;
 }
 
-// Linhas da tabela, ordenadas por spend desc, com colorIndex preservando a ordem original
+// Linhas da tabela, ordenadas por investimento desc, com colorIndex preservando a ordem original
 export function buildAccountRows(accounts: AccountAnalytics[]): AccountRow[] {
   return accounts
     .map((account, colorIndex) => {
@@ -48,9 +49,9 @@ export function buildAccountRows(accounts: AccountAnalytics[]): AccountRow[] {
       return {
         account,
         colorIndex,
-        ctr: t.impressions > 0 ? ((t.clicks / t.impressions) * 100).toFixed(2) : '0',
-        cpc: t.clicks > 0 ? (t.costInLocalCurrency / t.clicks).toFixed(2) : '0',
-        cpl: t.oneClickLeads > 0 ? (t.costInLocalCurrency / t.oneClickLeads).toFixed(2) : null,
+        ctr: t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0,
+        cpc: t.clicks > 0 ? t.costInLocalCurrency / t.clicks : 0,
+        cpl: t.oneClickLeads > 0 ? t.costInLocalCurrency / t.oneClickLeads : null,
       };
     })
     .sort((a, b) => b.account.totals.costInLocalCurrency - a.account.totals.costInLocalCurrency);
