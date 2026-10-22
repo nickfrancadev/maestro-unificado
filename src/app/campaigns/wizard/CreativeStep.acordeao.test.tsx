@@ -147,7 +147,7 @@ describe('CreativeStep — resumos dos cards colapsados', () => {
   it('Destino resume CTA e URL', () => {
     renderStep();
     goTo(/Template global/);
-    expect(screen.getByText(/Learn More · /)).toBeInTheDocument();
+    expect(screen.getByText(/Saiba mais · /)).toBeInTheDocument();
   });
 });
 

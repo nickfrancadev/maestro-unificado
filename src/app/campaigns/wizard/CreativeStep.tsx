@@ -50,6 +50,7 @@ import { OverlayCanvas, type OverlayLayerId, measureTextWidthPx } from './Overla
 import { FontPicker } from './FontPicker';
 import { CompanyAvatar, resolveCompanyLogoUrl } from './CompanyAvatar';
 import { createDefaultBrandKit } from './brandKit';
+import { ctaLabel } from '../labels';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
 import {
@@ -62,18 +63,66 @@ import { LandingPagePicker } from '@/app/landingPages/ads/LandingPagePicker';
 import { listPages, savePage } from '@/app/landingPages/store/repo';
 import type { LandingPage } from '@/app/landingPages/store/model';
 
+// Valores são os enums da API do LinkedIn; o rótulo vem do helper compartilhado
+// para o anunciante ver o CTA em português em todo lugar (select, resumo, preview).
 const CTA_OPTIONS = [
-  { value: 'LEARN_MORE', label: 'Learn More' },
-  { value: 'SIGN_UP', label: 'Sign Up' },
-  { value: 'REGISTER', label: 'Register' },
-  { value: 'DOWNLOAD', label: 'Download' },
-  { value: 'GET_QUOTE', label: 'Get Quote' },
-  { value: 'APPLY_NOW', label: 'Apply Now' },
-  { value: 'SUBSCRIBE', label: 'Subscribe' },
-  { value: 'CONTACT_US', label: 'Contact Us' },
-  { value: 'REQUEST_DEMO', label: 'Request Demo' },
-  { value: 'JOIN_NOW', label: 'Join Now' },
-];
+  'LEARN_MORE', 'SIGN_UP', 'REGISTER', 'DOWNLOAD', 'GET_QUOTE',
+  'APPLY_NOW', 'SUBSCRIBE', 'CONTACT_US', 'REQUEST_DEMO', 'JOIN_NOW',
+].map((value) => ({ value, label: ctaLabel(value) }));
+
+// Monta a URL ABSOLUTA de uma landing page publicada. O LinkedIn rejeita
+// caminho relativo ("/p/slug"), e o app pode estar servido sob um BASE_URL
+// (ex.: "/maestro/") — por isso o caminho entra SEM barra inicial, para ser
+// resolvido relativo à base e não à raiz do domínio.
+export function buildLandingPageUrl(slug: string): string {
+  const rawBase = (import.meta.env?.BASE_URL as string | undefined) || '/';
+  const base = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
+  return new URL(`p/${slug}`, `${window.location.origin}${base}`).toString();
+}
+
+// Domínio exibido sob a imagem do anúncio, como o LinkedIn mostra: hostname
+// sem "www.", em caixa alta. URL inválida (ou com variável ainda não
+// resolvida) não mostra nada — melhor vazio que um domínio inventado.
+export function displayDomain(url: string | null | undefined): string {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return '';
+  try {
+    const host = new URL(trimmed).hostname;
+    if (!host || /[{}]|%7b|%7d/i.test(host)) return '';
+    return host.replace(/^www\./, '').toUpperCase();
+  } catch {
+    return '';
+  }
+}
+
+// Iniciais para o avatar quando a marca não tem logo ("Maestro ABM" → "MA").
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
+}
+
+// Erros de IA/upload viram mensagem amigável: o que falhou e o que fazer.
+// O erro cru vai para o console, onde quem depura consegue ler.
+type FailureKind = 'brief' | 'copy' | 'templateCopy' | 'baseImage' | 'compose' | 'upload';
+
+function friendlyError(kind: FailureKind, err: unknown, label?: string): string {
+  console.error(`[CreativeStep] falha em ${kind}${label ? ` (${label})` : ''}:`, err);
+  switch (kind) {
+    case 'brief':
+      return `Não conseguimos analisar a marca de ${label} agora. Tente de novo em instantes; os textos ainda podem ser gerados sem essa análise.`;
+    case 'copy':
+      return `Não conseguimos gerar os textos para ${label} agora. Tente de novo em instantes; se persistir, escreva manualmente.`;
+    case 'templateCopy':
+      return 'Não conseguimos gerar os textos do template agora. Tente de novo em instantes; se persistir, escreva manualmente.';
+    case 'baseImage':
+      return `Não conseguimos gerar a imagem-base${label ? ` de ${label}` : ''} agora. Tente de novo em instantes ou envie uma imagem própria.`;
+    case 'compose':
+      return `Não conseguimos montar o anúncio de ${label} agora. Confira se a imagem-base abre corretamente e tente de novo.`;
+    case 'upload':
+      return 'Não conseguimos enviar a imagem. Verifique sua conexão e tente de novo.';
+  }
+}
 
 interface CreativeStepProps {
   selectedAccounts: TargetAccount[];
@@ -249,7 +298,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
   const handleSelectLandingPage = (page: LandingPage) => {
     setLinkedPageId(page.id);
-    setDestination({ landingPageUrl: `/p/${page.slug}` });
+    setDestination({ landingPageUrl: buildLandingPageUrl(page.slug) });
     // Best-effort bidirectional link: only recorded when we actually know
     // the campaign id (brand-new campaigns have none yet — there's no
     // campaign repo to persist into in this prototype). The LP selection
@@ -345,10 +394,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           updateOverride(editingCompany.id, { baseImageUrl: result.url, baseImageSource: 'upload' });
         }
       } else {
-        setUploadError(result.error || 'Erro ao fazer upload da imagem.');
+        setUploadError(friendlyError('upload', result.error));
       }
-    } catch (error: any) {
-      setUploadError(error.message || 'Erro inesperado no upload.');
+    } catch (error: unknown) {
+      setUploadError(friendlyError('upload', error));
     } finally {
       setIsUploadingImage(false);
     }
@@ -371,6 +420,11 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const [aiImageLoading, setAiImageLoading] = useState<Record<string, boolean>>({});
   const [aiError, setAiError] = useState<string | null>(null);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  // Último texto que a IA escreveu por empresa — referência para saber se o
+  // usuário mexeu no texto depois. Ref porque só é lido em handlers.
+  const aiCopyRef = useRef<Record<string, { headline: string; bodyText: string }>>({});
+  // Confirmação inline do "Gerar para todas" quando há textos editados.
+  const [bulkConfirm, setBulkConfirm] = useState<{ editedIds: string[] } | null>(null);
 
   const generateBriefFor = async (company: FacetItem): Promise<BrandBrief | null> => {
     setAiBriefLoading((s) => ({ ...s, [company.id]: true }));
@@ -383,8 +437,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       });
       updateOverride(company.id, { brief });
       return brief;
-    } catch (err: any) {
-      setAiError(`Brief para ${company.label}: ${err.message}`);
+    } catch (err: unknown) {
+      setAiError(friendlyError('brief', err, company.label));
       return null;
     } finally {
       setAiBriefLoading((s) => { const next = { ...s }; delete next[company.id]; return next; });
@@ -421,9 +475,12 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         cta: data.cta,
       });
       updateOverride(company.id, { headline: result.headline, bodyText: result.bodyText });
+      // Guarda o que a IA escreveu: enquanto o texto continuar igual a isto,
+      // ele não conta como "editado pelo usuário" e pode ser regerado.
+      aiCopyRef.current[company.id] = { headline: result.headline, bodyText: result.bodyText };
       return true;
-    } catch (err: any) {
-      setAiError(`Texto para ${company.label}: ${err.message}`);
+    } catch (err: unknown) {
+      setAiError(friendlyError('copy', err, company.label));
       return false;
     } finally {
       setAiCopyLoading((s) => { const next = { ...s }; delete next[company.id]; return next; });
@@ -470,8 +527,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         });
       }
       return result.url;
-    } catch (err: any) {
-      setAiError(`Imagem-base${company ? ` (${company.label})` : ''}: ${err.message}`);
+    } catch (err: unknown) {
+      setAiError(friendlyError('baseImage', err, company?.label));
       return null;
     } finally {
       setBaseImageLoading(false);
@@ -519,8 +576,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         bodyText: restore(result.bodyText),
       });
       return true;
-    } catch (err: any) {
-      setAiError(`Texto do template: ${err.message}`);
+    } catch (err: unknown) {
+      setAiError(friendlyError('templateCopy', err));
       return false;
     } finally {
       setTemplateCopyLoading(false);
@@ -593,8 +650,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         imageFileName: result.filename,
       });
       return true;
-    } catch (err: any) {
-      setAiError(`Composição para ${company.label}: ${err.message}`);
+    } catch (err: unknown) {
+      setAiError(friendlyError('compose', err, company.label));
       return false;
     } finally {
       setAiImageLoading((s) => { const next = { ...s }; delete next[company.id]; return next; });
@@ -630,25 +687,61 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     await generateImageFor(company);
   };
 
-  const generateForAllCompanies = async () => {
-    if (!clientVoice.trim()) {
-      onEditBrand?.();
-      return;
-    }
+  // Um texto da empresa é "do usuário" quando não está vazio e difere tanto do
+  // template (cru ou já com o nome resolvido) quanto do último texto da IA.
+  // Comparar valores (em vez de uma flag de sessão) protege também textos
+  // editados antes de o componente remontar — e um texto que a IA escreveu
+  // antes do remount conta como editado, o lado seguro do erro.
+  const isCopyUserEdited = (company: FacetItem): boolean => {
+    const data = creativeDataRef.current;
+    const ovr = data?.overrides?.[company.id];
+    const ai = aiCopyRef.current[company.id];
+    const fromTemplate = (tpl: string) => [tpl, tpl.split('{{company.name}}').join(company.label)];
+    const edited = (value: string | undefined, tpl: string, aiValue: string | undefined) => {
+      const v = (value || '').trim();
+      if (!v) return false;
+      if (aiValue !== undefined && v === aiValue.trim()) return false;
+      return !fromTemplate(tpl || '').some((t) => t.trim() === v);
+    };
+    return edited(ovr?.headline, data?.headline || '', ai?.headline)
+      || edited(ovr?.bodyText, data?.bodyText || '', ai?.bodyText);
+  };
+
+  // `keepEdited`: empresas com texto do usuário recebem só a imagem; o texto
+  // fica intocado. Sem empresas editadas o parâmetro não faz diferença.
+  const runBulkGeneration = async (keepEdited: boolean) => {
+    setBulkConfirm(null);
+    const skipCopy = new Set(keepEdited ? companies.filter(isCopyUserEdited).map((c) => c.id) : []);
     setBulkProgress({ done: 0, total: companies.length });
     let done = 0;
     // Run sequentially to avoid hammering the Gemini API
     for (const company of companies) {
-      await generateAllFor(company);
+      if (skipCopy.has(company.id)) await generateImageFor(company);
+      else await generateAllFor(company);
       done += 1;
       setBulkProgress({ done, total: companies.length });
     }
     setBulkProgress(null);
   };
 
+  const generateForAllCompanies = async () => {
+    if (!clientVoice.trim()) {
+      onEditBrand?.();
+      return;
+    }
+    // Gerar nunca descarta em silêncio o que o usuário escreveu: havendo
+    // texto editado, pergunta antes (inline, sem window.confirm).
+    const editedIds = companies.filter(isCopyUserEdited).map((c) => c.id);
+    if (editedIds.length > 0) {
+      setBulkConfirm({ editedIds });
+      return;
+    }
+    await runBulkGeneration(false);
+  };
+
   // Resolved, not raw: the preview must show the CTA the previewed company
   // will actually run, which may be its own override rather than the template's.
-  const ctaLabel = CTA_OPTIONS.find((o) => o.value === resolved.cta)?.label || 'Learn More';
+  const previewCtaLabel = ctaLabel(resolved.cta || 'LEARN_MORE');
 
   // What the editor edits — template OR a specific company override.
   // No image equivalent here on purpose: the composed ad is rendered by the
@@ -718,6 +811,22 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const targetLogoUrl = previewCompany ? resolveCompanyLogoUrl(previewCompany) : null;
   const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
 
+  // ----------------- Cabeçalho do anúncio (anunciante) -----------------
+  // O Brand Kit ainda não tem nome nem seguidores; lê os campos se existirem
+  // (Configurações globais vão trazê-los) e cai para o domínio do site.
+  const advertiserKit = imageCfgSource.brandKit as typeof imageCfgSource.brandKit & { name?: string; followers?: number };
+  const siteDomain = deriveWebsiteDomain(advertiserKit.websiteUrl || '');
+  const siteName = siteDomain ? siteDomain.split('.')[0] : '';
+  const advertiserName = advertiserKit.name?.trim()
+    || (siteName ? siteName.charAt(0).toUpperCase() + siteName.slice(1) : 'Minha marca');
+  // Chaveado pela URL: trocar o logo no Brand Kit dá nova chance ao <img>.
+  const advertiserAvatarUrl = advertiserKit.logo && !brokenLogo[`avatar:${advertiserKit.logo}`] ? advertiserKit.logo : null;
+  const advertiserFollowers = typeof advertiserKit.followers === 'number'
+    ? `${advertiserKit.followers.toLocaleString('pt-BR')} seguidores`
+    : '3.550 seguidores';
+  // Domínio sob a imagem: o da URL de destino que esta empresa vai de fato usar.
+  const previewDomain = displayDomain(resolved.landingPageUrl);
+
   // Routes a field edit to the right home: a company writes an override, the
   // template writes to its own config (with the font living in the brand kit).
   const setImageField = (patch: Partial<ResolvedImageConfig>) => {
@@ -764,7 +873,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     ...(aiTextsOn ? ['textos pela IA'] : []),
     ...(imageCfg.baseImageUrl ? [] : ['sem imagem-base']),
   ].join(' · ');
-  const editorCtaLabel = CTA_OPTIONS.find((o) => o.value === editorCta)?.label || editorCta;
+  const editorCtaLabel = ctaLabel(editorCta);
   const destinationSummary = editorLandingPageUrl.trim()
     ? `${editorCtaLabel} · ${editorLandingPageUrl}`
     : 'Defina a URL de destino';
@@ -915,7 +1024,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             )}
             {isTemplate && companies.length > 0 && (
               <button
-                disabled={bulkProgress !== null || noVoice || needsBaseImage}
+                disabled={bulkProgress !== null || bulkConfirm !== null || noVoice || needsBaseImage}
                 onClick={generateForAllCompanies}
                 className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-[#FF5F39] to-violet-600 hover:from-[#E54A26] hover:to-violet-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
@@ -936,6 +1045,33 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
             <span className="flex-1">{aiError}</span>
             <button onClick={() => setAiError(null)} className="text-red-500 hover:text-red-700">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {bulkConfirm && (
+          <div role="alert" className="px-6 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="flex-1 min-w-[200px]">
+              {bulkConfirm.editedIds.length === 1
+                ? `${companies.find((c) => c.id === bulkConfirm.editedIds[0])?.label ?? '1 empresa'} tem textos editados por você.`
+                : `${bulkConfirm.editedIds.length} empresas têm textos editados por você.`}
+              {' '}O que fazer com eles ao gerar para todas?
+            </span>
+            <button
+              onClick={() => runBulkGeneration(true)}
+              className="px-3 py-1.5 rounded-lg bg-[#FF5F39] hover:bg-[#E54A26] font-semibold text-white"
+            >
+              Manter os editados
+            </button>
+            <button
+              onClick={() => runBulkGeneration(false)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-amber-200 font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              Substituir também os textos editados
+            </button>
+            <button onClick={() => setBulkConfirm(null)} aria-label="Cancelar geração" className="text-amber-600 hover:text-amber-800">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -1581,15 +1717,26 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               >
                 <div className="p-4 flex justify-between items-start">
                   <div className="flex gap-3">
-                    <div className="w-12 h-12 bg-black rounded-lg flex items-center justify-center text-yellow-400 font-bold text-xl">M</div>
+                    {advertiserAvatarUrl ? (
+                      <img
+                        src={advertiserAvatarUrl}
+                        alt={`Logo de ${advertiserName}`}
+                        onError={() => setBrokenLogo((b) => ({ ...b, [`avatar:${advertiserAvatarUrl}`]: true }))}
+                        className="w-12 h-12 rounded-lg object-contain bg-white border border-slate-100"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 bg-slate-900 rounded-lg flex items-center justify-center text-white font-bold text-lg" aria-hidden>
+                        {initialsOf(advertiserName)}
+                      </div>
+                    )}
                     <div>
                       <div className="flex items-center gap-1">
-                        <h3 className="font-semibold text-slate-900 text-sm">Maestro ABM</h3>
-                        <span className="text-slate-500 text-xs">• 3rd+</span>
+                        <h3 className="font-semibold text-slate-900 text-sm">{advertiserName}</h3>
+                        <span className="text-slate-500 text-xs">• 3º+</span>
                       </div>
-                      <p className="text-xs text-slate-500">3,550 followers</p>
+                      <p className="text-xs text-slate-500">{advertiserFollowers}</p>
                       <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-                        <span>Promoted</span>
+                        <span>Promovido</span>
                         <Globe className="w-3 h-3" />
                       </div>
                     </div>
@@ -1601,7 +1748,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   {resolved.bodyText ? (
                     <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
                       {resolved.bodyText}
-                      <span className="text-slate-500 cursor-pointer ml-1 hover:underline">…see more</span>
+                      <span className="text-slate-500 cursor-pointer ml-1 hover:underline">…ver mais</span>
                     </p>
                   ) : (
                     <p className="text-sm text-slate-400 italic">Texto do anúncio aparecerá aqui…</p>
@@ -1633,21 +1780,23 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
                 <div className="bg-slate-50 px-4 py-3 flex justify-between items-center border-t border-slate-100">
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs uppercase font-semibold text-slate-500 mb-0.5">maestro.abm.com</p>
+                    {previewDomain && (
+                      <p className="text-xs uppercase font-semibold text-slate-500 mb-0.5">{previewDomain}</p>
+                    )}
                     <p className="text-sm font-semibold text-slate-900 truncate">
                       {resolved.headline || 'Headline aparecerá aqui'}
                     </p>
                   </div>
                   <button className="ml-3 shrink-0 px-4 py-1.5 border border-slate-400 rounded-full text-sm font-semibold text-slate-700">
-                    {ctaLabel}
+                    {previewCtaLabel}
                   </button>
                 </div>
 
                 <div className="px-2 py-1 flex items-center justify-between border-t border-slate-100">
-                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><ThumbsUp className="w-5 h-5" /> Like</button>
-                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><MessageCircle className="w-5 h-5" /> Comment</button>
-                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><Share2 className="w-5 h-5" /> Repost</button>
-                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><Send className="w-5 h-5" /> Send</button>
+                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><ThumbsUp className="w-5 h-5" /> Gostei</button>
+                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><MessageCircle className="w-5 h-5" /> Comentar</button>
+                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><Share2 className="w-5 h-5" /> Compartilhar</button>
+                  <button className="flex-1 flex items-center justify-center gap-2 py-3 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium"><Send className="w-5 h-5" /> Enviar</button>
                 </div>
               </div>
             </div>

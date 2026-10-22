@@ -1,6 +1,7 @@
 import { resolveTargetingForAccount } from './SegmentationStep';
 import type { TargetingData } from './SegmentationStep';
 import type { CampaignConfig, CreativeData } from './types';
+import { MIN_BUDGET_PER_AD_SET } from './types';
 
 export const WIZARD_STEPS = {
   config: 1,
@@ -27,8 +28,10 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
   const { campaignConfig, targetingData, creativeData } = state;
 
   if (step === WIZARD_STEPS.config) {
-    // Config step: require a campaign name
-    return !!campaignConfig.campaignName.trim();
+    // Nome da campanha e orçamento por conjunto acima do mínimo do LinkedIn.
+    // Antes o aviso de mínimo aparecia em vermelho mas não travava o avanço.
+    const budget = parseFloat(campaignConfig.budgetAmount);
+    return !!campaignConfig.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET;
   }
 
   if (step === WIZARD_STEPS.segmentation) {

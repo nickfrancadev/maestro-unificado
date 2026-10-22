@@ -107,3 +107,40 @@ export function buildTargetingCriteria(
   if (Object.keys(excludeOr).length > 0) criteria.exclude = { or: excludeOr };
   return criteria;
 }
+
+// Duas seleções são equivalentes quando incluem e excluem os mesmos itens
+// (por id), independente da ordem em que foram clicados.
+function sameItems(a: FacetItem[], b: FacetItem[]): boolean {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a.map((i) => i.id));
+  return b.every((i) => ids.has(i.id));
+}
+
+export function isSameSelection(a: FacetSelection, b: FacetSelection): boolean {
+  return sameItems(a.included, b.included) && sameItems(a.excluded, b.excluded);
+}
+
+export function isSamePersonTargeting(a: PersonTargeting, b: PersonTargeting): boolean {
+  return PERSON_FACET_KEYS.every((k) => isSameSelection(a[k], b[k]));
+}
+
+// Edita uma faceta do conjunto de anúncio de uma conta. Na primeira
+// divergência cria o override (semeado a partir do padrão). Se depois da
+// edição o override voltar a ser igual ao padrão, ele é removido — a conta
+// deixa de aparecer como "personalizado".
+export function setAccountFacet(
+  data: TargetingData,
+  accountId: string,
+  facetKey: keyof PersonTargeting,
+  sel: FacetSelection,
+): TargetingData {
+  const base = data.overrides[accountId] ?? data.defaultTargeting;
+  const next: PersonTargeting = { ...base, [facetKey]: sel };
+  const overrides = { ...data.overrides };
+  if (isSamePersonTargeting(next, data.defaultTargeting)) {
+    delete overrides[accountId];
+  } else {
+    overrides[accountId] = next;
+  }
+  return { ...data, overrides };
+}

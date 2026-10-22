@@ -74,7 +74,8 @@ export function AccountComparisonChart({ accounts, selectedIds, currency, loadin
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} dy={10} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v: number) => fmtValue(v)} />
+              {/* Moeda em pt-BR ("R$ 1.234,56") é mais larga que o número puro: abre espaço no eixo */}
+              <YAxis width={metric === 'cost' ? 84 : 60} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v: number) => fmtValue(v)} />
               <Tooltip
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '13px' }}
                 formatter={(value: number | undefined, name: string) => [typeof value === 'number' ? fmtValue(value) : '—', name]}

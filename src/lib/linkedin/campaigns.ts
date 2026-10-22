@@ -168,6 +168,10 @@ export interface CampaignPipelineParams {
   targeting_criteria: any;
   budget_type: 'daily' | 'total';
   budget_amount: number;
+  /** Orçamento do grupo. Padrão: o do conjunto. Com N conjuntos, o grupo
+   *  precisa comportar todos (N × orçamento do conjunto), senão o teto do
+   *  grupo corta o gasto dos demais. */
+  group_budget_amount?: number;
   currency?: string;
   start_date?: string;
   end_date?: string;
@@ -226,7 +230,7 @@ export async function runCampaignPipeline(
       ad_account_id: params.ad_account_id,
       name: params.group_name,
       budget_type: params.budget_type,
-      budget_amount: params.budget_amount,
+      budget_amount: params.group_budget_amount ?? params.budget_amount,
       currency: params.currency,
       start_date: params.start_date,
     });

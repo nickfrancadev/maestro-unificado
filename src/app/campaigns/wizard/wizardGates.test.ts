@@ -34,8 +34,16 @@ describe('canProceedFromStep — 1 Configuração', () => {
   it('exige um nome de campanha', () => {
     expect(canProceedFromStep(WIZARD_STEPS.config, state())).toBe(false);
     expect(canProceedFromStep(WIZARD_STEPS.config, state({
-      campaignConfig: { ...createDefaultCampaignConfig(), campaignName: 'Q3 ABM' },
+      campaignConfig: { ...createDefaultCampaignConfig(), campaignName: 'Q3 ABM', budgetAmount: '50' },
     }))).toBe(true);
+  });
+
+  it('não vem com orçamento pré-preenchido e exige o mínimo do LinkedIn', () => {
+    expect(createDefaultCampaignConfig().budgetAmount).toBe('');
+    const named = { ...createDefaultCampaignConfig(), campaignName: 'Q3 ABM' };
+    expect(canProceedFromStep(WIZARD_STEPS.config, state({ campaignConfig: named }))).toBe(false);
+    expect(canProceedFromStep(WIZARD_STEPS.config, state({ campaignConfig: { ...named, budgetAmount: '9' } }))).toBe(false);
+    expect(canProceedFromStep(WIZARD_STEPS.config, state({ campaignConfig: { ...named, budgetAmount: '10' } }))).toBe(true);
   });
 });
 

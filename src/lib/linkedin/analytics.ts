@@ -92,7 +92,9 @@ export interface CampaignAnalyticsFull {
   viralClicks: number;
   viralLikes: number;
   viralShares: number;
-  approximateMemberReach: number;
+  // Alcance (membros únicos). O LinkedIn pode não devolver, e não é somável:
+  // null quando ausente ou quando agrega mais de um ad set → a tela mostra "—".
+  approximateMemberReach: number | null;
   cardClicks: number;
   cardImpressions: number;
   ctr: string;
@@ -205,7 +207,7 @@ const EMPTY_FULL: CampaignAnalyticsFull = {
   impressions: 0, clicks: 0, landingPageClicks: 0, likes: 0, shares: 0, comments: 0, follows: 0,
   costInLocalCurrency: 0, externalWebsiteConversions: 0, externalWebsitePostClickConversions: 0,
   externalWebsitePostViewConversions: 0, oneClickLeads: 0, oneClickLeadFormOpens: 0,
-  viralImpressions: 0, viralClicks: 0, viralLikes: 0, viralShares: 0, approximateMemberReach: 0,
+  viralImpressions: 0, viralClicks: 0, viralLikes: 0, viralShares: 0, approximateMemberReach: null,
   cardClicks: 0, cardImpressions: 0, ctr: '0', cpc: '0', cpm: '0', engagementRate: '0',
   cpl: null, postClickConvRate: '0', viralAmplification: '0',
   timeSeries: [], delta: {}, currency: 'USD',
@@ -269,7 +271,9 @@ export interface AccountAnalyticsTotals {
   viralClicks: number;
   viralLikes: number;
   viralShares: number;
-  approximateMemberReach: number;
+  // Alcance (membros únicos). O LinkedIn pode não devolver, e não é somável:
+  // null quando ausente ou quando agrega mais de um ad set → a tela mostra "—".
+  approximateMemberReach: number | null;
   cardClicks: number;
   cardImpressions: number;
 }
@@ -312,18 +316,30 @@ const EMPTY_TOTALS: AccountAnalyticsTotals = {
   impressions: 0, clicks: 0, landingPageClicks: 0, likes: 0, shares: 0, comments: 0, follows: 0,
   costInLocalCurrency: 0, externalWebsiteConversions: 0, externalWebsitePostClickConversions: 0,
   externalWebsitePostViewConversions: 0, oneClickLeads: 0, oneClickLeadFormOpens: 0,
-  viralImpressions: 0, viralClicks: 0, viralLikes: 0, viralShares: 0, approximateMemberReach: 0,
+  viralImpressions: 0, viralClicks: 0, viralLikes: 0, viralShares: 0, approximateMemberReach: null,
   cardClicks: 0, cardImpressions: 0,
 };
 
+// Métricas somáveis entre ad sets (contagens e custo). O alcance fica de fora.
+type AdditiveKey = Exclude<keyof AccountAnalyticsTotals, 'approximateMemberReach'>;
+
 export function sumTotals(accounts: AccountAnalytics[]): AccountAnalyticsTotals {
   const acc: AccountAnalyticsTotals = { ...EMPTY_TOTALS };
+  const keys = (Object.keys(acc) as (keyof AccountAnalyticsTotals)[])
+    .filter((k): k is AdditiveKey => k !== 'approximateMemberReach');
   for (const a of accounts) {
-    for (const k of Object.keys(acc) as (keyof AccountAnalyticsTotals)[]) {
-      acc[k] += a.totals[k];
+    for (const k of keys) {
+      acc[k] += a.totals[k] ?? 0;
     }
   }
   acc.costInLocalCurrency = parseFloat(acc.costInLocalCurrency.toFixed(2));
+  // Alcance é de membros únicos: o mesmo membro pode ter visto anúncios de
+  // vários ad sets, então somar contaria a mesma pessoa mais de uma vez.
+  // Com um único ad set o valor dele vale; com vários, não há como deduplicar
+  // aqui e preferimos "—" a um número inflado.
+  acc.approximateMemberReach = accounts.length === 1
+    ? accounts[0].totals.approximateMemberReach ?? null
+    : null;
   return acc;
 }
 

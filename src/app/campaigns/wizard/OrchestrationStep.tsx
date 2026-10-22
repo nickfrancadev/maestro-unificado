@@ -24,8 +24,11 @@ import {
 import { TargetAccount, CampaignConfig, OBJECTIVE_MAP } from './types';
 import type { CreativeData } from './types';
 import type { TargetingData, FacetItem } from './SegmentationStep';
-import { buildTargetingCriteria, resolveTargetingForAccount } from './SegmentationStep';
 import { totalIncludes } from './segmentation/targeting';
+import { buildLaunchPlan, validateLaunchPlan } from './launchPlan';
+import { resolveTargetingForAccount } from './SegmentationStep';
+import { campaignTypeLabel, ctaLabel, adAccountStatusLabel, plural } from '../labels';
+import { fmtCurrency } from '../format';
 import {
   runCampaignPipeline,
   saveCampaignToServer,
@@ -125,6 +128,7 @@ function ConfirmLaunchModal({
   targetingData,
   creativeData,
   billingStatus,
+  currency,
   onConfirm,
   onCancel,
 }: {
@@ -132,6 +136,7 @@ function ConfirmLaunchModal({
   targetingData?: TargetingData;
   creativeData?: CreativeData;
   billingStatus?: BillingStatus | null;
+  currency: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -143,15 +148,12 @@ function ConfirmLaunchModal({
 
   // Build dynamic step list based on what will actually run
   const pipelineSteps = [
-    '1. Criar Campaign Group no LinkedIn',
-    '2. Criar Campanha com Targeting completo',
-    ...(hasImage ? [
-      '3. Upload de imagem para o LinkedIn',
-      '4. Criar Ad Creative (Headline + CTA + Image)',
-    ] : []),
+    '1. Criar o grupo de campanhas no LinkedIn',
+    `2. Criar ${plural(adSetAccounts.length, 'conjunto')} de anúncio, um por empresa, cada um com a sua segmentação`,
+    '3. Enviar a imagem e criar o anúncio de cada empresa',
     config.autoActivate
-      ? `${hasImage ? '5' : '3'}. Ativar a campanha (ACTIVE)`
-      : `${hasImage ? '5' : '3'}. Campanha criada como PAUSED`,
+      ? '4. Ativar os conjuntos'
+      : '4. Deixar os conjuntos pausados, para você ativar quando quiser',
   ];
 
   return (
@@ -188,9 +190,15 @@ function ConfirmLaunchModal({
               <span className="font-medium text-slate-800">{objLabel}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Budget/conjunto:</span>
+              <span className="text-slate-500">Orçamento por conjunto:</span>
               <span className="font-medium text-slate-800">
-                ${config.budgetAmount} ({config.budgetType === 'daily' ? 'diário' : 'total'})
+                {fmtCurrency(parseFloat(config.budgetAmount) || 0, currency)} ({config.budgetType === 'daily' ? 'por dia' : 'total'})
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Orçamento somado:</span>
+              <span className="font-medium text-slate-800">
+                {fmtCurrency((parseFloat(config.budgetAmount) || 0) * adSetAccounts.length, currency)} ({config.budgetType === 'daily' ? 'por dia' : 'total'})
               </span>
             </div>
             <div className="flex justify-between text-sm">
@@ -200,13 +208,13 @@ function ConfirmLaunchModal({
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Criativo:</span>
               <span className={`font-medium ${hasImage ? 'text-green-700' : 'text-amber-700'}`}>
-                {hasImage ? 'Com imagem' : 'Sem imagem (somente campanha)'}
+                {hasImage ? 'Um anúncio por empresa' : 'Sem imagem'}
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Status após criação:</span>
               <span className={`font-medium ${config.autoActivate ? 'text-green-700' : 'text-amber-700'}`}>
-                {config.autoActivate ? 'ACTIVE' : 'PAUSED'}
+                {config.autoActivate ? 'Ativa' : 'Pausada'}
               </span>
             </div>
           </div>
@@ -216,10 +224,10 @@ function ConfirmLaunchModal({
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div className="text-sm text-red-700">
-                <strong>Atenção:</strong> A Ad Account tem status <strong>{billingStatus?.account_status}</strong>.
+                <strong>Atenção:</strong> a conta de anúncios está com status <strong>{adAccountStatusLabel(billingStatus?.account_status)}</strong>.
                 {config.autoActivate
-                  ? ' A ativação pode falhar sem faturamento configurado. Recomendamos criar como PAUSED.'
-                  : ' Configure um meio de pagamento antes de ativar manualmente.'}
+                  ? ' A ativação pode falhar sem faturamento configurado. Recomendamos criar pausada.'
+                  : ' Configure um meio de pagamento antes de ativar.'}
               </div>
             </div>
           )}
@@ -237,8 +245,8 @@ function ConfirmLaunchModal({
             <p className="text-xs text-slate-500 leading-relaxed flex items-start gap-2">
               <Shield className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
               <span>
-                <strong>Segurança:</strong> Tokens ficam no servidor. Cada passo é idempotente.
-                Se falhar, pode ser retentado sem duplicação. Audit trail completo no KV store.
+                <strong>Segurança:</strong> o acesso ao LinkedIn fica no servidor. Se algum passo falhar,
+                dá para tentar de novo sem duplicar o que já foi criado.
               </span>
             </p>
           </div>
@@ -256,7 +264,7 @@ function ConfirmLaunchModal({
             className="px-5 py-2.5 text-sm font-medium text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm flex items-center gap-2"
           >
             <Rocket className="w-4 h-4" />
-            Lançar Campanha
+            Publicar campanha
           </button>
         </div>
       </div>
@@ -296,7 +304,6 @@ export function OrchestrationStep({
   const [billingLoading, setBillingLoading] = useState(false);
 
   const isLinkedInReady = linkedinStatus?.status === 'connected' && !!linkedinStatus?.selected_ad_account_id;
-  const hasCreativeImage = !!creativeData?.imageUrl;
   const hasBillingIssue = billingStatus && !billingStatus.has_billing;
 
   // Check billing on mount if LinkedIn is ready
@@ -318,29 +325,19 @@ export function OrchestrationStep({
 
   const objInfo = OBJECTIVE_MAP[campaignConfig.objective];
   const currency = linkedinStatus?.selected_ad_account_currency || 'BRL';
-  const currencySymbol = currency === 'BRL' ? 'R$' : '$';
+  const currencySymbol = currency === 'BRL' ? 'R$' : 'US$';
 
-  // Targeting summary: accounts + the default person facets. Per-account
-  // overrides are reflected in the ad-set list above, not duplicated here.
-  const summarySelections: Array<[string, { included: FacetItem[] }]> = targetingData
-    ? [
-        ['companies', targetingData.companies],
-        ...(Object.entries(targetingData.defaultTargeting) as Array<
-          [string, { included: FacetItem[] }]
-        >),
-      ]
-    : [];
-  const targetingSummary = summarySelections
-    .filter(([, sel]) => sel.included.length > 0)
-    .map(([key, sel]) => ({
-      key,
-      ...(FACET_LABELS[key] || { label: key, icon: Target }),
-      count: sel.included.length,
-      items: sel.included.slice(0, 5).map((i: FacetItem) => i.label),
-      hasMore: sel.included.length > 5,
-    }));
+  // Um id por lançamento: o servidor deduplica por ele (ver buildLaunchPlan).
+  // Fica estável durante a revisão para que "tentar de novo" após uma falha
+  // retome os passos já feitos em vez de duplicar.
+  const runIdRef = React.useRef(Date.now().toString(36));
 
-  const totalCriteria = targetingSummary.reduce((s, f) => s + f.count, 0);
+  // O que vai ser publicado, já resolvido por empresa, e o que impede publicar.
+  const adSetPlan = targetingData && creativeData ? buildLaunchPlan(campaignConfig, targetingData, creativeData) : [];
+  const planIssues = validateLaunchPlan(adSetPlan);
+  const blockedAdSets = Object.keys(planIssues).length;
+  const canPublish = isLinkedInReady && !isPipelineRunning && adSetPlan.length > 0 && blockedAdSets === 0;
+
 
   // --- Launch pipeline ---
   const handleConfirmLaunch = useCallback(async () => {
@@ -357,185 +354,133 @@ export function OrchestrationStep({
       return;
     }
 
-    // One ad set per target account (LinkedIn ABM model). Each ad set carries
-    // the account's effective person targeting (override or default).
-    const accounts = targetingData?.companies.included ?? [];
-    if (accounts.length === 0) return;
-
-    const validAdSets = accounts.map((acc) => ({
-      id: acc.id,
-      // The campaign name supports {{company.name}}; substitute per account.
-      name: campaignConfig.campaignName.includes('{{company.name}}')
-        ? campaignConfig.campaignName.replace(/\{\{company\.name\}\}/g, acc.label)
-        : `${campaignConfig.campaignName} — ${acc.label}`,
-      criteria: targetingData
-        ? buildTargetingCriteria(acc, resolveTargetingForAccount(targetingData, acc.id))
-        : { include: { and: [] } },
-    }));
+    // Um conjunto de anúncio por empresa-alvo (modelo ABM do LinkedIn), cada um
+    // com a sua segmentação e o seu criativo. Ver buildLaunchPlan.
+    if (!targetingData || !creativeData) return;
+    const plan = buildLaunchPlan(campaignConfig, targetingData, creativeData, { runId: runIdRef.current });
+    if (plan.length === 0) return;
 
     setIsPipelineRunning(true);
     setShowPipelineModal(true);
 
-    // 1x Create Campaign Group (implicit, named after the campaign) +
-    // Nx (Create Campaign/ad set + Upload Image + Create Creative + Activate)
+    // 1x grupo de campanhas + Nx (conjunto com segmentação + imagem + anúncio + ativação)
     const allSteps: PipelineStep[] = [
-      { action: 'create-campaign-group', label: `Criar Grupo "${campaignConfig.campaignName}"`, status: 'pending' },
-      ...validAdSets.flatMap((a, idx) => [
-        { action: 'create-campaign' as const, label: `Conjunto ${idx + 1}: "${a.name}"`, status: 'pending' as const },
-      ]),
+      { action: 'create-campaign-group', label: `Criar grupo "${campaignConfig.campaignName}"`, status: 'pending' },
+      ...plan.map((a, idx) => ({
+        action: 'create-campaign' as const,
+        label: `Conjunto ${idx + 1}: "${a.name}" (segmentação + anúncio)`,
+        status: 'pending' as const,
+      })),
     ];
     setPipelineSteps(allSteps);
 
     let campaignGroupId: string | null = null;
     let allSuccess = true;
 
-    // Run the FIRST ad set through the full pipeline (creates the group)
-    const firstAdSet = validAdSets[0];
-    const firstParams: CampaignPipelineParams = {
-      campaign_id: firstAdSet.id,
-      ad_account_id: adAccountId,
-      group_name: campaignConfig.campaignName,
-      campaign_name: firstAdSet.name,
-      objective: campaignConfig.objective,
-      targeting_criteria: firstAdSet.criteria,
-      budget_type: campaignConfig.budgetType,
-      budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
-      currency,
-      start_date: campaignConfig.startDate,
-      end_date: campaignConfig.endDate || undefined,
-      auto_activate: campaignConfig.autoActivate,
-      campaign_type: campaignConfig.campaignType,
-      cost_type: campaignConfig.costType as 'CPM' | 'CPC' | 'CPV',
-      bidding_strategy: campaignConfig.biddingStrategy,
-      unit_cost: campaignConfig.biddingStrategy !== 'automated' && campaignConfig.unitCostAmount
-        ? { amount: campaignConfig.unitCostAmount, currency_code: currency }
-        : undefined,
-      // Creative data from Step 3
-      image_url: creativeData?.imageUrl || undefined,
-      headline: creativeData?.headline || undefined,
-      description: creativeData?.bodyText || undefined,
-      cta: creativeData?.cta || undefined,
-      landing_page_url: creativeData?.landingPageUrl || undefined,
-    };
+    for (let i = 0; i < plan.length; i++) {
+      const adSet = plan[i];
+      const stepIdx = i + 1; // allSteps[0] é o grupo
 
-    const firstResult = await runCampaignPipeline(firstParams, (steps) => {
-      // Map pipeline steps to our allSteps display
-      const cgStep = steps.find(s => s.action === 'create-campaign-group');
-      const campStep = steps.find(s => s.action === 'create-campaign');
-      if (cgStep) allSteps[0] = { ...allSteps[0], status: cgStep.status, result: cgStep.result };
-      if (campStep) allSteps[1] = { ...allSteps[1], status: campStep.status, result: campStep.result };
+      if (i > 0 && !campaignGroupId) {
+        allSteps[stepIdx] = {
+          ...allSteps[stepIdx],
+          status: 'error',
+          result: { success: false, error: 'O grupo da campanha não foi criado.' },
+        };
+        allSuccess = false;
+        continue;
+      }
+
+      allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'running' };
       setPipelineSteps([...allSteps]);
-    });
 
-    // Extract group ID for subsequent campaigns
-    const cgResult = firstResult.steps.find(s => s.action === 'create-campaign-group');
-    campaignGroupId = cgResult?.result?.campaign_group_id || null;
-
-    if (firstResult.success) {
-      // Save first ad set to KV
-      const campStep = firstResult.steps.find(s => s.action === 'create-campaign');
-      await saveCampaignToServer({
-        id: firstAdSet.id,
-        name: firstAdSet.name,
-        status: campaignConfig.autoActivate ? 'active' : 'paused',
-        type: validAdSets.length > 1 ? '1:Many' : '1:1',
+      const params: CampaignPipelineParams = {
+        campaign_id: adSet.id,
+        ad_account_id: adAccountId,
+        group_name: campaignConfig.campaignName,
+        campaign_name: adSet.name,
         objective: campaignConfig.objective,
-        campaign_group: campaignConfig.campaignName,
+        targeting_criteria: adSet.criteria,
         budget_type: campaignConfig.budgetType,
         budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
-        currency: currency,
-        spent: 0,
-        impressions: 0,
-        clicks: 0,
-        start_date: campaignConfig.startDate || null,
-        end_date: campaignConfig.endDate || null,
-        linkedin_campaign_group_id: campaignGroupId,
-        linkedin_campaign_id: campStep?.result?.linkedin_campaign_id || null,
-        bidding_strategy: campaignConfig.biddingStrategy,
+        currency,
+        start_date: campaignConfig.startDate,
+        end_date: campaignConfig.endDate || undefined,
         auto_activate: campaignConfig.autoActivate,
+        campaign_type: campaignConfig.campaignType,
+        cost_type: campaignConfig.costType as 'CPM' | 'CPC' | 'CPV',
+        bidding_strategy: campaignConfig.biddingStrategy,
+        unit_cost: campaignConfig.biddingStrategy !== 'automated' && campaignConfig.unitCostAmount
+          ? { amount: campaignConfig.unitCostAmount, currency_code: currency }
+          : undefined,
+        group_budget_amount: (parseFloat(campaignConfig.budgetAmount) || 0) * plan.length,
+        image_url: adSet.creative.imageUrl || undefined,
+        headline: adSet.creative.headline || undefined,
+        description: adSet.creative.bodyText || undefined,
+        cta: adSet.creative.cta || undefined,
+        landing_page_url: adSet.creative.landingPageUrl || undefined,
+        // O primeiro conjunto cria o grupo; os demais reaproveitam o mesmo.
+        existing_campaign_group_id: campaignGroupId || undefined,
+      };
+
+      const result = await runCampaignPipeline(params, (steps) => {
+        if (i === 0) {
+          const cgStep = steps.find((s) => s.action === 'create-campaign-group');
+          if (cgStep) allSteps[0] = { ...allSteps[0], status: cgStep.status, result: cgStep.result };
+        }
+        const failed = steps.find((s) => s.status === 'error');
+        if (failed) allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'error', result: failed.result };
+        setPipelineSteps([...allSteps]);
       });
 
-      // Run remaining ad sets (reuse the group ID)
-      for (let i = 1; i < validAdSets.length; i++) {
-        const adSet = validAdSets[i];
-        const stepIdx = i + 1; // +1 because allSteps[0] is the group
+      if (i === 0) {
+        const cgResult = result.steps.find((s) => s.action === 'create-campaign-group');
+        campaignGroupId = cgResult?.result?.campaign_group_id || null;
+      }
 
-        allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'running' };
-        setPipelineSteps([...allSteps]);
-
-        const params: CampaignPipelineParams = {
-          campaign_id: adSet.id,
-          ad_account_id: adAccountId,
-          group_name: campaignConfig.campaignName,
-          campaign_name: adSet.name,
+      if (result.success) {
+        allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'success' };
+        const campStep = result.steps.find((s) => s.action === 'create-campaign');
+        await saveCampaignToServer({
+          id: adSet.id,
+          name: adSet.name,
+          status: campaignConfig.autoActivate ? 'active' : 'paused',
+          type: plan.length > 1 ? '1:Many' : '1:1',
           objective: campaignConfig.objective,
-          targeting_criteria: adSet.criteria,
+          campaign_group: campaignConfig.campaignName,
           budget_type: campaignConfig.budgetType,
           budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
-          currency,
-          start_date: campaignConfig.startDate,
-          end_date: campaignConfig.endDate || undefined,
-          auto_activate: campaignConfig.autoActivate,
-          campaign_type: campaignConfig.campaignType,
-          cost_type: campaignConfig.costType as 'CPM' | 'CPC' | 'CPV',
+          currency: currency,
+          spent: 0,
+          impressions: 0,
+          clicks: 0,
+          start_date: campaignConfig.startDate || null,
+          end_date: campaignConfig.endDate || null,
+          linkedin_campaign_group_id: campaignGroupId,
+          linkedin_campaign_id: campStep?.result?.linkedin_campaign_id || null,
           bidding_strategy: campaignConfig.biddingStrategy,
-          unit_cost: campaignConfig.biddingStrategy !== 'automated' && campaignConfig.unitCostAmount
-            ? { amount: campaignConfig.unitCostAmount, currency_code: currency }
-            : undefined,
-          // Reuse the group created by the first campaign
-          existing_campaign_group_id: campaignGroupId!,
-        };
-
-        const result = await runCampaignPipeline(params, (steps) => {
-          const campStep = steps.find(s => s.action === 'create-campaign');
-          if (campStep) {
-            allSteps[stepIdx] = { ...allSteps[stepIdx], status: campStep.status, result: campStep.result };
-            setPipelineSteps([...allSteps]);
-          }
+          auto_activate: campaignConfig.autoActivate,
         });
-
-        if (result.success) {
-          allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'success' };
-          const campStep = result.steps.find(s => s.action === 'create-campaign');
-          await saveCampaignToServer({
-            id: adSet.id,
-            name: adSet.name,
-            status: campaignConfig.autoActivate ? 'active' : 'paused',
-            type: '1:Many',
-            objective: campaignConfig.objective,
-            campaign_group: campaignConfig.campaignName,
-            budget_type: campaignConfig.budgetType,
-            budget_amount: parseFloat(campaignConfig.budgetAmount) || 0,
-            currency: currency,
-            spent: 0,
-            impressions: 0,
-            clicks: 0,
-            start_date: campaignConfig.startDate || null,
-            end_date: campaignConfig.endDate || null,
-            linkedin_campaign_group_id: campaignGroupId,
-            linkedin_campaign_id: campStep?.result?.linkedin_campaign_id || null,
-            bidding_strategy: campaignConfig.biddingStrategy,
-            auto_activate: campaignConfig.autoActivate,
-          });
-        } else {
-          allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'error', result: { success: false, error: 'Pipeline failed' } };
-          allSuccess = false;
-        }
-        setPipelineSteps([...allSteps]);
+      } else {
+        const failed = result.steps.find((s) => s.status === 'error');
+        allSteps[stepIdx] = {
+          ...allSteps[stepIdx],
+          status: 'error',
+          result: failed?.result ?? { success: false, error: 'Falha ao criar o conjunto.' },
+        };
+        allSuccess = false;
       }
-    } else {
-      allSuccess = false;
-      console.error('[Launch] First pipeline failed — skipping remaining ad sets');
+      setPipelineSteps([...allSteps]);
     }
 
     setIsPipelineRunning(false);
 
     if (allSuccess) {
-      console.log(`[Launch] All ${validAdSets.length} ad sets created successfully`);
+      console.log(`[Launch] All ${plan.length} ad sets created successfully`);
     } else {
       console.error('[Launch] Some ad sets failed');
     }
-  }, [linkedinStatus, targetingData, campaignConfig, currency, selectedAccounts]);
+  }, [linkedinStatus, targetingData, campaignConfig, creativeData, currency]);
 
   const handlePipelineClose = () => {
     setShowPipelineModal(false);
@@ -556,9 +501,9 @@ export function OrchestrationStep({
         </div>
         <button
           onClick={() => setShowConfirmModal(true)}
-          disabled={!isLinkedInReady || isPipelineRunning}
+          disabled={!canPublish}
           className={`px-6 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-sm transition-all ${
-            isLinkedInReady && !isPipelineRunning
+            canPublish
               ? 'bg-[#FF5F39] hover:bg-[#E54A26] text-white hover:shadow-md'
               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
           }`}
@@ -568,7 +513,7 @@ export function OrchestrationStep({
           ) : (
             <Rocket className="w-4 h-4" />
           )}
-          {isPipelineRunning ? 'Criando...' : 'Go Live'}
+          {isPipelineRunning ? 'Publicando…' : 'Publicar campanha'}
         </button>
       </div>
 
@@ -579,7 +524,17 @@ export function OrchestrationStep({
           <p className="text-sm text-amber-800">
             {linkedinStatus?.status !== 'connected'
               ? 'Conecte o LinkedIn em Integrações antes de lançar campanhas.'
-              : 'Selecione uma Ad Account na página de Integrações.'}
+              : 'Selecione uma conta de anúncios na página de Integrações.'}
+          </p>
+        </div>
+      )}
+
+      {/* Problemas que travam a publicação */}
+      {blockedAdSets > 0 && (
+        <div className="mb-6 flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-5 py-3">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-red-800">
+            {blockedAdSets === adSetPlan.length && adSetPlan.length > 1 ? 'Todos os conjuntos' : plural(blockedAdSets, 'conjunto')} com pendência. Corrija nos cards abaixo para liberar a publicação.
           </p>
         </div>
       )}
@@ -590,8 +545,8 @@ export function OrchestrationStep({
           <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
           <p className="text-sm text-red-800">
             {billingStatus?.account_status === 'ERROR'
-              ? `Erro ao verificar faturamento: ${billingStatus.error}`
-              : 'Ad Account sem faturamento configurado.'}
+              ? 'Não foi possível verificar o faturamento da conta de anúncios agora.'
+              : 'A conta de anúncios está sem meio de pagamento configurado.'}
           </p>
         </div>
       )}
@@ -631,9 +586,9 @@ export function OrchestrationStep({
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Tipo</span>
-              <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                {campaignConfig.campaignType} / {campaignConfig.costType}
+              <span className="text-xs font-semibold text-slate-500 uppercase">Formato</span>
+              <span className="text-sm text-slate-700">
+                {campaignTypeLabel(campaignConfig.campaignType)} · cobrança por {campaignConfig.costType}
               </span>
             </div>
           </div>
@@ -650,11 +605,20 @@ export function OrchestrationStep({
 
           <div className="space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Budget</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase">Por conjunto</span>
               <span className="text-sm font-medium text-slate-800">
-                {currencySymbol}{campaignConfig.budgetAmount}
+                {fmtCurrency(parseFloat(campaignConfig.budgetAmount) || 0, currency)}
                 <span className="text-xs text-slate-500 ml-1">
-                  ({campaignConfig.budgetType === 'daily' ? 'diário' : 'total'})
+                  ({campaignConfig.budgetType === 'daily' ? 'por dia' : 'total'})
+                </span>
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-semibold text-slate-500 uppercase">Somando os {adSetPlan.length}</span>
+              <span className="text-sm font-medium text-slate-800">
+                {fmtCurrency((parseFloat(campaignConfig.budgetAmount) || 0) * adSetPlan.length, currency)}
+                <span className="text-xs text-slate-500 ml-1">
+                  ({campaignConfig.budgetType === 'daily' ? 'por dia' : 'total'})
                 </span>
               </span>
             </div>
@@ -667,7 +631,7 @@ export function OrchestrationStep({
               <span className="text-sm text-slate-700">{campaignConfig.endDate || 'Contínua'}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Bidding</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase">Lance</span>
               <span className="text-sm text-slate-700">
                 {campaignConfig.biddingStrategy === 'automated'
                   ? 'Automático'
@@ -681,111 +645,105 @@ export function OrchestrationStep({
                   ? 'bg-green-50 text-green-700 border border-green-200'
                   : 'bg-slate-100 text-slate-600 border border-slate-200'
               }`}>
-                {campaignConfig.autoActivate ? 'Sim (ACTIVE)' : 'Não (PAUSED)'}
+                {campaignConfig.autoActivate ? 'Sim, publica ativa' : 'Não, publica pausada'}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Card: Segmentação */}
+        {/* Conjuntos de anúncio: o que vai para o LinkedIn, empresa por empresa.
+            Antes a Revisão mostrava só a segmentação padrão e o criativo do
+            template, escondendo a personalização de cada empresa. */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                 <Target className="w-4 h-4 text-emerald-600" />
               </div>
-              <h3 className="font-semibold text-slate-800">Segmentação</h3>
+              <h3 className="font-semibold text-slate-800">Conjuntos de anúncio</h3>
             </div>
             <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full font-medium">
-              {totalCriteria} critérios
+              {plural(adSetPlan.length, 'conjunto')} · um por empresa
             </span>
           </div>
 
-          {targetingSummary.length === 0 ? (
+          {adSetPlan.length === 0 ? (
             <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>Nenhum critério de segmentação definido. Volte ao Step 2 para configurar.</span>
+              <span>Nenhuma empresa-alvo selecionada. Volte ao passo 2, Segmentação.</span>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {targetingSummary.map((facet) => {
-                const Icon = facet.icon;
+            <div className="space-y-3">
+              {adSetPlan.map((adSet, idx) => {
+                const issues = planIssues[adSet.companyId] || [];
+                const person = targetingData ? resolveTargetingForAccount(targetingData, adSet.companyId) : null;
+                const facets = person
+                  ? (Object.entries(person) as Array<[string, { included?: FacetItem[] }]>)
+                      .filter(([, sel]) => sel?.included && sel.included.length > 0)
+                      .map(([key, sel]) => ({
+                        label: (FACET_LABELS[key] || { label: key }).label,
+                        items: sel.included!.map((i) => i.label),
+                      }))
+                  : [];
+                let host = '';
+                try { host = new URL(adSet.creative.landingPageUrl).hostname.replace(/^www\./, ''); } catch { host = ''; }
                 return (
-                  <div key={facet.key} className="bg-slate-50 rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Icon className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="text-xs font-semibold text-slate-600 uppercase">{facet.label}</span>
-                      <span className="text-[10px] text-slate-400 bg-white px-1.5 py-0.5 rounded-full border border-slate-200 ml-auto">
-                        {facet.count}
-                      </span>
+                  <div
+                    key={adSet.companyId}
+                    className={`rounded-lg border p-4 flex flex-col sm:flex-row gap-4 ${issues.length ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-slate-50'}`}
+                  >
+                    <div className="w-full sm:w-40 shrink-0">
+                      {adSet.creative.imageUrl ? (
+                        <img
+                          src={adSet.creative.imageUrl}
+                          alt={`Anúncio para ${adSet.companyName}`}
+                          className="w-full aspect-[1.91/1] object-cover rounded-md border border-slate-200 bg-white"
+                        />
+                      ) : (
+                        <div className="w-full aspect-[1.91/1] rounded-md border border-dashed border-slate-300 bg-white flex items-center justify-center text-xs text-slate-400">
+                          Sem imagem
+                        </div>
+                      )}
                     </div>
-                    <div className="space-y-0.5">
-                      {facet.items.map((item: string, idx: number) => (
-                        <p key={idx} className="text-xs text-slate-700 truncate">
-                          {item}
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="w-5 h-5 rounded-full bg-[#FFE3DA] text-[#E54A26] text-[10px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
+                        <span className="text-sm font-semibold text-slate-800">{adSet.companyName}</span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${adSet.customTargeting ? 'bg-amber-100 text-amber-800' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                          {adSet.customTargeting ? 'Segmentação personalizada' : 'Segmentação padrão'}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-slate-800 break-words">{adSet.creative.headline || '—'}</p>
+                      <p className="text-xs text-slate-600 line-clamp-2 break-words">{adSet.creative.bodyText || '—'}</p>
+                      <p className="text-xs text-slate-500">
+                        {ctaLabel(adSet.creative.cta)} · {host || adSet.creative.landingPageUrl || 'sem URL'}
+                      </p>
+                      {facets.length > 0 && (
+                        <p className="text-xs text-slate-500 break-words">
+                          {facets.map((f) => `${f.label}: ${f.items.slice(0, 3).join(', ')}${f.items.length > 3 ? ` +${f.items.length - 3}` : ''}`).join(' · ')}
                         </p>
-                      ))}
-                      {facet.hasMore && (
-                        <p className="text-xs text-[#FF5F39] font-medium">
-                          +{facet.count - 5} mais
-                        </p>
+                      )}
+                      {issues.length > 0 && (
+                        <ul className="text-xs text-red-700 space-y-0.5">
+                          {issues.map((issue) => (
+                            <li key={issue} className="flex items-start gap-1">
+                              <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                              {issue}
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </div>
                   </div>
                 );
               })}
-            </div>
-          )}
-        </div>
-
-        {/* Card: Criativo */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
-              <ImageIcon className="w-4 h-4 text-purple-600" />
-            </div>
-            <h3 className="font-semibold text-slate-800">Criativo</h3>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Imagem</span>
-              {hasCreativeImage ? (
-                <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  {creativeData?.imageFileName || 'Enviada'}
-                </span>
-              ) : (
-                <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  Sem imagem
-                </span>
+              {blockedAdSets > 0 && (
+                <p className="text-xs text-slate-500">
+                  Imagem, título, texto e URL se ajustam no passo 4, Criativos.
+                </p>
               )}
             </div>
-            <div className="flex justify-between items-start">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Headline</span>
-              <span className="text-sm text-slate-700 text-right max-w-[60%] truncate">
-                {creativeData?.headline || '—'}
-              </span>
-            </div>
-            <div className="flex justify-between items-start">
-              <span className="text-xs font-semibold text-slate-500 uppercase">CTA</span>
-              <span className="text-sm text-slate-700">{creativeData?.cta || 'LEARN_MORE'}</span>
-            </div>
-            <div className="flex justify-between items-start">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Landing Page</span>
-              <span className="text-sm text-slate-700 text-right max-w-[60%] truncate">
-                {creativeData?.landingPageUrl || '—'}
-              </span>
-            </div>
-            {!hasCreativeImage && (
-              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-                <p className="text-xs text-amber-700">
-                  Campanha sera criada sem criativo. Volte ao Step 3 para fazer upload de uma imagem.
-                </p>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Card: Faturamento */}
@@ -811,7 +769,7 @@ export function OrchestrationStep({
                     ? 'bg-green-50 text-green-700 border border-green-200'
                     : 'bg-red-50 text-red-700 border border-red-200'
                 }`}>
-                  {billingStatus.account_status}
+                  {adAccountStatusLabel(billingStatus.account_status)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
@@ -824,7 +782,7 @@ export function OrchestrationStep({
                 ) : (
                   <span className="text-xs font-medium text-red-700 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
-                    Nao configurado
+                    Não configurado
                   </span>
                 )}
               </div>
@@ -841,7 +799,7 @@ export function OrchestrationStep({
                       ? <>A Ad Account está em <strong>BILLING_HOLD</strong> (sem método de pagamento válido). Adicione um cartão no LinkedIn Campaign Manager antes de ativar campanhas.</>
                       : billingStatus.serving_statuses && billingStatus.serving_statuses.length > 0
                       ? <>A Ad Account não está <strong>RUNNABLE</strong> (estado atual: {billingStatus.serving_statuses.join(', ')}). Resolva no LinkedIn Campaign Manager antes de ativar campanhas.</>
-                      : <>A Ad Account tem status <strong>{billingStatus.account_status}</strong>. Configure um meio de pagamento no LinkedIn Campaign Manager antes de ativar campanhas.</>
+                      : <>A conta de anúncios está com status <strong>{adAccountStatusLabel(billingStatus.account_status)}</strong>. Configure um meio de pagamento no Campaign Manager do LinkedIn antes de ativar campanhas.</>
                     }
                   </p>
                 </div>
@@ -850,12 +808,12 @@ export function OrchestrationStep({
           ) : !isLinkedInReady ? (
             <div className="flex items-center gap-2 text-sm text-slate-400">
               <AlertTriangle className="w-4 h-4" />
-              LinkedIn nao conectado — verificacao indisponivel.
+              LinkedIn não conectado: não dá para verificar o faturamento.
             </div>
           ) : (
             <div className="flex items-center gap-2 text-sm text-slate-400">
               <AlertTriangle className="w-4 h-4" />
-              Nao foi possivel verificar o status de faturamento.
+              Não foi possível verificar o faturamento.
             </div>
           )}
         </div>
@@ -906,6 +864,7 @@ export function OrchestrationStep({
           targetingData={targetingData}
           creativeData={creativeData}
           billingStatus={billingStatus}
+          currency={currency}
           onConfirm={handleConfirmLaunch}
           onCancel={() => setShowConfirmModal(false)}
         />

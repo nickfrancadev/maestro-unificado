@@ -8,16 +8,16 @@
 import type { FacetItem } from './types';
 
 export const SENIORITY_OPTIONS: FacetItem[] = [
-  { id: '1', label: 'Unpaid', urn: 'urn:li:seniority:1' },
-  { id: '2', label: 'Training', urn: 'urn:li:seniority:2' },
-  { id: '3', label: 'Entry', urn: 'urn:li:seniority:3' },
-  { id: '4', label: 'Senior', urn: 'urn:li:seniority:4' },
-  { id: '5', label: 'Manager', urn: 'urn:li:seniority:5' },
-  { id: '6', label: 'Director', urn: 'urn:li:seniority:6' },
-  { id: '7', label: 'VP', urn: 'urn:li:seniority:7' },
-  { id: '8', label: 'CXO', urn: 'urn:li:seniority:8' },
-  { id: '9', label: 'Partner', urn: 'urn:li:seniority:9' },
-  { id: '10', label: 'Owner', urn: 'urn:li:seniority:10' },
+  { id: '1', label: 'Não remunerado', urn: 'urn:li:seniority:1' },
+  { id: '2', label: 'Estagiário', urn: 'urn:li:seniority:2' },
+  { id: '3', label: 'Iniciante', urn: 'urn:li:seniority:3' },
+  { id: '4', label: 'Sênior', urn: 'urn:li:seniority:4' },
+  { id: '5', label: 'Gerente', urn: 'urn:li:seniority:5' },
+  { id: '6', label: 'Diretor', urn: 'urn:li:seniority:6' },
+  { id: '7', label: 'Vice-presidente', urn: 'urn:li:seniority:7' },
+  { id: '8', label: 'CXO (C-level)', urn: 'urn:li:seniority:8' },
+  { id: '9', label: 'Sócio', urn: 'urn:li:seniority:9' },
+  { id: '10', label: 'Proprietário', urn: 'urn:li:seniority:10' },
 ];
 
 export const JOB_FUNCTION_OPTIONS: FacetItem[] = [

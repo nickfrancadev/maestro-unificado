@@ -36,7 +36,8 @@ import type { CampaignAnalyticsFull, LinkedInCampaign, CampaignComment, Campaign
 import { isMockCampaign, MOCK_CAMPAIGN, getMockAnalyticsFull, getMockComments, getMockAnalyticsByAccount, getMockCommentsByAccount } from '@/lib/mockCampaignData';
 import { AccountAdPreview } from './AccountAdPreview';
 import { AccountFocusSwitcher } from './AccountFocusSwitcher';
-import { fmtCurrency, fmtNum, fmtDateLabel } from './format';
+import { fmtCurrency, fmtNum, fmtPct, fmtOptional, fmtDateLabel } from './format';
+import { statusLabel, plural } from './labels';
 import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
 import { AccountDetailPanel } from './AccountDetailPanel';
@@ -64,7 +65,7 @@ function relativeTime(iso: string): string {
   if (hours < 24) return `há ${hours}h`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `há ${days}d`;
-  return `há ${Math.floor(days / 30)} mês${Math.floor(days / 30) > 1 ? 'es' : ''}`;
+  return `há ${plural(Math.floor(days / 30), 'mês', 'meses')}`;
 }
 
 function avatarColor(name: string | null): string {
@@ -91,14 +92,22 @@ function getStatusColor(status: string) {
   }
 }
 
-// Delta badge component
-function DeltaBadge({ value }: { value: string | null | undefined }) {
+// As métricas derivadas chegam como string com ponto ("6.25"); vira número
+// para formatar em pt-BR. Ausente ou inválida → null (a tela mostra "—").
+function toNum(value: string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const n = parseFloat(value);
+  return Number.isNaN(n) ? null : n;
+}
+
+// Badge de variação vs período anterior
+function DeltaBadge({ value }: { value: string | null | undefined }) {
+  const n = toNum(value);
+  if (n === null) return null;
   const isUp = n >= 0;
   return (
     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${isUp ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-      {isUp ? '+' : ''}{value}%
+      {isUp ? '+' : ''}{fmtPct(n, 1)}
     </span>
   );
 }
@@ -198,12 +207,15 @@ export function CampaignAnalytics() {
     }
   };
 
-  const campaignName = campaign?.name || `Campaign ${campaignId}`;
-  const statusLabel = campaign?.status || 'Unknown';
+  const campaignName = campaign?.name || `Campanha ${campaignId}`;
+  // Valor cru (ex.: 'Active') segue para as cores; na tela, o rótulo em português.
+  const rawStatus = campaign?.status || '';
   const startDate = campaign?.runSchedule?.start || null;
   const endDate = campaign?.runSchedule?.end || null;
   const currency = data?.currency || 'BRL';
-  const cy = currency === 'BRL' ? 'R$' : '$';
+  const money = (v: number) => fmtCurrency(v, currency);
+  const pct = (v: string | null | undefined) => fmtOptional(toNum(v), n => fmtPct(n));
+  const moneyStr = (v: string | null | undefined) => fmtOptional(toNum(v), money);
   const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
 
   const accounts = byAccount?.accounts ?? [];
@@ -281,8 +293,8 @@ export function CampaignAnalytics() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{campaignName}</h1>
             <div className="flex items-center gap-2 text-sm text-slate-500 mt-1">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(statusLabel)}`}>
-                {statusLabel}
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(rawStatus)}`}>
+                {rawStatus ? statusLabel(rawStatus) : 'Desconhecido'}
               </span>
               <span>•</span>
               <span className="flex items-center gap-1">
@@ -360,10 +372,10 @@ export function CampaignAnalytics() {
             </div>
           ) : !byAccount ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
-              <MetricCard icon={<Eye className="w-4 h-4 text-blue-600" />} label="Impressões" value={fmtNum(d?.impressions || 0)} delta={d?.delta?.impressions} />
-              <MetricCard icon={<MousePointerClick className="w-4 h-4 text-purple-600" />} label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
-              <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={`${d?.ctr || '0'}%`} delta={null} />
+              <MetricCard icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} label="Investimento total" value={fmtOptional(d?.costInLocalCurrency, money)} delta={d?.delta?.cost} />
+              <MetricCard icon={<Eye className="w-4 h-4 text-blue-600" />} label="Impressões" value={fmtOptional(d?.impressions)} delta={d?.delta?.impressions} />
+              <MetricCard icon={<MousePointerClick className="w-4 h-4 text-purple-600" />} label="Cliques" value={fmtOptional(d?.clicks)} delta={d?.delta?.clicks} />
+              <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={pct(d?.ctr)} delta={null} />
             </div>
           ) : null}
 
@@ -374,7 +386,7 @@ export function CampaignAnalytics() {
                 <h3 className="font-bold text-slate-800">Engajamento ao longo do tempo</h3>
                 <div className="flex gap-4">
                   <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-[#FF5F39]" /> Impressões</div>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-blue-400" /> Clicks</div>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-2.5 h-2.5 rounded-full bg-blue-400" /> Cliques</div>
                 </div>
               </div>
               <div className="h-[260px] w-full">
@@ -399,7 +411,7 @@ export function CampaignAnalytics() {
                       <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
                       <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '13px' }} />
                       <Area yAxisId="left" type="monotone" dataKey="impressions" name="Impressões" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill={`url(#${impressionsGradient})`} />
-                      <Area yAxisId="right" type="monotone" dataKey="clicks" name="Clicks" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill={`url(#${clicksGradient})`} />
+                      <Area yAxisId="right" type="monotone" dataKey="clicks" name="Cliques" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill={`url(#${clicksGradient})`} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -420,46 +432,50 @@ export function CampaignAnalytics() {
             <div className="space-y-4">
               <MetricPanel icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} title="Investimento & Custo">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatCell label="Total Spend" value={fmtCurrency(d?.costInLocalCurrency || 0, currency)} delta={d?.delta?.cost} />
-                  <StatCell label="CPC" value={`${cy}${d?.cpc || '0'}`} sub="Custo por clique" />
-                  <StatCell label="CPM" value={`${cy}${d?.cpm || '0'}`} sub="Custo por mil impr." />
-                  <StatCell label="CPL" value={d?.cpl ? `${cy}${d.cpl}` : '—'} sub="Custo por lead" />
+                  <StatCell label="Investimento total" value={fmtOptional(d?.costInLocalCurrency, money)} delta={d?.delta?.cost} />
+                  <StatCell label="CPC" value={moneyStr(d?.cpc)} sub="Custo por clique" />
+                  <StatCell label="CPM" value={moneyStr(d?.cpm)} sub="Custo por mil impr." />
+                  <StatCell label="CPL" value={moneyStr(d?.cpl)} sub="Custo por lead" />
                 </div>
               </MetricPanel>
 
               <MetricPanel icon={<Eye className="w-4 h-4 text-blue-600" />} title="Alcance & Tráfego">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <StatCell label="Impressões" value={fmtNum(d?.impressions || 0)} delta={d?.delta?.impressions} />
-                  <StatCell label="Clicks" value={fmtNum(d?.clicks || 0)} delta={d?.delta?.clicks} />
-                  <StatCell label="CTR" value={`${d?.ctr || '0'}%`} sub="Taxa de cliques" />
+                  <StatCell label="Impressões" value={fmtOptional(d?.impressions)} delta={d?.delta?.impressions} />
+                  <StatCell label="Cliques" value={fmtOptional(d?.clicks)} delta={d?.delta?.clicks} />
+                  <StatCell label="CTR" value={pct(d?.ctr)} sub="Taxa de cliques" />
                 </div>
               </MetricPanel>
 
               <MetricPanel icon={<Heart className="w-4 h-4 text-rose-500" />} title="Engajamento">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  <StatCell label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
-                  <StatCell label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
-                  <StatCell label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
-                  <StatCell label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
-                  <StatCell label="Eng. Rate" value={`${d?.engagementRate || '0'}%`} sub="Engaj./impressões" />
+                  <StatCell label="Curtidas" value={fmtOptional(d?.likes)} delta={d?.delta?.likes} />
+                  <StatCell label="Compartilhamentos" value={fmtOptional(d?.shares)} delta={d?.delta?.shares} />
+                  <StatCell label="Comentários" value={fmtOptional(d?.comments)} delta={d?.delta?.comments} />
+                  <StatCell label="Seguidores" value={fmtOptional(d?.follows)} delta={d?.delta?.follows} />
+                  <StatCell label="Taxa de engajamento" value={pct(d?.engagementRate)} sub="Engaj./impressões" />
                 </div>
               </MetricPanel>
 
               <MetricPanel icon={<Target className="w-4 h-4 text-green-600" />} title="Conversões">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatCell label="Conversões Totais" value={String(d?.externalWebsiteConversions ?? '—')} delta={d?.delta?.conversions} />
-                  <StatCell label="Pós-Clique" value={String(d?.externalWebsitePostClickConversions ?? '—')} sub={`Taxa: ${d?.postClickConvRate || '0'}%`} />
-                  <StatCell label="Pós-Visualização" value={String(d?.externalWebsitePostViewConversions ?? '—')} sub="Post-view" />
-                  <StatCell label="Leads (One-Click)" value={String(d?.oneClickLeads ?? '—')} delta={d?.delta?.oneClickLeads} tooltip="Requer configuração de Lead Gen Form no LinkedIn Campaign Manager" />
+                  <StatCell label="Conversões Totais" value={fmtOptional(d?.externalWebsiteConversions)} delta={d?.delta?.conversions} />
+                  <StatCell label="Pós-Clique" value={fmtOptional(d?.externalWebsitePostClickConversions)} sub={`Taxa: ${pct(d?.postClickConvRate)}`} />
+                  <StatCell label="Pós-Visualização" value={fmtOptional(d?.externalWebsitePostViewConversions)} sub="Viu o anúncio, sem clicar" />
+                  <StatCell label="Leads (One-Click)" value={fmtOptional(d?.oneClickLeads)} delta={d?.delta?.oneClickLeads} tooltip="Requer configuração de Lead Gen Form no LinkedIn Campaign Manager" />
                 </div>
               </MetricPanel>
 
               <MetricPanel icon={<Megaphone className="w-4 h-4 text-purple-500" />} title="Alcance Viral">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatCell label="Alcance Estimado" value={fmtNum(d?.approximateMemberReach || 0)} sub="Membros únicos" />
-                  <StatCell label="Impressões Virais" value={fmtNum(d?.viralImpressions || 0)} />
-                  <StatCell label="Amplificação" value={`${d?.viralAmplification || '0'}%`} sub="Virais/total" />
-                  <StatCell label="Viral Clicks" value={fmtNum(d?.viralClicks || 0)} />
+                  <StatCell
+                    label="Alcance estimado"
+                    value={fmtOptional(d?.approximateMemberReach)}
+                    sub={d?.approximateMemberReach == null && accounts.length > 1 ? 'Não somável entre empresas' : 'Membros únicos'}
+                  />
+                  <StatCell label="Impressões Virais" value={fmtOptional(d?.viralImpressions)} />
+                  <StatCell label="Amplificação" value={pct(d?.viralAmplification)} sub="Virais/total" />
+                  <StatCell label="Cliques virais" value={fmtOptional(d?.viralClicks)} />
                 </div>
               </MetricPanel>
             </div>
@@ -469,15 +485,15 @@ export function CampaignAnalytics() {
           {!byAccount && !loading && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <SmallCard label="CPC" value={`${cy}${d?.cpc || '0'}`} sub="Custo por clique" delta={null} />
-                <SmallCard label="CPM" value={`${cy}${d?.cpm || '0'}`} sub="Custo por mil impressões" delta={null} />
-                <SmallCard label="Engagement Rate" value={`${d?.engagementRate || '0'}%`} sub="(clicks+likes+comments+shares+follows)/impressions" delta={null} />
+                <SmallCard label="CPC" value={moneyStr(d?.cpc)} sub="Custo por clique" delta={null} />
+                <SmallCard label="CPM" value={moneyStr(d?.cpm)} sub="Custo por mil impressões" delta={null} />
+                <SmallCard label="Taxa de engajamento" value={pct(d?.engagementRate)} sub="(cliques + curtidas + comentários + compartilhamentos + seguidores) / impressões" delta={null} />
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <IconCard icon={<Heart className="w-4 h-4 text-rose-500" />} label="Likes" value={fmtNum(d?.likes || 0)} delta={d?.delta?.likes} />
-                <IconCard icon={<Share2 className="w-4 h-4 text-blue-500" />} label="Shares" value={fmtNum(d?.shares || 0)} delta={d?.delta?.shares} />
-                <IconCard icon={<MessageCircle className="w-4 h-4 text-amber-500" />} label="Comments" value={fmtNum(d?.comments || 0)} delta={d?.delta?.comments} />
-                <IconCard icon={<UserPlus className="w-4 h-4 text-green-500" />} label="Follows" value={fmtNum(d?.follows || 0)} delta={d?.delta?.follows} />
+                <IconCard icon={<Heart className="w-4 h-4 text-rose-500" />} label="Curtidas" value={fmtOptional(d?.likes)} delta={d?.delta?.likes} />
+                <IconCard icon={<Share2 className="w-4 h-4 text-blue-500" />} label="Compartilhamentos" value={fmtOptional(d?.shares)} delta={d?.delta?.shares} />
+                <IconCard icon={<MessageCircle className="w-4 h-4 text-amber-500" />} label="Comentários" value={fmtOptional(d?.comments)} delta={d?.delta?.comments} />
+                <IconCard icon={<UserPlus className="w-4 h-4 text-green-500" />} label="Seguidores" value={fmtOptional(d?.follows)} delta={d?.delta?.follows} />
               </div>
             </>
           )}
@@ -590,9 +606,11 @@ function MetricPanel({ icon, title, children }: { icon: React.ReactNode; title: 
 // Célula de métrica unificada para uso dentro de um MetricPanel (fundo claro, sem borda dupla)
 function StatCell({ label, value, sub, delta, tooltip }: { label: string; value: string; sub?: string; delta?: string | null; tooltip?: string }) {
   return (
-    <div className="bg-slate-50/70 rounded-lg p-3">
-      <div className="flex justify-between items-start gap-1">
-        <p className="text-xs text-slate-500 flex items-center gap-1">
+    <div className="bg-slate-50/70 rounded-lg p-3 min-w-0">
+      {/* flex-wrap: com rótulo longo ("Compartilhamentos") o selo de variação
+          desce para a linha de baixo em vez de empurrar o texto para fora do card. */}
+      <div className="flex flex-wrap justify-between items-start gap-x-1 gap-y-0.5">
+        <p className="text-xs text-slate-500 flex items-center gap-1 min-w-0 [overflow-wrap:anywhere]">
           {label}
           {tooltip && <span title={tooltip}><Info className="w-3 h-3 text-slate-400 cursor-help" /></span>}
         </p>
@@ -698,7 +716,7 @@ function CommentsCard({ commentsData, commentsLoading, headerSuffix }: {
 }
 
 function CommentItem({ comment }: { comment: CampaignComment }) {
-  const name = comment.author_name || 'LinkedIn Member';
+  const name = comment.author_name || 'Membro do LinkedIn';
   return (
     <div className={`relative px-5 py-4 ${comment.is_reply ? 'pl-10' : ''}`}>
       {comment.is_reply && <div className="absolute left-7 top-0 bottom-0 w-px bg-slate-200" />}
@@ -717,7 +735,7 @@ function CommentItem({ comment }: { comment: CampaignComment }) {
           <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap break-words">{comment.text}</p>
           {comment.likes_count > 0 && (
             <div className="flex items-center gap-1 mt-1.5 text-xs text-slate-400">
-              <Heart className="w-3 h-3" /> {comment.likes_count}
+              <Heart className="w-3 h-3" /> {fmtNum(comment.likes_count)}
             </div>
           )}
         </div>
