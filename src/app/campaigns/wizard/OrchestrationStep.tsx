@@ -26,9 +26,10 @@ import type { CreativeData } from './types';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { totalIncludes } from './segmentation/targeting';
 import { buildLaunchPlan, validateLaunchPlan } from './launchPlan';
+import type { AdSetPlan } from './launchPlan';
 import { resolveTargetingForAccount } from './SegmentationStep';
 import { campaignTypeLabel, ctaLabel, adAccountStatusLabel, plural } from '../labels';
-import { fmtCurrency } from '../format';
+import { fmtCurrency, fmtDate } from '../format';
 import {
   runCampaignPipeline,
   saveCampaignToServer,
@@ -49,6 +50,8 @@ interface OrchestrationStepProps {
   campaignConfig: CampaignConfig;
   linkedinStatus: LinkedInIntegrationStatus | null;
   creativeData?: CreativeData;
+  /** Empresas cujo conjunto ficou abaixo de 300 pessoas na Segmentação. */
+  smallAudienceAdSets?: string[];
 }
 
 // ---- Pipeline Progress Modal ----
@@ -126,7 +129,7 @@ function PipelineProgressModal({
 function ConfirmLaunchModal({
   config,
   targetingData,
-  creativeData,
+  adSetPlan,
   billingStatus,
   currency,
   onConfirm,
@@ -134,7 +137,7 @@ function ConfirmLaunchModal({
 }: {
   config: CampaignConfig;
   targetingData?: TargetingData;
-  creativeData?: CreativeData;
+  adSetPlan: AdSetPlan[];
   billingStatus?: BillingStatus | null;
   currency: string;
   onConfirm: () => void;
@@ -143,7 +146,9 @@ function ConfirmLaunchModal({
   const objLabel = OBJECTIVE_MAP[config.objective]?.label || config.objective;
   const adSetAccounts = targetingData?.companies.included ?? [];
   const totalCriteria = targetingData ? totalIncludes(targetingData) : 0;
-  const hasImage = !!creativeData?.imageUrl;
+  // Cada conjunto leva a própria imagem; o template pode nem ter uma.
+  const withImage = adSetPlan.filter((a) => !!a.creative.imageUrl).length;
+  const hasImage = adSetPlan.length > 0 && withImage === adSetPlan.length;
   const hasBillingIssue = billingStatus && !billingStatus.has_billing;
 
   // Build dynamic step list based on what will actually run
@@ -208,7 +213,9 @@ function ConfirmLaunchModal({
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Criativo:</span>
               <span className={`font-medium ${hasImage ? 'text-green-700' : 'text-amber-700'}`}>
-                {hasImage ? 'Um anúncio por empresa' : 'Sem imagem'}
+                {hasImage
+                  ? `Um anúncio por empresa, ${adSetPlan.length === 1 ? 'com imagem' : `todos os ${adSetPlan.length} com imagem`}`
+                  : `${adSetPlan.length - withImage} sem imagem`}
               </span>
             </div>
             <div className="flex justify-between text-sm">
@@ -291,6 +298,7 @@ export function OrchestrationStep({
   campaignConfig,
   linkedinStatus,
   creativeData,
+  smallAudienceAdSets = [],
 }: OrchestrationStepProps) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -325,7 +333,6 @@ export function OrchestrationStep({
 
   const objInfo = OBJECTIVE_MAP[campaignConfig.objective];
   const currency = linkedinStatus?.selected_ad_account_currency || 'BRL';
-  const currencySymbol = currency === 'BRL' ? 'R$' : 'US$';
 
   // Um id por lançamento: o servidor deduplica por ele (ver buildLaunchPlan).
   // Fica estável durante a revisão para que "tentar de novo" após uma falha
@@ -335,6 +342,11 @@ export function OrchestrationStep({
   // O que vai ser publicado, já resolvido por empresa, e o que impede publicar.
   const adSetPlan = targetingData && creativeData ? buildLaunchPlan(campaignConfig, targetingData, creativeData) : [];
   const planIssues = validateLaunchPlan(adSetPlan);
+  // O LinkedIn recusa conjunto com menos de 300 pessoas: trava aqui também.
+  for (const id of smallAudienceAdSets) {
+    if (!adSetPlan.some((a) => a.companyId === id)) continue;
+    planIssues[id] = [...(planIssues[id] || []), 'Público abaixo de 300 pessoas: volte à Segmentação e amplie os filtros'];
+  }
   const blockedAdSets = Object.keys(planIssues).length;
   const canPublish = isLinkedInReady && !isPipelineRunning && adSetPlan.length > 0 && blockedAdSets === 0;
 
@@ -624,18 +636,18 @@ export function OrchestrationStep({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs font-semibold text-slate-500 uppercase">Início</span>
-              <span className="text-sm text-slate-700">{campaignConfig.startDate || '—'}</span>
+              <span className="text-sm text-slate-700">{campaignConfig.startDate ? fmtDate(campaignConfig.startDate) : '—'}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs font-semibold text-slate-500 uppercase">Encerramento</span>
-              <span className="text-sm text-slate-700">{campaignConfig.endDate || 'Contínua'}</span>
+              <span className="text-sm text-slate-700">{campaignConfig.endDate ? fmtDate(campaignConfig.endDate) : 'Contínua'}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs font-semibold text-slate-500 uppercase">Lance</span>
               <span className="text-sm text-slate-700">
                 {campaignConfig.biddingStrategy === 'automated'
                   ? 'Automático'
-                  : `Manual ${campaignConfig.unitCostAmount ? `${currencySymbol}${campaignConfig.unitCostAmount}` : ''}`}
+                  : `Manual${campaignConfig.unitCostAmount ? ` · ${fmtCurrency(parseFloat(campaignConfig.unitCostAmount) || 0, currency)}` : ''}`}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -796,9 +808,9 @@ export function OrchestrationStep({
                 <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-2.5">
                   <p className="text-xs text-red-700">
                     {billingStatus.serving_statuses?.includes('BILLING_HOLD')
-                      ? <>A Ad Account está em <strong>BILLING_HOLD</strong> (sem método de pagamento válido). Adicione um cartão no LinkedIn Campaign Manager antes de ativar campanhas.</>
+                      ? <>A conta de anúncios está <strong>bloqueada por pagamento</strong> (sem meio de pagamento válido). Adicione um cartão no Campaign Manager do LinkedIn antes de ativar campanhas.</>
                       : billingStatus.serving_statuses && billingStatus.serving_statuses.length > 0
-                      ? <>A Ad Account não está <strong>RUNNABLE</strong> (estado atual: {billingStatus.serving_statuses.join(', ')}). Resolva no LinkedIn Campaign Manager antes de ativar campanhas.</>
+                      ? <>A conta de anúncios <strong>não pode veicular</strong> agora (estado no LinkedIn: {billingStatus.serving_statuses.join(', ')}). Resolva no Campaign Manager do LinkedIn antes de ativar campanhas.</>
                       : <>A conta de anúncios está com status <strong>{adAccountStatusLabel(billingStatus.account_status)}</strong>. Configure um meio de pagamento no Campaign Manager do LinkedIn antes de ativar campanhas.</>
                     }
                   </p>
@@ -835,7 +847,7 @@ export function OrchestrationStep({
                   Pronto para publicar
                 </p>
                 <p className="text-xs text-green-600">
-                  Ad Account: {linkedinStatus?.selected_ad_account_name} | Moeda: {currency}
+                  Conta de anúncios: {linkedinStatus?.selected_ad_account_name} · Moeda: {currency}
                 </p>
               </div>
             </div>
@@ -846,7 +858,7 @@ export function OrchestrationStep({
                 <p className="text-sm font-medium text-red-800">
                   {linkedinStatus?.status !== 'connected'
                     ? 'LinkedIn não conectado'
-                    : 'Nenhuma Ad Account selecionada'}
+                    : 'Nenhuma conta de anúncios selecionada'}
                 </p>
                 <p className="text-xs text-red-600">
                   Configure em Integrações antes de lançar.
@@ -862,7 +874,7 @@ export function OrchestrationStep({
         <ConfirmLaunchModal
           config={campaignConfig}
           targetingData={targetingData}
-          creativeData={creativeData}
+          adSetPlan={adSetPlan}
           billingStatus={billingStatus}
           currency={currency}
           onConfirm={handleConfirmLaunch}

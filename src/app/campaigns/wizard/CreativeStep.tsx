@@ -27,6 +27,7 @@ import {
   Square,
   RectangleHorizontal,
   Copy, AlignLeft, AlignCenter, AlignRight,
+  Trash2,
 } from 'lucide-react';
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
@@ -858,8 +859,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // ----------------- Resumos dos cards colapsados -----------------
   // Uma linha por card com o estado EFETIVO (override ?? template), para o
   // acordeão fechado continuar informando o que cada bloco contém.
-  const effHeadline = (isTemplate ? headline : (editingOverride?.headline ?? headline)).trim();
-  const effBody = (isTemplate ? bodyText : (editingOverride?.bodyText ?? bodyText)).trim();
+  const effHeadline = (isTemplate ? headline : (editingOverride?.headline?.trim() || headline)).trim();
+  const effBody = (isTemplate ? bodyText : (editingOverride?.bodyText?.trim() || bodyText)).trim();
   const textOverridden = !!editingCompany
     && !!(editingOverride?.headline?.trim() || editingOverride?.bodyText?.trim());
   const textSummary = !(effHeadline || effBody)
@@ -1339,7 +1340,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   <div className="min-w-0">
                     <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">Textos pela IA</div>
                     <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
-                      A IA escreve os textos direto na imagem, absorvendo o que você digitou — sem controles manuais.
+                      {imageCfg.aiTexts
+                        ? 'Ligado: a IA escreve os textos direto na imagem a partir do que você digitou. Posição e estilo ficam com ela.'
+                        : 'Desligado: você posiciona e estiliza os textos sobre a imagem. Ligue para a IA escrevê-los na própria imagem.'}
                     </p>
                   </div>
                   <button
@@ -1426,6 +1429,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     onChange={(v) => setImageField({ textoDestaque: v })}
                     placeholder="Texto principal na imagem"
                     onFocus={() => setSelectedLayer('destaque')}
+                    onRemove={() => { setImageField({ textoDestaque: '' }); setSelectedLayer(null); }}
                   />
                   {!aiTextsOn && selectedLayer === 'destaque' && (
                     <TextLayerControls
@@ -1452,6 +1456,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     onChange={(v) => setImageField({ textoComplementar: v })}
                     placeholder="Texto secundário na imagem"
                     onFocus={() => setSelectedLayer('complementar')}
+                    onRemove={() => { setImageField({ textoComplementar: '' }); setSelectedLayer(null); }}
                   />
                   {!aiTextsOn && selectedLayer === 'complementar' && (
                     <TextLayerControls
@@ -2079,10 +2084,24 @@ function FormatButton({ format, active, onClick }: { format: AdFormat; active: b
   );
 }
 
-function TextField({ label, value, onChange, placeholder, onFocus }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; onFocus?: () => void }) {
+// Com `onRemove`, o campo ganha "Remover da imagem": texto vazio = camada fora
+// da composição (é o mesmo que o modo "Textos pela IA" manda ao servidor).
+function TextField({ label, value, onChange, placeholder, onFocus, onRemove }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; onFocus?: () => void; onRemove?: () => void }) {
   return (
     <div>
-      <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">{label}</label>
+      <div className="flex items-center justify-between gap-2 mb-0.5">
+        <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide">{label}</label>
+        {onRemove && value.trim() && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex items-center gap-1 text-[9px] font-semibold text-slate-400 hover:text-red-600"
+          >
+            <Trash2 className="w-3 h-3" />
+            Remover da imagem
+          </button>
+        )}
+      </div>
       <input
         type="text"
         value={value}

@@ -40,3 +40,10 @@ export function fmtDateLabel(dateStr: string): string {
   const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   return `${parseInt(parts[2])} ${months[parseInt(parts[1]) - 1]}`;
 }
+
+/** "2026-10-27" → "27/10/2026". Sem passar por Date, para não trocar o dia pelo fuso. */
+export function fmtDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-');
+  if (!y || !m || !d) return dateStr;
+  return `${d.slice(0, 2)}/${m}/${y}`;
+}

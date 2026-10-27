@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import {
   Calendar,
   Linkedin,
@@ -38,7 +39,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
   };
 
   const currency = linkedinStatus?.selected_ad_account_currency || 'BRL';
-  const currencySymbol = currency === 'BRL' ? 'R$' : '$';
+  const currencySymbol = currency === 'BRL' ? 'R$' : 'US$';
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -60,7 +61,18 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
             <span className="text-xs text-green-600 ml-2">
               Moeda: {currency}
             </span>
+            {currency !== 'BRL' && (
+              // Conta em dólar: o orçamento e o lance abaixo são cobrados em
+              // {currency}, não em reais. Fácil de errar a ordem de grandeza.
+              <p className="text-xs text-amber-700 mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                Esta conta cobra em {currency}: os valores de orçamento e lance abaixo são em {currencySymbol}, não em reais.
+              </p>
+            )}
           </div>
+          <Link to="/integrations" className="text-xs font-medium text-green-700 hover:text-green-900 hover:underline shrink-0">
+            Trocar conta
+          </Link>
           <CheckCircle2 className="w-4 h-4 text-green-600" />
         </div>
       ) : (
@@ -70,7 +82,7 @@ export function ConfigStep({ config, onChange, linkedinStatus }: ConfigStepProps
             <p className="text-sm font-medium text-amber-800">
               {linkedinStatus?.status !== 'connected'
                 ? 'LinkedIn não conectado. Conecte em Integrações antes de lançar.'
-                : 'Selecione uma Ad Account na página de Integrações.'}
+                : 'Selecione uma conta de anúncios na página de Integrações.'}
             </p>
           </div>
         </div>

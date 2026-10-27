@@ -1,5 +1,6 @@
 import { resolveTargetingForAccount } from './SegmentationStep';
-import type { TargetingData } from './SegmentationStep';
+import type { TargetingData, AudienceCheck } from './SegmentationStep';
+import { buildLaunchPlan, validateLaunchPlan } from './launchPlan';
 import type { CampaignConfig, CreativeData } from './types';
 import { MIN_BUDGET_PER_AD_SET } from './types';
 
@@ -15,6 +16,18 @@ export interface WizardState {
   campaignConfig: CampaignConfig;
   targetingData: TargetingData;
   creativeData: CreativeData;
+  /** Público por conjunto, informado pela Segmentação. Ausente = não checado. */
+  audienceCheck?: AudienceCheck;
+}
+
+/**
+ * Pendências de criativo por empresa, já com a herança do template resolvida.
+ * Mesma regra que trava o "Publicar campanha" na Revisão: o passo Criativos
+ * não pode liberar algo que a Revisão vai recusar, nem travar algo que ela
+ * aceitaria (antes, voltar uma empresa ao título do template travava o botão).
+ */
+export function creativeIssues(state: WizardState): Record<string, string[]> {
+  return validateLaunchPlan(buildLaunchPlan(state.campaignConfig, state.targetingData, state.creativeData));
 }
 
 /**
@@ -38,6 +51,8 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
     // Segmentação: >=1 empresa-alvo E cada conjunto efetivo com >=1 localização.
     const accounts = targetingData.companies.included;
     if (accounts.length === 0) return false;
+    // Cada conjunto precisa de >=300 pessoas; o LinkedIn recusa abaixo disso.
+    if (state.audienceCheck && (state.audienceCheck.pending || state.audienceCheck.small.length > 0)) return false;
     return accounts.every((acc) => {
       const person = resolveTargetingForAccount(targetingData, acc.id);
       return person.locations.included.length > 0;
@@ -52,23 +67,14 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
   }
 
   if (step === WIZARD_STEPS.creatives) {
-    // Criativos: URL/CTA always required at template level. Each target
-    // company must have either (a) full override (headline+body+image)
-    // or (b) the template fully filled to fall back on.
-    const urlAndCtaOk = !!(creativeData.landingPageUrl?.trim() && creativeData.cta);
-    if (!urlAndCtaOk) return false;
-    const templateComplete = !!(
-      creativeData.bodyText?.trim() &&
-      creativeData.headline?.trim() &&
-      creativeData.imageUrl
-    );
+    // Criativos: URL e CTA no template, e cada empresa com título, texto e
+    // imagem válidos depois de herdar do template o que não personalizou.
+    if (!(creativeData.landingPageUrl?.trim() && creativeData.cta)) return false;
     const companies = targetingData.companies?.included || [];
-    if (companies.length === 0) return templateComplete;
-    const allCompaniesFullyOverridden = companies.every((c) => {
-      const o = creativeData.overrides?.[c.id];
-      return !!(o?.headline?.trim() && o?.bodyText?.trim() && o?.imageUrl);
-    });
-    return templateComplete || allCompaniesFullyOverridden;
+    if (companies.length === 0) {
+      return !!(creativeData.bodyText?.trim() && creativeData.headline?.trim() && creativeData.imageUrl);
+    }
+    return Object.keys(creativeIssues(state)).length === 0;
   }
 
   // Review is always valid
