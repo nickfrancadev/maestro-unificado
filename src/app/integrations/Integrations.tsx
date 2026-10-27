@@ -157,9 +157,9 @@ export function Integrations() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Hub de Integracoes</h2>
+          <h2 className="text-2xl font-bold text-slate-800">Hub de Integrações</h2>
           <p className="text-slate-500 mt-1">
-            Gerencie conexoes com servicos externos para potenciar suas campanhas ABM.
+            Gerencie conexões com serviços externos para potenciar suas campanhas ABM.
           </p>
         </div>
         <button
@@ -244,7 +244,7 @@ export function Integrations() {
                     ) : (
                       <div className="flex items-center gap-2 text-xs text-amber-700">
                         <AlertTriangle className="w-3.5 h-3.5" />
-                        <span className="font-medium">Nenhuma Ad Account selecionada. Clique em "Gerenciar Conexao" para selecionar.</span>
+                        <span className="font-medium">Nenhuma conta de anúncios selecionada. Clique em "Gerenciar conexão" para selecionar.</span>
                       </div>
                     )}
                     {integration.expires_at && (
@@ -268,7 +268,7 @@ export function Integrations() {
                 {/* Permissions */}
                 <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                    {isLinkedIn ? 'Scopes OAuth' : 'Permissoes'}
+                    {isLinkedIn ? 'Scopes OAuth' : 'Permissões'}
                   </p>
                   <ul className="space-y-1">
                     {meta.permissions.map((perm, idx) => (
@@ -300,7 +300,7 @@ export function Integrations() {
                         className="flex-1 py-2.5 px-4 rounded-lg text-sm font-medium flex items-center justify-center gap-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 transition-colors"
                       >
                         <Edit3 className="w-4 h-4" />
-                        Gerenciar Conexao
+                        Gerenciar conexão
                       </button>
                     ) : (
                       <button

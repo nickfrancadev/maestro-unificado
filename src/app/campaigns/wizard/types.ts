@@ -239,8 +239,8 @@ export function createDefaultCreativeData(): CreativeData {
   return {
     imageUrl: null,
     imageFileName: null,
-    headline: '1:1 personalization for {{company.name}}',
-    bodyText: 'Hi there, teams at {{company.name}} are winning big deals by scaling their ABM programs with tailored 1:1 experiences across...',
+    headline: 'Uma experiência feita para a {{company.name}}',
+    bodyText: 'Times da {{company.name}} estão fechando contratos maiores com programas de ABM personalizados, conta a conta.',
     landingPageUrl: 'https://maestro.abm/p/{{account.slug}}',
     cta: 'LEARN_MORE',
     imageMode: 'upload',
@@ -277,9 +277,13 @@ export function resolveCreativeForCompany(
     s
       .replace(/\{\{company\.name\}\}/g, company?.label || '')
       .replace(/\{\{company\.industry\}\}/g, company?.industry || '');
+  // Texto apagado na empresa = segue o template. É o que o editor já mostra
+  // ("Segue o template"); com `??`, o '' ia ao ar como título vazio e travava
+  // o passo Criativos sem explicação.
+  const own = (v: string | undefined) => (v?.trim() ? v : undefined);
   return {
-    headline: override?.headline ?? substituted(data.headline),
-    bodyText: override?.bodyText ?? substituted(data.bodyText),
+    headline: own(override?.headline) ?? substituted(data.headline),
+    bodyText: own(override?.bodyText) ?? substituted(data.bodyText),
     // Most specific first: the composed ad, then this company's own base
     // canvas (uploaded or generated but not composed yet), then the campaign
     // image. Without the middle step, uploading an image for one company left

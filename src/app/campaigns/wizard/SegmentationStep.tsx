@@ -53,7 +53,7 @@ import {
   FACET_URN_MAP,
   setAccountFacet,
 } from "./segmentation/targeting";
-import { useAudienceCount } from "./segmentation/useAudienceCount";
+import { useAudienceCount, smallAdSets, MIN_AUDIENCE } from "./segmentation/useAudienceCount";
 import { useLinkedInTypeahead } from "./segmentation/useLinkedInTypeahead";
 import type { LinkedInFacetType } from "./segmentation/useLinkedInTypeahead";
 import type {
@@ -76,9 +76,18 @@ export {
   FACET_URN_MAP,
 };
 
+/** Resultado da checagem de público por conjunto, para o wizard travar o avanço. */
+export interface AudienceCheck {
+  /** Ids das empresas cujo conjunto fica abaixo do mínimo do LinkedIn. */
+  small: string[];
+  /** A estimativa ainda está sendo calculada. */
+  pending: boolean;
+}
+
 interface SegmentationStepProps {
   data: TargetingData;
   onChange: (data: TargetingData) => void;
+  onAudienceCheck?: (check: AudienceCheck) => void;
 }
 
 // ===============================
@@ -1093,7 +1102,7 @@ function FacetCard({
                     typeahead.query.length >= 2 &&
                     typeahead.setIsOpen(true)
                   }
-                  placeholder={`Buscar ${label.toLowerCase()}...`}
+                  placeholder={`Buscar ${label.replace(/\s*\*$/, "").toLowerCase()}...`}
                   className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                 />
               </div>
@@ -1171,7 +1180,7 @@ function FacetCard({
                       onClick={() => toggleFixedItem(opt)}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
                         isInc
-                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                          ? "bg-[#FF5F39] text-white border-[#FF5F39] shadow-sm"
                           : isExc
                             ? "bg-red-600 text-white border-red-600 shadow-sm"
                             : "bg-white text-slate-600 border-slate-200 hover:border-slate-400 hover:bg-slate-50"
@@ -1238,28 +1247,42 @@ function FacetCard({
 // Audience Summary Panel
 // ===============================
 
-// Mínimo de membros que o LinkedIn aceita por conjunto de anúncio.
-const MIN_AUDIENCE = 300;
-
-function AudienceSummary({ data }: { data: TargetingData }) {
+function AudienceSummary({
+  data,
+  onAudienceCheck,
+}: {
+  data: TargetingData;
+  onAudienceCheck?: (check: AudienceCheck) => void;
+}) {
   const {
     count: estimatedSize,
+    perAdSet,
     isLoading,
     isFromApi,
-    isPrivacyFloor,
     hasAnySelection,
   } = useAudienceCount(data);
 
+  // O LinkedIn exige no mínimo 300 membros POR conjunto de anúncio. O privacy
+  // floor (API devolve 0) significa justamente "menos de 300".
+  const small = smallAdSets(perAdSet);
+  const smallKey = small.map((a) => a.id).join(",");
+  useEffect(() => {
+    onAudienceCheck?.({ small: smallKey ? smallKey.split(",") : [], pending: isLoading });
+  }, [smallKey, isLoading, onAudienceCheck]);
+
   const getStatus = () => {
     if (!hasAnySelection || estimatedSize === null) return null;
-    // O LinkedIn exige no mínimo 300 membros por conjunto de anúncio. O
-    // privacy floor (API devolve 0) significa justamente "menos de 300".
-    if (isPrivacyFloor || estimatedSize < MIN_AUDIENCE)
+    if (small.length > 0)
       return {
         color: "red",
         icon: <AlertTriangle className="w-4 h-4" />,
-        label:
-          "Público abaixo de 300 pessoas: o LinkedIn não aceita. Adicione localizações ou remova filtros de senioridade/função.",
+        label: `${small.length === 1 ? "1 conjunto ficou" : `${small.length} conjuntos ficaram`} abaixo de ${MIN_AUDIENCE} pessoas, e o LinkedIn não aceita. Adicione localizações ou remova filtros de senioridade/função.`,
+      };
+    if (perAdSet.length === 0 && estimatedSize < MIN_AUDIENCE)
+      return {
+        color: "red",
+        icon: <AlertTriangle className="w-4 h-4" />,
+        label: `Público abaixo de ${MIN_AUDIENCE} pessoas: o LinkedIn não aceita. Adicione localizações ou remova filtros de senioridade/função.`,
       };
     if (estimatedSize >= 5000)
       return {
@@ -1315,11 +1338,12 @@ function AudienceSummary({ data }: { data: TargetingData }) {
                 {estimatedSize.toLocaleString("pt-BR")}
               </p>
               {isLoading && (
-                <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                <Loader2 className="w-5 h-5 text-[#FF5F39] animate-spin" />
               )}
             </div>
             <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
               profissionais {isFromApi ? "" : "estimados"}
+              {perAdSet.length > 1 ? ` somando os ${perAdSet.length} conjuntos` : ""}
               {isFromApi && (
                 <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
                   LinkedIn API
@@ -1339,6 +1363,21 @@ function AudienceSummary({ data }: { data: TargetingData }) {
                 {status.icon}
                 {status.label}
               </div>
+            )}
+            {perAdSet.length > 1 && (
+              <ul className="mt-3 space-y-1">
+                {perAdSet.map((a) => {
+                  const isSmall = small.some((x) => x.id === a.id);
+                  return (
+                    <li key={a.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className={`truncate ${isSmall ? "text-red-700 font-medium" : "text-slate-600"}`}>{a.label}</span>
+                      <span className={`shrink-0 tabular-nums ${isSmall ? "text-red-700 font-semibold" : "text-slate-500"}`}>
+                        {a.isPrivacyFloor ? `menos de ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR")}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </>
         ) : (
@@ -1518,6 +1557,7 @@ const PERSON_FACET_CONFIG: Array<{
 export function SegmentationStep({
   data,
   onChange,
+  onAudienceCheck,
 }: SegmentationStepProps) {
   const accounts = data.companies.included;
   const [activeId, setActiveId] = useState<string>(DEFAULT_ADSET_ID);
@@ -1577,7 +1617,7 @@ export function SegmentationStep({
   const applyDefaultToAll = useCallback(() => {
     if (Object.keys(data.overrides).length === 0) return;
     const ok = window.confirm(
-      "Aplicar o padrão a todas as contas? As personalizações por conta serão removidas.",
+      `Aplicar o padrão a todas as contas? A segmentação própria de ${Object.keys(data.overrides).length} conta(s) será removida.`,
     );
     if (!ok) return;
     onChange({ ...data, overrides: {} });
@@ -1686,10 +1726,17 @@ export function SegmentationStep({
                       <button
                         onClick={applyDefaultToAll}
                         disabled={overrideCount === 0}
-                        className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                        title={
+                          overrideCount === 0
+                            ? "Todas as contas já usam o padrão"
+                            : `Remove a segmentação própria de ${overrideCount} conta${overrideCount !== 1 ? "s" : ""} e aplica o padrão a todas`
+                        }
+                        className="flex items-center gap-1.5 text-xs font-medium text-[#E54A26] hover:text-[#FF5F39] disabled:text-slate-300 disabled:cursor-not-allowed cursor-pointer shrink-0"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        Aplicar a todas
+                        {overrideCount === 0
+                          ? "Todas usam o padrão"
+                          : `Aplicar o padrão às ${overrideCount} personalizada${overrideCount !== 1 ? "s" : ""}`}
                       </button>
                     ) : (
                       <button
@@ -1734,7 +1781,7 @@ export function SegmentationStep({
         {/* Right - Summary Panel (sticky) */}
         <div className="w-[35%] shrink-0">
           <div className="sticky top-0">
-            <AudienceSummary data={data} />
+            <AudienceSummary data={data} onAudienceCheck={onAudienceCheck} />
           </div>
         </div>
       </div>

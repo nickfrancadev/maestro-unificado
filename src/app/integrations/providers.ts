@@ -6,13 +6,13 @@ export const INTEGRATION_META: Record<string, IntegrationMeta> = {
   linkedin: {
     name: 'LinkedIn Ads',
     description:
-      'Valide contas, crie campanhas e sincronize metricas diretamente com o LinkedIn Marketing API.',
+      'Valide contas, crie campanhas e sincronize métricas diretamente com o LinkedIn Marketing API.',
     icon: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png',
     permissions: [
       'r_ads — Ler Campanhas',
       'r_ads_reporting — Ler Analytics',
       'rw_ads — Criar/Editar Campanhas',
-      'r_organization_social — Dados de Organizacao',
+      'r_organization_social — Dados de Organização',
     ],
     docsUrl: 'https://learn.microsoft.com/en-us/linkedin/marketing/',
   },

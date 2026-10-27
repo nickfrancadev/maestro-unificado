@@ -33,32 +33,36 @@ function personMultiplier(pt: PersonTargeting): number {
   return m;
 }
 
-function localEstimate(data: TargetingData): number {
-  const accounts = data.companies.included;
-  if (accounts.length === 0) {
-    // No accounts yet: estimate from the default person facets alone.
-    return Math.max(50, Math.round(50000 * personMultiplier(data.defaultTargeting)));
-  }
-  const total = accounts.reduce((sum, acc) => {
-    const pt = data.overrides[acc.id] ?? data.defaultTargeting;
-    return sum + 3200 * personMultiplier(pt);
-  }, 0);
-  return Math.max(50, Math.round(total));
+/** Mínimo de membros que o LinkedIn aceita por conjunto de anúncio. */
+export const MIN_AUDIENCE = 300;
+
+export interface AdSetAudience {
+  id: string;
+  label: string;
+  count: number;
+  isFromApi: boolean;
+  /** API devolveu 0: o LinkedIn esconde públicos abaixo de 300. */
+  isPrivacyFloor: boolean;
 }
 
-// One criteria object per account ad set; used as the debounce cache key and
-// for the API call (the first account stands in for the API estimate).
-function buildAllCriteria(data: TargetingData): any[] {
-  return data.companies.included.map((acc) =>
-    buildTargetingCriteria(acc, data.overrides[acc.id] ?? data.defaultTargeting),
-  );
+/** Conjuntos que o LinkedIn recusaria por público pequeno. */
+export function smallAdSets(perAdSet: AdSetAudience[]): AdSetAudience[] {
+  return perAdSet.filter((a) => a.isPrivacyFloor || a.count < MIN_AUDIENCE);
+}
+
+function localAccountEstimate(pt: PersonTargeting): number {
+  return Math.max(50, Math.round(3200 * personMultiplier(pt)));
+}
+
+function localDefaultEstimate(data: TargetingData): number {
+  // No accounts yet: estimate from the default person facets alone.
+  return Math.max(50, Math.round(50000 * personMultiplier(data.defaultTargeting)));
 }
 
 export function useAudienceCount(data: TargetingData) {
-  const [count, setCount] = useState<number | null>(null);
+  const [perAdSet, setPerAdSet] = useState<AdSetAudience[]>([]);
+  const [defaultCount, setDefaultCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isFromApi, setIsFromApi] = useState(false);
-  const [isPrivacyFloor, setIsPrivacyFloor] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCriteriaRef = useRef<string>('');
 
@@ -66,60 +70,63 @@ export function useAudienceCount(data: TargetingData) {
 
   useEffect(() => {
     if (!hasAnySelection) {
-      setCount(null);
-      setIsFromApi(false);
-      setIsPrivacyFloor(false);
+      setPerAdSet([]);
+      setDefaultCount(null);
       setIsLoading(false);
       lastCriteriaRef.current = '';
       return;
     }
 
-    const allCriteria = buildAllCriteria(data);
-    const criteriaStr = JSON.stringify(allCriteria);
+    const accounts = data.companies.included;
+    // One criteria object per account ad set: debounce cache key and API input.
+    const allCriteria = accounts.map((acc) =>
+      buildTargetingCriteria(acc, data.overrides[acc.id] ?? data.defaultTargeting),
+    );
+    const criteriaStr = JSON.stringify([allCriteria, data.defaultTargeting]);
 
     if (criteriaStr === lastCriteriaRef.current) return;
     lastCriteriaRef.current = criteriaStr;
 
-    const localValue = localEstimate(data);
-    setCount(localValue);
-    setIsFromApi(false);
-    setIsPrivacyFloor(false);
+    const local: AdSetAudience[] = accounts.map((acc) => ({
+      id: acc.id,
+      label: acc.label,
+      count: localAccountEstimate(data.overrides[acc.id] ?? data.defaultTargeting),
+      isFromApi: false,
+      isPrivacyFloor: false,
+    }));
+    setPerAdSet(local);
+    setDefaultCount(accounts.length === 0 ? localDefaultEstimate(data) : null);
+    if (accounts.length === 0) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
-      try {
-        // Representative API call: query the first ad set's criteria. The
-        // sidebar shows an aggregate local estimate; a per-ad-set API
-        // breakdown is a follow-up (see plan: batching out of scope).
-        const apiCriteria = allCriteria[0];
-        if (!apiCriteria) {
-          setIsLoading(false);
-          return;
-        }
-        const result = await getAudienceCount(apiCriteria);
-        if (result.count !== null && result.count !== undefined) {
-          // LinkedIn returns total=0 as a privacy floor when the real audience
-          // is < 300. Showing "0" is misleading because the audience can still
-          // be served — it's just below the disclosure threshold. When this
-          // happens, fall back to the local estimate (clamped) and mark the
-          // result as privacy-floored so the UI can communicate that.
-          if (result.count === 0) {
-            setCount(Math.max(localValue, 300));
-            setIsFromApi(false);
-            setIsPrivacyFloor(true);
-          } else {
-            setCount(result.count);
-            setIsFromApi(true);
-            setIsPrivacyFloor(false);
-          }
-        }
-      } catch (err) {
-        console.warn('[AudienceCount] API error, keeping local estimate:', err);
-      } finally {
-        setIsLoading(false);
-      }
+      // Uma consulta por conjunto: cada conjunto vai ao ar com a própria
+      // segmentação, então o mínimo de 300 vale para cada um, não para a soma.
+      const results = await Promise.all(
+        allCriteria.map((criteria, i): Promise<AdSetAudience> =>
+          getAudienceCount(criteria)
+            .then((result) => {
+              if (result.count === null || result.count === undefined) return local[i];
+              // LinkedIn returns total=0 as a privacy floor when the real
+              // audience is < 300. Showing "0" is misleading, so keep the local
+              // estimate and flag the floor.
+              if (result.count === 0) return { ...local[i], isPrivacyFloor: true };
+              return { ...local[i], count: result.count, isFromApi: true };
+            })
+            .catch((err) => {
+              console.warn('[AudienceCount] API error, keeping local estimate:', err);
+              return local[i];
+            }),
+        ),
+      );
+      if (lastCriteriaRef.current !== criteriaStr) return;
+      setPerAdSet(results);
+      setIsLoading(false);
     }, 800);
 
     return () => {
@@ -127,5 +134,9 @@ export function useAudienceCount(data: TargetingData) {
     };
   }, [data, hasAnySelection]);
 
-  return { count, isLoading, isFromApi, isPrivacyFloor, hasAnySelection };
+  const count = perAdSet.length > 0 ? perAdSet.reduce((s, a) => s + a.count, 0) : defaultCount;
+  const isFromApi = perAdSet.length > 0 && perAdSet.every((a) => a.isFromApi);
+  const isPrivacyFloor = perAdSet.some((a) => a.isPrivacyFloor);
+
+  return { count, perAdSet, isLoading, isFromApi, isPrivacyFloor, hasAnySelection };
 }

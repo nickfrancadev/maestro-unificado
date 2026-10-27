@@ -127,6 +127,67 @@ describe('canProceedFromStep — 4 Criativos', () => {
   });
 });
 
+describe('canProceedFromStep — 4 Criativos, herança do template', () => {
+  const base = {
+    ...createDefaultCreativeData(),
+    landingPageUrl: 'https://acme.com/p/{{account.slug}}',
+    cta: 'LEARN_MORE',
+    headline: 'Feito para a {{company.name}}',
+    bodyText: 'Corpo do template',
+    imageUrl: null,
+  };
+
+  it('empresa que voltou ao título do template e tem imagem própria libera', () => {
+    expect(canProceedFromStep(WIZARD_STEPS.creatives, state({
+      creativeData: {
+        ...base,
+        overrides: { c1: { status: 'fully_personalized', headline: '', bodyText: 'B', imageUrl: 'https://cdn/a.png' } },
+      },
+      targetingData: targetingWith([nubank], ['Brasil']),
+    }))).toBe(true);
+  });
+
+  it('empresa sem imagem, nem própria nem do template, trava', () => {
+    expect(canProceedFromStep(WIZARD_STEPS.creatives, state({
+      creativeData: { ...base, overrides: { c1: { status: 'fully_personalized', headline: 'H', bodyText: 'B' } } },
+      targetingData: targetingWith([nubank], ['Brasil']),
+    }))).toBe(false);
+  });
+
+  it('título com o erro da IA trava já nos Criativos, como na Revisão', () => {
+    expect(canProceedFromStep(WIZARD_STEPS.creatives, state({
+      creativeData: {
+        ...base,
+        imageUrl: 'https://cdn/t.png',
+        overrides: { c1: { status: 'fully_personalized', headline: 'Não encontrado - input manual necessário', bodyText: 'B', imageUrl: 'https://cdn/a.png' } },
+      },
+      targetingData: targetingWith([nubank], ['Brasil']),
+    }))).toBe(false);
+  });
+});
+
+describe('canProceedFromStep — 2 Segmentação, público mínimo', () => {
+  const t = targetingWith([nubank], ['Brasil']);
+
+  it('trava com conjunto abaixo de 300 pessoas', () => {
+    expect(canProceedFromStep(WIZARD_STEPS.segmentation, state({
+      targetingData: t, audienceCheck: { small: ['c1'], pending: false },
+    }))).toBe(false);
+  });
+
+  it('trava enquanto o público está sendo calculado', () => {
+    expect(canProceedFromStep(WIZARD_STEPS.segmentation, state({
+      targetingData: t, audienceCheck: { small: [], pending: true },
+    }))).toBe(false);
+  });
+
+  it('libera quando todo conjunto passa do mínimo', () => {
+    expect(canProceedFromStep(WIZARD_STEPS.segmentation, state({
+      targetingData: t, audienceCheck: { small: [], pending: false },
+    }))).toBe(true);
+  });
+});
+
 describe('canProceedFromStep — 5 Revisão', () => {
   it('é sempre válido', () => {
     expect(canProceedFromStep(WIZARD_STEPS.review, state())).toBe(true);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtCurrency, fmtNum, fmtPct, fmtOptional } from './format';
+import { fmtCurrency, fmtNum, fmtPct, fmtOptional, fmtDate } from './format';
 
 describe('format (pt-BR)', () => {
   it('moeda com vírgula decimal e símbolo da conta', () => {
@@ -24,5 +24,10 @@ describe('format (pt-BR)', () => {
     expect(fmtOptional(undefined)).toBe('—');
     expect(fmtOptional(null)).toBe('—');
     expect(fmtOptional(0)).toBe('0');
+  });
+
+  it('data no formato brasileiro, sem deslocar o dia pelo fuso', () => {
+    expect(fmtDate('2026-10-27')).toBe('27/10/2026');
+    expect(fmtDate('')).toBe('');
   });
 });

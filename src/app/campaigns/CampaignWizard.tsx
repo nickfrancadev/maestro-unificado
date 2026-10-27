@@ -15,8 +15,8 @@ import { BriefStep, createEmptyBriefDraft } from './wizard/BriefStep';
 import { CreativeStep } from './wizard/CreativeStep';
 import { OrchestrationStep } from './wizard/OrchestrationStep';
 import { SegmentationStep, createEmptyTargeting } from './wizard/SegmentationStep';
-import { canProceedFromStep } from './wizard/wizardGates';
-import type { TargetingData } from './wizard/SegmentationStep';
+import { canProceedFromStep, creativeIssues } from './wizard/wizardGates';
+import type { TargetingData, AudienceCheck } from './wizard/SegmentationStep';
 import { TargetAccount, CampaignConfig, createDefaultCampaignConfig, MIN_BUDGET_PER_AD_SET } from './wizard/types';
 import { CreativeData, createDefaultCreativeData } from './wizard/types';
 import type { BriefDraft } from './wizard/BriefPane';
@@ -48,6 +48,9 @@ export function CampaignWizard() {
   // Shared campaign state
   const [selectedAccounts, setSelectedAccounts] = useState<TargetAccount[]>([]);
   const [targetingData, setTargetingData] = useState<TargetingData>(createEmptyTargeting());
+  // Público por conjunto, calculado na Segmentação. Fica aqui porque trava o
+  // avanço do passo 2 e a publicação na Revisão.
+  const [audienceCheck, setAudienceCheck] = useState<AudienceCheck>({ small: [], pending: false });
 
   // LinkedIn status (fetched once, shared across steps)
   const [linkedinStatus, setLinkedInStatus] = useState<LinkedInIntegrationStatus | null>(null);
@@ -91,7 +94,7 @@ export function CampaignWizard() {
   };
 
   const canProceed = () =>
-    canProceedFromStep(currentStep, { campaignConfig, targetingData, creativeData });
+    canProceedFromStep(currentStep, { campaignConfig, targetingData, creativeData, audienceCheck });
 
   const getStepSummary = () => {
     // Com o botão desabilitado, a frase diz o que falta; liberado, resume o passo.
@@ -106,6 +109,11 @@ export function CampaignWizard() {
       const n = targetingData.companies.included.length;
       const custom = Object.keys(targetingData.overrides).length;
       if (n === 0) return 'Selecione ao menos 1 empresa-alvo';
+      if (audienceCheck.pending) return 'Calculando o público de cada conjunto…';
+      if (audienceCheck.small.length > 0) {
+        const k = audienceCheck.small.length;
+        return `${k} conjunto${k !== 1 ? 's' : ''} abaixo de 300 pessoas: amplie a segmentação`;
+      }
       if (!canProceed()) return 'Defina a localização de cada conjunto';
       return `${n} conjunto${n !== 1 ? 's' : ''} de anúncio${custom > 0 ? ` · ${custom} personalizado${custom !== 1 ? 's' : ''}` : ''}`;
     }
@@ -118,7 +126,16 @@ export function CampaignWizard() {
     }
     if (currentStep === 4 && !canProceed()) {
       if (!creativeData.landingPageUrl?.trim()) return 'Defina a URL de destino';
-      return 'Complete título, texto e imagem do template (ou de cada empresa)';
+      if (!creativeData.cta) return 'Escolha o botão do anúncio';
+      // Diz qual empresa e o que falta, em vez de uma frase genérica.
+      const issues = creativeIssues({ campaignConfig, targetingData, creativeData });
+      const [companyId, list] = Object.entries(issues)[0] ?? [];
+      const company = targetingData.companies.included.find((c) => c.id === companyId);
+      if (company && list?.length) {
+        const more = Object.keys(issues).length - 1;
+        return `${company.label}: ${list[0].charAt(0).toLowerCase()}${list[0].slice(1)}${more > 0 ? ` (e mais ${more})` : ''}`;
+      }
+      return 'Complete título, texto e imagem do template';
     }
     return '';
   };
@@ -220,6 +237,7 @@ export function CampaignWizard() {
             <SegmentationStep
               data={targetingData}
               onChange={setTargetingData}
+              onAudienceCheck={setAudienceCheck}
             />
           )}
           {currentStep === 3 && (
@@ -248,6 +266,7 @@ export function CampaignWizard() {
               campaignConfig={campaignConfig}
               linkedinStatus={linkedinStatus}
               creativeData={creativeData}
+              smallAudienceAdSets={audienceCheck.small}
             />
           )}
         </div>
