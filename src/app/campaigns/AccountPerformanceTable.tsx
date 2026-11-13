@@ -19,8 +19,9 @@ type SortKey = 'spend' | 'impressions' | 'clicks' | 'ctr' | 'cpc' | 'conv' | 'le
 export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, expandInline, currency }: AccountPerformanceTableProps) {
   const rows = useMemo(() => buildAccountRows(accounts), [accounts]);
   const totals = useMemo(() => sumTotals(accounts), [accounts]);
-  const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-  const totalCpc = totals.clicks > 0 ? totals.costInLocalCurrency / totals.clicks : 0;
+  // Derivadas sem denominador ficam null → "—" (nunca "0,00%" ou "R$ 0,00").
+  const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : null;
+  const totalCpc = totals.clicks > 0 ? totals.costInLocalCurrency / totals.clicks : null;
   const totalCpl = totals.oneClickLeads > 0 ? totals.costInLocalCurrency / totals.oneClickLeads : null;
   const money = (v: number) => fmtCurrency(v, currency);
 
@@ -129,8 +130,8 @@ export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, ex
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right text-slate-600">{fmtNum(account.totals.clicks)}</td>
-                    <td className="px-3 py-3 text-right text-slate-600">{fmtPct(ctr)}</td>
-                    <td className="px-3 py-3 text-right text-slate-600">{money(cpc)}</td>
+                    <td className="px-3 py-3 text-right text-slate-600">{account.totals.impressions > 0 ? fmtPct(ctr) : '—'}</td>
+                    <td className="px-3 py-3 text-right text-slate-600">{account.totals.clicks > 0 ? money(cpc) : '—'}</td>
                     <td className="px-3 py-3 text-right text-slate-600">{fmtOptional(account.totals.externalWebsiteConversions)}</td>
                     <td className="px-3 py-3 text-right text-slate-600">{fmtOptional(account.totals.oneClickLeads)}</td>
                     <td className="px-4 py-3 text-right text-slate-600">{fmtOptional(cpl, money)}</td>
@@ -153,8 +154,8 @@ export function AccountPerformanceTable({ accounts, onOpenDetail, expandedId, ex
               <td className="px-3 py-3 text-right">{fmtCurrency(totals.costInLocalCurrency, currency)}</td>
               <td className="px-3 py-3 text-right">{fmtNum(totals.impressions)}</td>
               <td className="px-3 py-3 text-right">{fmtNum(totals.clicks)}</td>
-              <td className="px-3 py-3 text-right">{fmtPct(totalCtr)}</td>
-              <td className="px-3 py-3 text-right">{money(totalCpc)}</td>
+              <td className="px-3 py-3 text-right">{fmtOptional(totalCtr, n => fmtPct(n))}</td>
+              <td className="px-3 py-3 text-right">{fmtOptional(totalCpc, money)}</td>
               <td className="px-3 py-3 text-right">{fmtOptional(totals.externalWebsiteConversions)}</td>
               <td className="px-3 py-3 text-right">{fmtOptional(totals.oneClickLeads)}</td>
               <td className="px-4 py-3 text-right">{fmtOptional(totalCpl, money)}</td>

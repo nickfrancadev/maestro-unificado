@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildLaunchPlan, validateLaunchPlan } from './launchPlan';
+import { buildLaunchPlan, validateLaunchPlan, buildPipelineParams, buildReviewChecklist, canPublishChecklist } from './launchPlan';
 import { createEmptyTargeting } from './SegmentationStep';
-import { createDefaultCampaignConfig, createDefaultCreativeData } from './types';
+import { createDefaultCampaignConfig, createDefaultCreativeData, OBJECTIVE_MAP } from './types';
 import type { TargetingData } from './SegmentationStep';
 
 const nubank = { id: 'c1', label: 'Nubank', urn: 'urn:li:organization:1' };
@@ -137,5 +137,106 @@ describe('buildLaunchPlan — variáveis no criativo personalizado', () => {
     );
     expect(plan[0].creative.headline).toBe('Oi, Itaú');
     expect(plan[0].creative.bodyText).toBe('Time Itaú');
+  });
+});
+
+describe('buildPipelineParams: o que a Revisão mostra é o que vai ao servidor', () => {
+  const base = { ...createDefaultCampaignConfig(), campaignName: 'Q4 ABM', budgetAmount: '10' };
+  const plan = () => buildLaunchPlan(base, targeting([nubank, itau]), creative(), { runId: 'r1' });
+  const ctx = { adAccountId: '123', currency: 'USD' };
+
+  it('"Ao publicar: Pausada/Ativa" sai de auto_activate', () => {
+    const p = plan();
+    expect(buildPipelineParams(p[0], p, { ...base, autoActivate: false }, ctx).auto_activate).toBe(false);
+    expect(buildPipelineParams(p[0], p, { ...base, autoActivate: true }, ctx).auto_activate).toBe(true);
+  });
+
+  it('orçamento do grupo é a soma dos conjuntos', () => {
+    const p = plan();
+    const params = buildPipelineParams(p[1], p, base, ctx);
+    expect(params.budget_amount).toBe(10);
+    expect(params.group_budget_amount).toBe(20);
+    expect(params.campaign_id).toBe('r1-c2');
+  });
+
+  it('visitas ao site vai como CPM: o LinkedIn recusa CPC com a otimização por cliques', () => {
+    const p = plan();
+    // Mesmo um rascunho antigo, salvo com costType CPC, manda CPM.
+    const params = buildPipelineParams(p[0], p, { ...base, objective: 'website_visits', costType: 'CPC' }, ctx);
+    expect(params.cost_type).toBe('CPM');
+    expect(OBJECTIVE_MAP.website_visits.costType).toBe('CPM');
+    expect(OBJECTIVE_MAP.website_visits.costLabel).toMatch(/CPM/);
+  });
+
+  it('lance manual que o objetivo não aceita vira automático, sem valor', () => {
+    const p = plan();
+    const params = buildPipelineParams(p[0], p, { ...base, objective: 'website_visits', biddingStrategy: 'manual_cpc', unitCostAmount: '5' }, ctx);
+    expect(params.bidding_strategy).toBe('automated');
+    expect(params.unit_cost).toBeUndefined();
+    expect(params.cost_type).toBe('CPM');
+  });
+
+  it('lance manual por mil impressões vai com o valor e a moeda da conta', () => {
+    const p = plan();
+    const params = buildPipelineParams(p[0], p, { ...base, biddingStrategy: 'manual_cpm', unitCostAmount: '8' }, ctx);
+    expect(params.unit_cost).toEqual({ amount: '8', currency_code: 'USD' });
+    expect(params.cost_type).toBe('CPM');
+  });
+});
+
+describe('buildReviewChecklist', () => {
+  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4 ABM', budgetAmount: '50' };
+  const ready = { audience: { pending: false, small: [] as string[] }, linkedInReady: true, hasBilling: true };
+
+  it('tudo certo: só itens ok e pode publicar', () => {
+    const plan = buildLaunchPlan(config, targeting([nubank, itau]), creative());
+    const items = buildReviewChecklist({ config, plan, creativeIssues: validateLaunchPlan(plan), ...ready });
+    expect(items.every((i) => i.status === 'ok')).toBe(true);
+    expect(canPublishChecklist(items)).toBe(true);
+  });
+
+  it('empresa sem imagem trava, com link para Criativos daquela empresa', () => {
+    const data = creative();
+    data.imageUrl = null;
+    data.overrides = { c1: { status: 'fully_personalized', imageUrl: 'https://cdn/nubank.png' } };
+    const plan = buildLaunchPlan(config, targeting([nubank, itau]), data);
+    const items = buildReviewChecklist({ config, plan, creativeIssues: validateLaunchPlan(plan), ...ready });
+    const itauItem = items.find((i) => i.id === 'creative-c2');
+    expect(itauItem).toMatchObject({ status: 'blocked', fix: { step: 4, label: 'Ir para Criativos · Itaú', companyId: 'c2' } });
+    expect(itauItem?.label).toMatch(/^Itaú: Sem imagem/);
+    expect(items.find((i) => i.id === 'creative-c1')).toBeUndefined();
+    expect(canPublishChecklist(items)).toBe(false);
+  });
+
+  it('público abaixo de 300 trava mesmo em empresa que segue o padrão', () => {
+    const plan = buildLaunchPlan(config, targeting([nubank, itau]), creative());
+    const items = buildReviewChecklist({ config, plan, creativeIssues: {}, ...ready, audience: { pending: false, small: ['c1'] } });
+    expect(plan[0].customTargeting).toBe(false);
+    expect(items.find((i) => i.id === 'audience-c1')).toMatchObject({
+      status: 'blocked', label: 'Nubank: público abaixo de 300 pessoas', fix: { step: 2, label: 'Ir para Segmentação · Nubank' },
+    });
+    expect(canPublishChecklist(items)).toBe(false);
+  });
+
+  it('público ainda calculando também segura o botão', () => {
+    const plan = buildLaunchPlan(config, targeting([nubank]), creative());
+    const items = buildReviewChecklist({ config, plan, creativeIssues: {}, ...ready, audience: { pending: true, small: [] } });
+    expect(items.find((i) => i.id === 'audience')?.status).toBe('attention');
+    expect(canPublishChecklist(items)).toBe(false);
+  });
+
+  it('variável não preenchida e URL inválida aparecem no item da empresa', () => {
+    const data = { ...creative(), landingPageUrl: 'maestro/p', bodyText: 'Oi {{contact.first_name}}' };
+    const plan = buildLaunchPlan(config, targeting([nubank]), data);
+    const item = buildReviewChecklist({ config, plan, creativeIssues: validateLaunchPlan(plan), ...ready }).find((i) => i.id === 'creative-c1');
+    expect(item?.label).toMatch(/variável que não foi preenchida/);
+    expect(item?.label).toMatch(/URL de destino/);
+  });
+
+  it('sem LinkedIn conectado não publica; sem pagamento só avisa', () => {
+    const plan = buildLaunchPlan(config, targeting([nubank]), creative());
+    const items = buildReviewChecklist({ config, plan, creativeIssues: {}, ...ready, linkedInReady: false, hasBilling: false });
+    expect(items.find((i) => i.id === 'linkedin')?.status).toBe('blocked');
+    expect(items.find((i) => i.id === 'billing')).toMatchObject({ status: 'attention', blocking: false });
   });
 });

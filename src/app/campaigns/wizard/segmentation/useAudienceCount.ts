@@ -140,3 +140,32 @@ export function useAudienceCount(data: TargetingData) {
 
   return { count, perAdSet, isLoading, isFromApi, isPrivacyFloor, hasAnySelection };
 }
+
+export type AudienceState = ReturnType<typeof useAudienceCount>;
+
+/**
+ * Resumo para travar o avanço e a publicação: quais empresas ficam abaixo do
+ * mínimo e se a conta ainda não fechou. "Pendente" também cobre o instante em
+ * que a lista de empresas mudou e o cálculo ainda não começou; sem isso, logo
+ * depois de reabrir um rascunho, o botão de publicar piscava liberado.
+ */
+export function audienceCheckFor(
+  audience: Pick<AudienceState, 'perAdSet' | 'isLoading'>,
+  accountIds: string[],
+): { small: string[]; pending: boolean } {
+  const known = new Set(audience.perAdSet.map((a) => a.id));
+  const pending = audience.isLoading || accountIds.some((id) => !known.has(id));
+  const small = smallAdSets(audience.perAdSet).map((a) => a.id).filter((id) => accountIds.includes(id));
+  return { small, pending };
+}
+
+/**
+ * Posição do público numa escala de restrito a amplo (0 a 1), em escala
+ * logarítmica: de 300 a 1 milhão de pessoas. Abaixo de 300 fica no começo.
+ */
+export function audienceScale(count: number): number {
+  if (count <= MIN_AUDIENCE) return 0;
+  const min = Math.log10(MIN_AUDIENCE);
+  const max = Math.log10(1_000_000);
+  return Math.min(1, (Math.log10(count) - min) / (max - min));
+}

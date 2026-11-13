@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { TargetAccount } from './types';
 import type { CreativeData, BrandBrief, CompanyCreativeOverride, ImageMode, AdFormat, ResolvedImageConfig } from './types';
-import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields } from './types';
+import { resolveCreativeForCompany, resolveImageConfig, overriddenImageFields, createDefaultCreativeData } from './types';
 import {
   createDefaultOverlayLayout,
   withLayoutDefaults,
@@ -41,6 +41,7 @@ import {
   effectiveTextSize,
   effectiveLayout,
   MIN_TEXT_SIZE_PX,
+  legibilityNote,
   type OverlayLayout,
   type LogoLayer,
   type LogoWrap,
@@ -59,6 +60,11 @@ import {
   generateCopy,
   generateBaseImage,
   composeLogoOverlay,
+  AiRequestError,
+  copyProblems,
+  impliesPartnership,
+  sanitizeBrandBrief,
+  joinPt,
 } from '@/lib/ai';
 import { LandingPagePicker } from '@/app/landingPages/ads/LandingPagePicker';
 import { listPages, savePage } from '@/app/landingPages/store/repo';
@@ -76,7 +82,7 @@ const CTA_OPTIONS = [
 // (ex.: "/maestro/") — por isso o caminho entra SEM barra inicial, para ser
 // resolvido relativo à base e não à raiz do domínio.
 export function buildLandingPageUrl(slug: string): string {
-  const rawBase = (import.meta.env?.BASE_URL as string | undefined) || '/';
+  const rawBase = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL || '/';
   const base = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
   return new URL(`p/${slug}`, `${window.location.origin}${base}`).toString();
 }
@@ -109,6 +115,9 @@ type FailureKind = 'brief' | 'copy' | 'templateCopy' | 'baseImage' | 'compose' |
 
 function friendlyError(kind: FailureKind, err: unknown, label?: string): string {
   console.error(`[CreativeStep] falha em ${kind}${label ? ` (${label})` : ''}:`, err);
+  // 422 = o servidor recusou o resultado da IA e já explicou em português o
+  // que fazer. Repetir uma frase genérica por cima esconderia o motivo.
+  if (err instanceof AiRequestError && err.status === 422) return err.message;
   switch (kind) {
     case 'brief':
       return `Não conseguimos analisar a marca de ${label} agora. Tente de novo em instantes; os textos ainda podem ser gerados sem essa análise.`;
@@ -123,6 +132,26 @@ function friendlyError(kind: FailureKind, err: unknown, label?: string): string 
     case 'upload':
       return 'Não conseguimos enviar a imagem. Verifique sua conexão e tente de novo.';
   }
+}
+
+// Aviso de IA na faixa do topo. `key` evita duplicar o mesmo aviso e deixa
+// uma empresa limpar o seu sem apagar o das outras.
+interface AiNotice {
+  key: string;
+  message: string;
+  retry?: () => void;
+}
+
+// Item que falta para gerar: a frase entra na mensagem única; o botão leva ao
+// campo ou à etapa onde ele se resolve.
+interface MissingInput {
+  message: string;
+  actionLabel: string;
+  onAction: () => void;
+}
+
+function partnershipInImageMessage(text: string, companyLabel?: string): string {
+  return `O texto da imagem "${text}" sugere parceria ou endosso${companyLabel ? ` com ${companyLabel}` : ' com a empresa-alvo'}. Ajuste o texto e gere de novo.`;
 }
 
 interface CreativeStepProps {
@@ -144,6 +173,12 @@ interface CreativeStepProps {
    * com os botões desabilitados e nenhum caminho até a causa.
    */
   onEditBrand?: () => void;
+  /**
+   * Empresa a abrir no editor (id da empresa-alvo; `undefined` = Template
+   * global). Aplicado na montagem e sempre que o valor muda — é o que deixa
+   * um atalho da Revisão ("Ir para Criativos · <empresa>") cair direto nela.
+   */
+  initialTarget?: string;
 }
 
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
@@ -217,7 +252,7 @@ function sendableAdvertiserLogoUrl(logo: string | null): string | null {
   return logo && logo.startsWith('blob:') ? null : logo;
 }
 
-export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId, onEditBrand }: CreativeStepProps) {
+export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId, onEditBrand, initialTarget }: CreativeStepProps) {
   const navigate = useNavigate();
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   // Camada selecionada no editor — é ela que os controles do card 2 editam.
@@ -229,8 +264,18 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // resvg bateu com o que estava na tela.
   const [previewMode, setPreviewMode] = useState<'editor' | 'composed'>('editor');
   const companies: FacetItem[] = targetingData?.companies?.included || [];
-  const [editingTarget, setEditingTarget] = useState<string>(TEMPLATE_TARGET);
+  const [editingTarget, setEditingTarget] = useState<string>(
+    initialTarget && companies.some((c) => c.id === initialTarget) ? initialTarget : TEMPLATE_TARGET,
+  );
   const [briefDrawerOpen, setBriefDrawerOpen] = useState(false);
+  // Segue `initialTarget` quando ele muda (id que não está na segmentação cai
+  // no Template global, em vez de abrir um editor sem empresa).
+  useEffect(() => {
+    if (initialTarget === undefined) return;
+    setEditingTarget(companies.some((c) => c.id === initialTarget) ? initialTarget : TEMPLATE_TARGET);
+    setBriefDrawerOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTarget]);
 
   // ----------------- Landing page picker (URL de destino) -----------------
   // 'manual' keeps the historical free-text URL input available (nothing
@@ -419,27 +464,62 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const [aiBriefLoading, setAiBriefLoading] = useState<Record<string, boolean>>({});
   const [aiCopyLoading, setAiCopyLoading] = useState<Record<string, boolean>>({});
   const [aiImageLoading, setAiImageLoading] = useState<Record<string, boolean>>({});
-  const [aiError, setAiError] = useState<string | null>(null);
+  // Avisos de IA, um por chave (`copy:<id>`, `compose:<id>`…). Lista e não uma
+  // string só: no "Gerar para todas" o erro da primeira empresa não pode ser
+  // apagado pela segunda. Cada aviso pode trazer "Tentar de novo".
+  const [aiErrors, setAiErrors] = useState<AiNotice[]>([]);
+  const reportError = (key: string, message: string, retry?: () => void) =>
+    setAiErrors((list) => [...list.filter((e) => e.key !== key), { key, message, retry }]);
+  const clearError = (key: string) => setAiErrors((list) => list.filter((e) => e.key !== key));
+  // O que falta para gerar, numa mensagem só, com um atalho para cada item.
+  const [missingInputs, setMissingInputs] = useState<MissingInput[] | null>(null);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
   // Último texto que a IA escreveu por empresa — referência para saber se o
   // usuário mexeu no texto depois. Ref porque só é lido em handlers.
   const aiCopyRef = useRef<Record<string, { headline: string; bodyText: string }>>({});
+  // Idem para o template global.
+  const aiTemplateCopyRef = useRef<{ headline: string; bodyText: string } | null>(null);
   // Confirmação inline do "Gerar para todas" quando há textos editados.
   const [bulkConfirm, setBulkConfirm] = useState<{ editedIds: string[] } | null>(null);
+  // Mesma confirmação para UMA empresa (ou o template): "Gerar texto" e
+  // "Gerar texto + imagem" também nunca reescrevem texto do usuário sem
+  // perguntar. `withImage` = veio do botão que gera os dois.
+  const [copyConfirm, setCopyConfirm] = useState<{ target: string; withImage: boolean } | null>(null);
+
+  // Contexto do anunciante que o passo Marca coletou: sem ele a IA escreve
+  // sem saber o que está sendo vendido.
+  const advertiserContext = (data: CreativeData) => ({
+    client_brand_context: data.brandKit.context || undefined,
+    product_service: data.clientProductService || undefined,
+    audience_market: data.clientAudienceMarket || undefined,
+    persona: data.clientPersona || undefined,
+  });
 
   const generateBriefFor = async (company: FacetItem): Promise<BrandBrief | null> => {
+    const key = `brief:${company.id}`;
     setAiBriefLoading((s) => ({ ...s, [company.id]: true }));
-    setAiError(null);
+    clearError(key);
+    const retry = () => { void generateBriefFor(company); };
     try {
-      const brief = await fetchBrandBrief({
+      const raw = await fetchBrandBrief({
         company_name: company.label,
         company_url: company.domain ? `https://${company.domain}` : undefined,
         company_domain: company.domain || undefined,
       });
+      // Nada cru do modelo vai para o estado: sem campo aproveitável é falha,
+      // e o brief anterior (se houver) continua valendo.
+      const brief = sanitizeBrandBrief(raw);
+      if (!brief) {
+        const hadBrief = !!creativeDataRef.current?.overrides?.[company.id]?.brief;
+        reportError(key, hadBrief
+          ? `Não conseguimos analisar a marca de ${company.label}. O brief anterior foi mantido; se quiser, ajuste setor, proposta de valor e temas no Brand Brief.`
+          : `Não conseguimos analisar a marca de ${company.label}. Os textos podem ser gerados sem essa análise; se quiser, preencha setor, proposta de valor e temas no Brand Brief.`, retry);
+        return null;
+      }
       updateOverride(company.id, { brief });
       return brief;
     } catch (err: unknown) {
-      setAiError(friendlyError('brief', err, company.label));
+      reportError(key, friendlyError('brief', err, company.label), retry);
       return null;
     } finally {
       setAiBriefLoading((s) => { const next = { ...s }; delete next[company.id]; return next; });
@@ -447,8 +527,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   };
 
   const generateCopyFor = async (company: FacetItem, brief?: BrandBrief): Promise<boolean> => {
+    const key = `copy:${company.id}`;
     setAiCopyLoading((s) => ({ ...s, [company.id]: true }));
-    setAiError(null);
+    clearError(key);
+    const retry = () => requestCopy(company, false);
     try {
       const data = creativeDataRef.current!;
       let useBrief = brief || data.overrides[company.id]?.brief;
@@ -471,17 +553,27 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         brand_brief: useBrief,
         client_voice: data.brandKit.voice,
         client_brand_colors: data.brandKit.colors,
+        ...advertiserContext(data),
         target_company_name: company.label,
         objective: 'brand_awareness',
         cta: data.cta,
       });
-      updateOverride(company.id, { headline: result.headline, bodyText: result.bodyText });
+      // A IA nunca apaga texto: resposta vazia, frase de falha, variável sem
+      // resolver ou parceria com a empresa-alvo não é gravada. O texto atual
+      // fica onde está e o aviso diz por quê, com "Tentar de novo".
+      const problems = copyProblems(result ?? {}, { targetName: company.label, allowTemplateVars: false });
+      if (problems.length) {
+        reportError(key, `A IA não devolveu um texto válido para ${company.label}: ${joinPt(problems)}. Seu texto atual foi mantido.`, retry);
+        return false;
+      }
+      const copy = { headline: result.headline.trim(), bodyText: result.bodyText.trim() };
+      updateOverride(company.id, copy);
       // Guarda o que a IA escreveu: enquanto o texto continuar igual a isto,
       // ele não conta como "editado pelo usuário" e pode ser regerado.
-      aiCopyRef.current[company.id] = { headline: result.headline, bodyText: result.bodyText };
+      aiCopyRef.current[company.id] = copy;
       return true;
     } catch (err: unknown) {
-      setAiError(friendlyError('copy', err, company.label));
+      reportError(key, friendlyError('copy', err, company.label), retry);
       return false;
     } finally {
       setAiCopyLoading((s) => { const next = { ...s }; delete next[company.id]; return next; });
@@ -496,28 +588,38 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
   // `company` null = generate the shared campaign base. With a company, the
   // base belongs to that company alone (it overrode the prompt or the origin).
-  const generateBaseImageFor = async (company?: FacetItem | null): Promise<string | null> => {
+  // `retry` é o que "Tentar de novo" refaz — a geração da empresa inteira
+  // quando a base foi pedida no meio dela.
+  const generateBaseImageFor = async (company?: FacetItem | null, retry?: () => void): Promise<string | null> => {
+    const key = `base:${company?.id ?? TEMPLATE_TARGET}`;
     setBaseImageLoading(true);
-    setAiError(null);
+    clearError(key);
+    const again = retry ?? (() => { void generateBaseImageFor(company); });
     try {
       const data = withImageDefaults(creativeDataRef.current);
       const cfg = resolveImageConfig(data, company?.id);
-      // Com "Textos pela IA" ligado, os textos digitados entram no prompt e a
-      // IA os pinta direto na base — a composição depois sobrepõe só os logos.
-      const bakedTexts = cfg.imageMode === 'ai' && cfg.aiTexts
-        ? [
-            cfg.textoDestaque?.trim() && `texto principal: "${cfg.textoDestaque.trim()}"`,
-            cfg.textoComplementar?.trim() && `texto secundário: "${cfg.textoComplementar.trim()}"`,
-          ].filter(Boolean).join('; ')
-        : '';
-      const promptBrief = [
-        cfg.basePrompt?.trim() || '',
-        bakedTexts && `Renderize na própria imagem, de forma legível, bem integrada à arte e com hierarquia clara, os textos — ${bakedTexts}.`,
-      ].filter(Boolean).join('\n\n');
+      // "Textos pela IA": os textos vão separados do prompt e o servidor pede
+      // à IA exatamente esses, nenhum outro. São opcionais: vazios ficam fora
+      // da imagem e nunca bloqueiam a geração.
+      const baked = cfg.imageMode === 'ai' && cfg.aiTexts
+        ? { destaque: cfg.textoDestaque?.trim() || '', complementar: cfg.textoComplementar?.trim() || '' }
+        : null;
+      const partnerText = [baked?.destaque, baked?.complementar]
+        .find((t) => t && impliesPartnership(t, company?.label));
+      if (partnerText) {
+        reportError(key, partnershipInImageMessage(partnerText, company?.label));
+        return null;
+      }
       const result = await generateBaseImage({
         client_brand_context: data.brandKit.context,
-        prompt_brief: promptBrief || undefined,
+        prompt_brief: cfg.basePrompt?.trim() || undefined,
         format: cfg.format,
+        ...(baked && (baked.destaque || baked.complementar) && {
+          baked_texts: {
+            ...(baked.destaque && { destaque: baked.destaque }),
+            ...(baked.complementar && { complementar: baked.complementar }),
+          },
+        }),
       });
       if (company) {
         updateOverride(company.id, { baseImageUrl: result.url, baseImageSource: 'ai' });
@@ -529,7 +631,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       }
       return result.url;
     } catch (err: unknown) {
-      setAiError(friendlyError('baseImage', err, company?.label));
+      reportError(key, friendlyError('baseImage', err, company?.label), again);
       return null;
     } finally {
       setBaseImageLoading(false);
@@ -544,8 +646,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const [templateCopyLoading, setTemplateCopyLoading] = useState(false);
 
   const generateTemplateCopy = async (): Promise<boolean> => {
+    const key = `copy:${TEMPLATE_TARGET}`;
     setTemplateCopyLoading(true);
-    setAiError(null);
+    clearError(key);
+    const retry = () => requestTemplateCopy();
     try {
       const data = creativeDataRef.current!;
       const result = await generateCopy({
@@ -560,6 +664,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         } as BrandBrief,
         client_voice: data.brandKit.voice,
         client_brand_colors: data.brandKit.colors,
+        ...advertiserContext(data),
         target_company_name: '{{company.name}}',
         objective: 'brand_awareness',
         cta: data.cta,
@@ -567,18 +672,22 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       // Guard against the model echoing a concrete name from the client voice
       // instead of the placeholder: any first-listed target company name found
       // verbatim is folded back into the variable.
-      const restore = (s: string) =>
+      const restore = (s: unknown) =>
         companies.reduce(
           (acc, c) => (c.label ? acc.split(c.label).join('{{company.name}}') : acc),
-          s,
+          typeof s === 'string' ? s.trim() : '',
         );
-      updateCreative({
-        headline: restore(result.headline),
-        bodyText: restore(result.bodyText),
-      });
+      const copy = { headline: restore(result?.headline), bodyText: restore(result?.bodyText) };
+      const problems = copyProblems(copy, { targetName: '{{company.name}}', allowTemplateVars: true });
+      if (problems.length) {
+        reportError(key, `A IA não devolveu um texto válido para o template: ${joinPt(problems)}. Seu texto atual foi mantido.`, retry);
+        return false;
+      }
+      updateCreative(copy);
+      aiTemplateCopyRef.current = copy;
       return true;
     } catch (err: unknown) {
-      setAiError(friendlyError('templateCopy', err));
+      reportError(key, friendlyError('templateCopy', err), retry);
       return false;
     } finally {
       setTemplateCopyLoading(false);
@@ -588,14 +697,28 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Apply the IA composer (texts + target logo) for one company on top of the
   // shared base image. Same pipeline regardless of how the base was produced.
   const composeOverlayFor = async (company: FacetItem): Promise<boolean> => {
+    const key = `compose:${company.id}`;
     const data = withImageDefaults(creativeDataRef.current);
     const cfg = resolveImageConfig(data, company.id);
+    clearError(key);
     if (!cfg.baseImageUrl) {
-      setAiError(`Defina uma imagem-base antes de compor para ${company.label}.`);
+      reportError(key, `Defina uma imagem-base antes de compor para ${company.label}.`);
+      return false;
+    }
+    // "Textos pela IA": a base já veio com os textos pintados pela geração,
+    // então a composição manda strings vazias e sobrepõe apenas os logos.
+    const composeAiTexts = cfg.imageMode === 'ai' && !!cfg.aiTexts;
+    const textoDestaque = composeAiTexts ? '' : cfg.textoDestaque;
+    const textoComplementar = composeAiTexts ? '' : cfg.textoComplementar;
+    // Mesma regra da copy: texto na imagem que insinue parceria com a conta
+    // não vai para a composição (o servidor recusaria do mesmo jeito).
+    const partnerText = [textoDestaque, textoComplementar]
+      .find((t) => t?.trim() && impliesPartnership(t, company.label));
+    if (partnerText) {
+      reportError(key, partnershipInImageMessage(partnerText, company.label));
       return false;
     }
     setAiImageLoading((s) => ({ ...s, [company.id]: true }));
-    setAiError(null);
     try {
       // 1) Mede no tamanho GRAVADO (`cfg.layout.*.sizePx`) — medir no efetivo
       // seria circular, já que o efetivo É o clamp derivado desta medição
@@ -603,22 +726,17 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       // destaque, 400 no complementar: são os pesos com que o preview e o
       // servidor desenham cada um — sem eles o teto subestima a largura do
       // texto em negrito.
-      // "Textos pela IA": a base já veio com os textos pintados pela geração,
-      // então a composição manda strings vazias e sobrepõe apenas os logos.
-      const composeAiTexts = cfg.imageMode === 'ai' && !!cfg.aiTexts;
-      const textoDestaque = composeAiTexts ? '' : cfg.textoDestaque;
-      const textoComplementar = composeAiTexts ? '' : cfg.textoComplementar;
       const measuredAtRecorded = {
         destaqueWidthPx: measureTextWidthPx(textoDestaque, cfg.layout.destaque.sizePx, cfg.fontFamily, 700),
         complementarWidthPx: measureTextWidthPx(textoComplementar, cfg.layout.complementar.sizePx, cfg.fontFamily, 400),
       };
       // 2) `effectiveLayout` resolve o teto vivo (tamanho efetivo dos dois
-      // textos) e o modo par (geometria do logo da conta segue o
-      // anunciante) ANTES de enviar. O payload manda SEMPRE este resultado,
-      // nunca `cfg.layout` cru — é esse acordo preview↔PNG que esta task
-      // existe para fechar: mandar o valor gravado faria o texto vazar do
-      // canvas no PNG final sempre que o teto tivesse encolhido o que a tela
-      // mostrou.
+      // textos), o modo par (geometria do logo da conta segue o anunciante) e
+      // o contraste garantido dos textos ANTES de enviar. O payload manda
+      // SEMPRE este resultado, nunca `cfg.layout` cru — é esse acordo
+      // preview↔PNG que esta task existe para fechar: mandar o valor gravado
+      // faria o texto vazar do canvas no PNG final sempre que o teto tivesse
+      // encolhido o que a tela mostrou.
       const layout = effectiveLayout(cfg.layout, cfg.format, measuredAtRecorded);
       // 3) Remede no tamanho EFETIVO (pós-teto) para mandar a largura da
       // caixa de fundo: é NESSE tamanho — não no gravado — que o servidor
@@ -652,7 +770,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       });
       return true;
     } catch (err: unknown) {
-      setAiError(friendlyError('compose', err, company.label));
+      reportError(key, friendlyError('compose', err, company.label), () => requestImage(company));
       return false;
     } finally {
       setAiImageLoading((s) => { const next = { ...s }; delete next[company.id]; return next; });
@@ -664,17 +782,26 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const generateImageFor = async (company: FacetItem): Promise<boolean> => {
     const data = withImageDefaults(creativeDataRef.current);
     const cfg = resolveImageConfig(data, company.id);
-    if (!cfg.baseImageUrl) {
+    const overridden = overriddenImageFields(data, company.id);
+    // Whoever owns the settings owns the base: a company that customised the
+    // origin or the prompt gets its own canvas, otherwise we fill the shared
+    // campaign one so the other companies benefit from the same call. Com
+    // "Textos pela IA" os textos fazem parte da base, então mudar os textos
+    // (ou o próprio toggle) também pede uma base só desta empresa.
+    const aiTextsOn = cfg.imageMode === 'ai' && !!cfg.aiTexts;
+    const ownsBase = overridden.some((f) =>
+      f === 'imageMode' || f === 'basePrompt' || f === 'baseImageUrl' || f === 'aiTexts'
+      || (aiTextsOn && (f === 'textoDestaque' || f === 'textoComplementar')));
+    const hasOwnBase = overridden.includes('baseImageUrl');
+    // Base herdada do template quando a empresa tem configuração própria de IA
+    // seria a imagem errada (prompt ou textos do template): gera a dela.
+    const needsOwnBase = cfg.imageMode === 'ai' && ownsBase && !hasOwnBase;
+    if (!cfg.baseImageUrl || needsOwnBase) {
       if (cfg.imageMode === 'upload') {
-        setAiError(`Envie uma imagem-base antes de gerar para ${company.label}.`);
+        reportError(`compose:${company.id}`, `Envie uma imagem-base antes de gerar para ${company.label}.`);
         return false;
       }
-      // Whoever owns the settings owns the base: a company that customised the
-      // origin or the prompt gets its own canvas, otherwise we fill the shared
-      // campaign one so the other companies benefit from the same call.
-      const ownsBase = overriddenImageFields(data, company.id)
-        .some((f) => f === 'imageMode' || f === 'basePrompt' || f === 'baseImageUrl');
-      const newBase = await generateBaseImageFor(ownsBase ? company : null);
+      const newBase = await generateBaseImageFor(ownsBase ? company : null, () => requestImage(company));
       if (!newBase) return false;
     }
     return composeOverlayFor(company);
@@ -683,7 +810,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const generateAllFor = async (company: FacetItem) => {
     // Sequential: generateImageFor may auto-create the base image first,
     // and we want any thrown errors to abort cleanly. Brief is generated
-    // implicitly by generateCopyFor when missing.
+    // implicitly by generateCopyFor when missing. Uma falha no texto não
+    // impede a imagem: o texto anterior fica, e o aviso fica na tela.
     await generateCopyFor(company);
     await generateImageFor(company);
   };
@@ -708,6 +836,86 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       || edited(ovr?.bodyText, data?.bodyText || '', ai?.bodyText);
   };
 
+  // No template, "do usuário" = diferente do texto inicial da campanha e do
+  // último que a IA escreveu.
+  const isTemplateCopyUserEdited = (): boolean => {
+    const data = creativeDataRef.current;
+    const initial = createDefaultCreativeData();
+    const ai = aiTemplateCopyRef.current;
+    const edited = (value: string | undefined, initialValue: string, aiValue: string | undefined) => {
+      const v = (value || '').trim();
+      if (!v) return false;
+      if (aiValue !== undefined && v === aiValue.trim()) return false;
+      return v !== initialValue.trim();
+    };
+    return edited(data?.headline, initial.headline, ai?.headline)
+      || edited(data?.bodyText, initial.bodyText, ai?.bodyText);
+  };
+
+  // O que falta para gerar, para listar numa frase só com atalho para cada
+  // item. Os textos da imagem NÃO entram: são opcionais.
+  const missingFor = (what: 'copy' | 'image' | 'all', company: FacetItem | null): MissingInput[] => {
+    const list: MissingInput[] = [];
+    const data = withImageDefaults(creativeDataRef.current);
+    if (what !== 'image' && !data.brandKit.voice.trim()) {
+      list.push({ message: 'defina o tom de voz na etapa Marca', actionLabel: 'Ir para Marca', onAction: () => onEditBrand?.() });
+    }
+    const cfg = resolveImageConfig(data, company?.id);
+    if (what !== 'copy' && cfg.imageMode === 'upload' && !cfg.baseImageUrl) {
+      list.push({ message: 'envie uma imagem-base no card Imagem', actionLabel: 'Abrir Imagem', onAction: () => setOpenSection('image') });
+    }
+    return list;
+  };
+
+  // `true` = pode gerar. Senão, mostra a mensagem do que falta e não gera.
+  const checkInputs = (what: 'copy' | 'image' | 'all', company: FacetItem | null): boolean => {
+    const missing = missingFor(what, company);
+    setMissingInputs(missing.length ? missing : null);
+    return missing.length === 0;
+  };
+
+  // Entradas dos botões de texto: checam o que falta e perguntam antes de a
+  // IA reescrever texto do usuário (o mesmo "Manter os editados" do
+  // "Gerar para todas").
+  const requestCopy = (company: FacetItem, withImage: boolean) => {
+    if (!checkInputs(withImage ? 'all' : 'copy', company)) return;
+    if (isCopyUserEdited(company)) {
+      setCopyConfirm({ target: company.id, withImage });
+      return;
+    }
+    void (withImage ? generateAllFor(company) : generateCopyFor(company));
+  };
+
+  const requestTemplateCopy = () => {
+    if (!checkInputs('copy', null)) return;
+    if (isTemplateCopyUserEdited()) {
+      setCopyConfirm({ target: TEMPLATE_TARGET, withImage: false });
+      return;
+    }
+    void generateTemplateCopy();
+  };
+
+  // `replace` false = "Manter os editados": o texto fica intocado; se o
+  // pedido incluía a imagem, ela é gerada mesmo assim.
+  const resolveCopyConfirm = (replace: boolean) => {
+    const pending = copyConfirm;
+    setCopyConfirm(null);
+    if (!pending) return;
+    if (pending.target === TEMPLATE_TARGET) {
+      if (replace) void generateTemplateCopy();
+      return;
+    }
+    const company = companies.find((c) => c.id === pending.target);
+    if (!company) return;
+    if (replace) void (pending.withImage ? generateAllFor(company) : generateCopyFor(company));
+    else if (pending.withImage) void generateImageFor(company);
+  };
+
+  const requestImage = (company: FacetItem | null) => {
+    if (!checkInputs('image', company)) return;
+    void (company ? generateImageFor(company) : generateBaseImageFor(null));
+  };
+
   // `keepEdited`: empresas com texto do usuário recebem só a imagem; o texto
   // fica intocado. Sem empresas editadas o parâmetro não faz diferença.
   const runBulkGeneration = async (keepEdited: boolean) => {
@@ -726,10 +934,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   };
 
   const generateForAllCompanies = async () => {
-    if (!clientVoice.trim()) {
-      onEditBrand?.();
-      return;
-    }
+    if (!checkInputs('all', null)) return;
     // Gerar nunca descarta em silêncio o que o usuário escreveu: havendo
     // texto editado, pergunta antes (inline, sem window.confirm).
     const editedIds = companies.filter(isCopyUserEdited).map((c) => c.id);
@@ -788,6 +993,11 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   const imageOverrides = overriddenImageFields(imageCfgSource, editingCompany?.id);
   const needsBaseImage = imageCfg.imageMode === 'upload' && !imageCfg.baseImageUrl;
   const noVoice = !clientVoice.trim();
+  // Obrigatórios só acusam depois de o usuário passar pelo campo (blur) —
+  // nunca "Campo obrigatório" antes de digitar. Tentar avançar sem eles é
+  // tratado pelo rodapé do wizard.
+  const [touched, setTouched] = useState<Record<'headline' | 'body' | 'url', boolean>>({ headline: false, body: false, url: false });
+  const touch = (field: 'headline' | 'body' | 'url') => setTouched((t) => (t[field] ? t : { ...t, [field]: true }));
   // Toggle "Textos pela IA" só faz sentido na origem 'ai': é a geração que
   // pinta os textos na base. No upload, quem desenha texto é o compositor
   // determinístico — que usa exatamente os controles que o toggle esconde.
@@ -992,7 +1202,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 <><Sparkles className="w-4 h-4 text-emerald-600" /> Editando: {editingCompany?.label}</>
               )}
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            {/* Nota de ajuda: tamanho de texto de apoio, nunca maior que os rótulos. */}
+            <p className="text-[10px] text-slate-500 mt-0.5">
               {isTemplate
                 ? 'Use variáveis como {{company.name}} para personalizar dinamicamente.'
                 : 'Estas alterações só se aplicam a esta empresa, sobrescrevendo o template.'}
@@ -1010,14 +1221,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 company. Per-block buttons live in each card's own header. */}
             {!isTemplate && editingCompany && (
               <button
-                disabled={noVoice || needsBaseImage || aiBriefLoading[editingCompany.id] || aiCopyLoading[editingCompany.id] || aiImageLoading[editingCompany.id]}
-                onClick={() => generateAllFor(editingCompany)}
+                disabled={!!(aiBriefLoading[editingCompany.id] || aiCopyLoading[editingCompany.id] || aiImageLoading[editingCompany.id])}
+                onClick={() => requestCopy(editingCompany, true)}
                 className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-[#FF5F39] hover:bg-[#E54A26] text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                title={
-                  noVoice ? 'Defina o tom de voz no passo Marca primeiro'
-                  : needsBaseImage ? 'Envie uma imagem-base no Template global primeiro'
-                  : `Gerar texto e imagem para ${editingCompany.label}`
-                }
+                title={`Gerar texto e imagem para ${editingCompany.label}`}
               >
                 <Wand2 className="w-3.5 h-3.5" />
                 Gerar texto + imagem
@@ -1025,14 +1232,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             )}
             {isTemplate && companies.length > 0 && (
               <button
-                disabled={bulkProgress !== null || bulkConfirm !== null || noVoice || needsBaseImage}
+                disabled={bulkProgress !== null || bulkConfirm !== null}
                 onClick={generateForAllCompanies}
                 className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-[#FF5F39] to-violet-600 hover:from-[#E54A26] hover:to-violet-700 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                title={
-                  noVoice ? 'Defina o tom de voz no passo Marca primeiro'
-                  : needsBaseImage ? 'Envie uma imagem-base no card Imagem primeiro'
-                  : `Gerar texto e imagem para as ${companies.length} empresas`
-                }
+                title={`Gerar texto e imagem para as ${companies.length} empresas`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 Gerar para todas ({companies.length})
@@ -1041,11 +1244,71 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           </div>
         </header>
 
-        {aiError && (
-          <div className="px-6 py-2 bg-red-50 border-b border-red-100 text-xs text-red-700 flex items-center gap-2">
+        {/* O que falta para gerar: uma mensagem só, com um atalho para cada
+            item em vez de botões desabilitados sem explicação. */}
+        {missingInputs && (
+          <div role="alert" className="px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="flex-1 min-w-[200px]">
+              Para gerar, {joinPt(missingInputs.map((m) => m.message))}.
+            </span>
+            {missingInputs.map((m) => (
+              <button
+                key={m.actionLabel}
+                onClick={() => { setMissingInputs(null); m.onAction(); }}
+                className="px-3 py-1.5 rounded-lg bg-white border border-amber-200 font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                {m.actionLabel}
+              </button>
+            ))}
+            <button onClick={() => setMissingInputs(null)} aria-label="Fechar aviso" className="text-amber-600 hover:text-amber-800">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {aiErrors.map((notice) => (
+          <div key={notice.key} role="alert" className="px-6 py-2 bg-red-50 border-b border-red-100 text-xs text-red-700 flex items-center gap-2">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            <span className="flex-1">{aiError}</span>
-            <button onClick={() => setAiError(null)} className="text-red-500 hover:text-red-700">
+            <span className="flex-1">{notice.message}</span>
+            {notice.retry && (
+              <button
+                onClick={() => { clearError(notice.key); notice.retry?.(); }}
+                className="shrink-0 px-2.5 py-1 rounded-md bg-white border border-red-200 font-semibold text-red-700 hover:bg-red-100"
+              >
+                Tentar de novo
+              </button>
+            )}
+            <button onClick={() => clearError(notice.key)} aria-label="Fechar aviso" className="text-red-500 hover:text-red-700">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+
+        {/* Mesma pergunta do "Gerar para todas", para uma empresa ou para o
+            template: a IA nunca reescreve texto do usuário sem perguntar. */}
+        {copyConfirm && (
+          <div role="alert" className="px-6 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="flex-1 min-w-[200px]">
+              {copyConfirm.target === TEMPLATE_TARGET
+                ? 'O template tem textos escritos por você.'
+                : `${companies.find((c) => c.id === copyConfirm.target)?.label ?? 'Esta empresa'} tem textos editados por você.`}
+              {' '}Substituir pelos textos da IA?
+            </span>
+            <button
+              onClick={() => resolveCopyConfirm(false)}
+              className="px-3 py-1.5 rounded-lg bg-[#FF5F39] hover:bg-[#E54A26] font-semibold text-white"
+            >
+              Manter os editados
+            </button>
+            <button
+              onClick={() => resolveCopyConfirm(true)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-amber-200 font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              Substituir pelos textos da IA
+            </button>
+            <button onClick={() => setCopyConfirm(null)} aria-label="Cancelar geração" className="text-amber-600 hover:text-amber-800">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -1093,9 +1356,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 isTemplate ? (
                   <CardAction
                     label="Gerar texto"
-                    onClick={generateTemplateCopy}
+                    onClick={requestTemplateCopy}
                     loading={templateCopyLoading}
-                    disabled={noVoice}
                     title={noVoice
                       ? 'Defina o tom de voz no passo Marca primeiro'
                       : 'Escreve a copy do template já com {{company.name}}'}
@@ -1103,9 +1365,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 ) : editingCompany ? (
                   <CardAction
                     label="Gerar texto"
-                    onClick={() => generateCopyFor(editingCompany)}
+                    onClick={() => requestCopy(editingCompany, false)}
                     loading={!!aiCopyLoading[editingCompany.id]}
-                    disabled={noVoice}
                     title={noVoice
                       ? 'Defina o tom de voz no passo Marca primeiro'
                       : `Gerar texto para ${editingCompany.label}`}
@@ -1120,6 +1381,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 <textarea
                   value={editorBody}
                   onChange={(e) => setEditorBody(e.target.value)}
+                  onBlur={() => touch('body')}
+                  aria-invalid={isTemplate && touched.body && !editorBody.trim()}
                   maxLength={600}
                   placeholder={isTemplate
                     ? 'Ex: Hi {{company.name}} team, ABM teams in {{company.industry}} are…'
@@ -1130,6 +1393,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   {editorBody.length}/600
                 </span>
               </div>
+              {isTemplate && touched.body && !editorBody.trim() && (
+                <p className="mt-1 text-[10px] text-red-600">Escreva o texto do anúncio.</p>
+              )}
               {isTemplate && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   <span className="text-[10px] text-slate-400 mr-1">Inserir:</span>
@@ -1146,6 +1412,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   type="text"
                   value={editorHeadline}
                   onChange={(e) => setEditorHeadline(e.target.value)}
+                  onBlur={() => touch('headline')}
+                  aria-invalid={isTemplate && touched.headline && !editorHeadline.trim()}
                   maxLength={200}
                   placeholder={isTemplate
                     ? 'Ex: Acelere seu ABM com {{company.name}}'
@@ -1156,6 +1424,9 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   {editorHeadline.length}/200
                 </span>
               </div>
+              {isTemplate && touched.headline && !editorHeadline.trim() && (
+                <p className="mt-1 text-[10px] text-red-600">Escreva o título do anúncio.</p>
+              )}
 
               {/* The brand brief is the raw material the copy above is written
                   from — so its entry point lives here, not competing for
@@ -1194,7 +1465,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               {/* 1 · Formato — primeiro porque é ele que decide as dimensões
                   que a Origem/Imagem-base logo abaixo respeitam. */}
               <div className="mb-3">
-                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
                   Formato
                 </label>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -1246,7 +1517,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   bloco que mostra/recebe a imagem em si. */}
               {imageCfg.imageMode === 'ai' && (
                 <div className="mb-3">
-                  <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-0.5">
                     Prompt para imagem
                   </label>
                   <textarea
@@ -1315,7 +1586,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   )}
                 </div>
               ) : (
-                <p className="text-[11px] text-slate-400 text-center py-1.5">
+                <p className="text-[10px] text-slate-400 text-center py-1.5">
                   A imagem-base será criada quando você usar{' '}
                   <span className="font-semibold text-[#E54A26]">
                     {editingCompany
@@ -1341,7 +1612,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">Textos pela IA</div>
                     <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
                       {imageCfg.aiTexts
-                        ? 'Ligado: a IA escreve os textos direto na imagem a partir do que você digitou. Posição e estilo ficam com ela.'
+                        ? 'Ligado: a IA escreve na imagem exatamente os textos que você digitou, e nenhum outro. Posição e estilo ficam com ela. Campo vazio fica fora da imagem.'
                         : 'Desligado: você posiciona e estiliza os textos sobre a imagem. Ligue para a IA escrevê-los na própria imagem.'}
                     </p>
                   </div>
@@ -1371,12 +1642,14 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   de uma empresa. */}
               {(imageCfg.imageMode === 'ai' || editingCompany) && (() => {
                 const generating = editingCompany ? !!aiImageLoading[editingCompany.id] : baseImageLoading;
+                // Sem imagem-base o botão continua clicável: o clique explica o
+                // que falta e leva até lá, em vez de um disabled mudo.
                 const blocked = !!editingCompany && needsBaseImage;
                 return (
                   <button
                     type="button"
-                    onClick={() => (editingCompany ? generateImageFor(editingCompany) : generateBaseImageFor(null))}
-                    disabled={generating || blocked}
+                    onClick={() => requestImage(editingCompany)}
+                    disabled={generating}
                     title={blocked
                       ? 'Envie uma imagem-base primeiro'
                       : editingCompany
@@ -1385,9 +1658,11 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                           ? 'A IA cria a imagem já com os seus textos aplicados'
                           : 'A IA cria a imagem-base a partir do prompt'}
                     className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-colors ${
-                      generating || blocked
+                      generating
                         ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                        : 'bg-[#FF5F39] hover:bg-[#E54A26] text-white shadow-sm'
+                        : blocked
+                          ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          : 'bg-[#FF5F39] hover:bg-[#E54A26] text-white shadow-sm'
                     }`}
                   >
                     {generating
@@ -1407,12 +1682,17 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
 
               {/* 5 · Textos, 6 · Fonte */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                {/* Uma explicação só, com UM escopo: ou vale só para a empresa, ou
+                    é compartilhado entre todas — nunca as duas frases juntas. */}
                 <p className="text-[10px] text-slate-500 leading-relaxed">
                   {aiTextsOn
-                    ? 'A IA absorve estes textos e os aplica direto na imagem — estilo e posição por conta dela.'
-                    : editingCompany
-                    ? `Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Alterar qualquer campo aqui vale só para ${editingCompany.label}.`
-                    : 'Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Compartilhados entre todas as empresas da campanha.'}
+                    ? 'A IA escreve estes textos na imagem-base, com estilo e posição dela. Os dois são opcionais. '
+                    : 'Os textos e os logos são aplicados sobre a imagem-base. Arraste no preview para posicionar. Os dois textos são opcionais. '}
+                  {editingCompany
+                    ? (aiTextsOn
+                      ? `Vale só para ${editingCompany.label}, que ganha uma imagem-base própria com estes textos.`
+                      : `Vale só para ${editingCompany.label}.`)
+                    : 'Compartilhado entre todas as empresas da campanha.'}
                 </p>
 
                 {/* Cada texto é um grupo fechado: o input fica sempre à mão,
@@ -1650,8 +1930,13 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   type="text"
                   value={editorLandingPageUrl}
                   onChange={(e) => { setLinkedPageId(undefined); setDestination({ landingPageUrl: e.target.value }); }}
+                  onBlur={() => touch('url')}
+                  aria-invalid={touched.url && !editorLandingPageUrl.trim()}
                   className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg text-blue-600 focus:ring-2 focus:ring-[#FF5F39] outline-none"
                 />
+              )}
+              {urlMode === 'manual' && touched.url && !editorLandingPageUrl.trim() && (
+                <p className="mt-1 text-[10px] text-red-600">Informe a URL de destino.</p>
               )}
 
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">CTA</label>
@@ -1893,6 +2178,14 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
                 </div>
               )}
 
+              {/* O que a análise não achou fica vazio para preencher à mão,
+                  em vez de um palpite inventado (ex.: cores do setor). */}
+              {!!draft.missing_fields?.length && (
+                <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600">
+                  A análise não encontrou {joinPt(draft.missing_fields)}. Preencha abaixo, se quiser.
+                </div>
+              )}
+
               <Field label="Indústria">
                 <input value={draft.industry} onChange={(e) => setField('industry', e.target.value)} className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none" />
               </Field>
@@ -2090,7 +2383,7 @@ function TextField({ label, value, onChange, placeholder, onFocus, onRemove }: {
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-0.5">
-        <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide">{label}</label>
+        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">{label}</label>
         {onRemove && value.trim() && (
           <button
             type="button"
@@ -2208,6 +2501,11 @@ function TextLayerControls({ id, label, layer, text, fontFamily, format, weight,
           </button>
         ))}
       </div>
+      {/* O preview e o PNG usam o fundo efetivo (`legibleTextLayer`): quando
+          ele difere do escolhido, o card diz por quê. */}
+      {legibilityNote(layer) && (
+        <p className="text-[9px] text-slate-500 leading-snug">{legibilityNote(layer)}</p>
+      )}
 
       {/* A caixa é o que torna o texto legível sobre uma foto qualquer, então
           ela ganha controles próprios em vez de ficar presa no preto 55%. */}

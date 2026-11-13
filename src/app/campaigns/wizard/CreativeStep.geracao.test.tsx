@@ -193,12 +193,16 @@ describe('CreativeStep — botões de geração por bloco', () => {
     expect(within(canvas).getByAltText('Imagem-base')).toHaveAttribute('src', 'https://x/base-nubank.png');
   });
 
-  it('sem imagem-base e com origem upload, a empresa bloqueia a geração', () => {
+  it('sem imagem-base e com origem upload, a empresa não gera e diz o que falta', () => {
     renderStep();
     goTo(/Nubank/);
     openCard('Imagem');
 
-    expect(screen.getByRole('button', { name: /^Gerar imagem$/ })).toBeDisabled();
+    // Clicável de propósito: o clique explica o que falta em vez de um
+    // disabled mudo, e nada é gerado.
+    fireEvent.click(screen.getByRole('button', { name: /^Gerar imagem$/ }));
+    expect(screen.getByText(/Para gerar, envie uma imagem-base no card Imagem/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Abrir Imagem' })).toBeTruthy();
     // O aviso vive dentro do card, não numa faixa no topo da página.
     expect(screen.queryByText(/Modo "Template \+ logo" selecionado/)).not.toBeInTheDocument();
   });

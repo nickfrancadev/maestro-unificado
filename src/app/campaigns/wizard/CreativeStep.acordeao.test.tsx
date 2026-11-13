@@ -252,7 +252,7 @@ describe('CreativeStep — toggle Textos pela IA', () => {
     expect(screen.queryByText('Fonte')).toBeNull();
   });
 
-  it('os textos entram no prompt da geração quando ligado — e não entram desligado', async () => {
+  it('os textos vão como baked_texts quando ligado — e não vão desligado', async () => {
     const spy = vi.mocked(generateBaseImage);
     spy.mockClear();
 
@@ -262,9 +262,9 @@ describe('CreativeStep — toggle Textos pela IA', () => {
     // Ligado, o CTA assume que o resultado é o criativo inteiro.
     fireEvent.click(screen.getByRole('button', { name: /Gerar criativo com IA/ }));
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());
-    expect(spy.mock.calls[0][0].prompt_brief).toContain('fundo azul abstrato');
-    expect(spy.mock.calls[0][0].prompt_brief).toContain('WORKSHOP ABM');
-    expect(spy.mock.calls[0][0].prompt_brief).toContain('Convite VIP');
+    // Separados do prompt: o servidor pede à IA exatamente estes e nenhum outro.
+    expect(spy.mock.calls[0][0].prompt_brief).toBe('fundo azul abstrato');
+    expect(spy.mock.calls[0][0].baked_texts).toEqual({ destaque: 'WORKSHOP ABM', complementar: 'Convite VIP' });
     unmount();
 
     spy.mockClear();
@@ -275,8 +275,8 @@ describe('CreativeStep — toggle Textos pela IA', () => {
     expect(screen.queryByRole('button', { name: /Gerar criativo com IA/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Gerar imagem com IA/ }));
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());
-    expect(spy.mock.calls[0][0].prompt_brief).toContain('fundo azul abstrato');
-    expect(spy.mock.calls[0][0].prompt_brief).not.toContain('WORKSHOP ABM');
+    expect(spy.mock.calls[0][0].prompt_brief).toBe('fundo azul abstrato');
+    expect(spy.mock.calls[0][0].baked_texts).toBeUndefined();
   });
 
   it('ligado, a composição não sobrepõe os textos (a IA já os pintou na base)', async () => {

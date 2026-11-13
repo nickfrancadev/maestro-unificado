@@ -17,6 +17,18 @@ import {
   type SvgLogoLayer,
   type SvgLogoPair,
 } from "./overlaySvg.ts";
+import {
+  copyProblems,
+  cleanModelText,
+  impliesPartnership,
+  sanitizeBrandBrief,
+  sanitizeBrandVoice,
+  joinPt,
+  imageDimensions,
+  needsImageNormalization,
+  LINKEDIN_HEADLINE_MAX,
+  LINKEDIN_INTRO_MAX,
+} from "./aiGuards.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -1854,7 +1866,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
     // Rest.li 2.0 search filter: outer grammar literal, only URNs encoded.
     // For status, the values are plain enum strings, so nothing to encode.
     const searchExpr = `(status:(values:List(ACTIVE,PAUSED,DRAFT,ARCHIVED,CANCELED)))`;
-    const endpoint = `https://api.linkedin.com/rest/adAccounts/${accountIdPath}/adCampaigns?q=search&search=${searchExpr}&fields=id,name,status,type,totalBudget,dailyBudget,runSchedule,costType&count=100`;
+    const endpoint = `https://api.linkedin.com/rest/adAccounts/${accountIdPath}/adCampaigns?q=search&search=${searchExpr}&fields=id,name,status,type,totalBudget,dailyBudget,runSchedule,costType,campaignGroup&count=100`;
 
     console.log(`[LinkedIn Campaigns List] GET ${endpoint}`);
     const response = await fetch(endpoint, {
@@ -1896,10 +1908,17 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
       runSchedule: el.runSchedule
         ? { start: el.runSchedule.start || null, end: el.runSchedule.end || null }
         : null,
+      // Grupo de campanhas (URN). A lista do front agrupa os conjuntos de um
+      // mesmo lançamento (um por empresa) por este campo.
+      campaignGroup: el.campaignGroup || null,
     }));
 
     console.log(`[LinkedIn Campaigns List] Returned ${campaigns.length} campaigns`);
-    return c.json({ campaigns, currency: integration.selected_ad_account_currency || "USD" });
+    return c.json({
+      campaigns,
+      currency: integration.selected_ad_account_currency || "USD",
+      adAccountName: integration.selected_ad_account_name || null,
+    });
   } catch (err: any) {
     console.log("[LinkedIn Campaigns List] Erro:", err.message);
     return c.json({ campaigns: [], error: err.message });
@@ -2486,11 +2505,12 @@ Diretrizes:
 - "industry": setor primário (ex: "Cloud Infrastructure", "Fintech B2B").
 - "value_proposition": uma frase curta (até 14 palavras) com a proposta de valor da empresa.
 - "visual_style_keywords": 3-6 palavras-chave para o estilo visual (ex: "minimalist", "geometric", "tech", "warm", "high-contrast"). Em inglês.
-- "primary_colors": 2-4 cores em hex (#RRGGBB), as cores dominantes da marca. Se não souber, infira pelo setor (mas marque uma estimativa coerente).
+- "primary_colors": 2-4 cores em hex (#RRGGBB), as cores dominantes da marca. Se os sinais não mostrarem as cores, devolva lista vazia. Não invente.
 - "key_messaging_themes": 3-5 temas centrais da comunicação (ex: "developer productivity", "compliance-first", "real-time data"). Em inglês.
 - "target_persona_hint": 1 frase descrevendo o tipo de pessoa-alvo da empresa (ex: "Engineering leaders at Series B+ startups").
 
-NÃO inclua "tone_of_voice" — o tom de voz não é da empresa-alvo. Você está analisando a empresa-alvo apenas para entender o contexto da mensagem.`;
+NÃO inclua "tone_of_voice" — o tom de voz não é da empresa-alvo. Você está analisando a empresa-alvo apenas para entender o contexto da mensagem.
+Responda só com os valores pedidos. Sem comentários, sem oferecer ajuda, sem markdown. Campo que você não conseguir extrair fica vazio.`;
 
     const generated = await callGeminiText({
       systemInstruction,
@@ -2498,8 +2518,20 @@ NÃO inclua "tone_of_voice" — o tom de voz não é da empresa-alvo. Você est�
       responseSchema: briefSchema,
     });
 
+    // Nada da resposta crua do modelo sai daqui: só os campos do schema, já
+    // limpos. Sem nenhum campo útil é falha (422) e NÃO vai para o cache —
+    // senão o lixo voltaria em toda chamada seguinte.
+    const { brief, missing, usable } = sanitizeBrandBrief(generated);
+    const label = company_name || company_domain || company_url;
+    if (!usable) {
+      return c.json({
+        error: `Não conseguimos analisar a marca de ${label}. Preencha manualmente setor, proposta de valor e temas no Brand Brief.`,
+        missing,
+      }, 422);
+    }
     const result = {
-      ...generated,
+      ...brief,
+      missing_fields: missing,
       scrape_status,
       source_url: signals?.url || company_url || null,
       og_image: signals?.og_image || null,
@@ -2641,9 +2673,9 @@ app.post("/make-server-a4d5bbe0/ai/extract-brand-voice", async (c) => {
 - "voice": 3-4 frases descrevendo o TOM DE VOZ — registro (formal/informal), uso de jargão, atitude (provocadora, didática, técnica, calorosa), pronome preferido (você/vocês/nós), tipo de argumento (dados, emoção, autoridade). Em português, sem genéricos como "moderno" e "inovador".
 - "voice_examples": array com 2-3 FRASES REAIS extraídas do conteúdo que ilustram o tom. Copie verbatim, não parafraseie.
 - "brand_context": 1-2 frases sobre o que a empresa vende, para quem, e qual a proposta de valor central. Em português.
-- "brand_colors": objeto com "primary", "secondary" e "accent" em hex (ex "#5B3FFF"). Use as CORES DETECTADAS NO CSS como base — escolha as que mais provavelmente representam a identidade visual da marca (primary = cor de marca dominante, accent = cor de CTA/destaque, secondary = cor de apoio). Se as cores detectadas forem insuficientes, complemente com inferência.
+- "brand_colors": objeto com "primary", "secondary" e "accent" em hex (ex "#5B3FFF"). Use as CORES DETECTADAS NO CSS como base — escolha as que mais provavelmente representam a identidade visual da marca (primary = cor de marca dominante, accent = cor de CTA/destaque, secondary = cor de apoio). Sem cores detectadas, devolva strings vazias: o usuário preenche à mão.
 
-Não use markdown. Seja específico e concreto.`;
+Não use markdown. Seja específico e concreto. Responda só com os valores pedidos, sem comentários nem ofertas de ajuda; campo que não der para extrair fica vazio.`;
 
     const voiceSchema = {
       type: "object",
@@ -2670,19 +2702,27 @@ Não use markdown. Seja específico e concreto.`;
       responseSchema: voiceSchema,
     });
 
-    const asStr = (v: unknown) => (typeof v === "string" ? v : "");
-    const asStrArr = (v: unknown) => Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
-    const colors = generated?.brand_colors || {};
+    // Valida antes de devolver: a tela grava o que receber. Sem voz nem
+    // contexto é falha (422) com o que preencher à mão; cores ausentes não
+    // derrubam o resto — a paleta volta vazia para preenchimento manual.
+    const voiceOut = sanitizeBrandVoice(generated);
+    if (!voiceOut.usable) {
+      return c.json({
+        error: scrape_status === "limited"
+          ? "Não conseguimos acessar o site para extrair a marca. Preencha manualmente o tom de voz, o contexto e as cores."
+          : "Não conseguimos extrair a marca deste site. Preencha manualmente o tom de voz, o contexto e as cores.",
+        missing: voiceOut.missing,
+      }, 422);
+    }
 
     return c.json({
-      voice: asStr(generated?.voice),
-      voice_examples: asStrArr(generated?.voice_examples),
-      brand_context: asStr(generated?.brand_context),
-      brand_colors: {
-        primary: asStr(colors.primary),
-        secondary: asStr(colors.secondary),
-        accent: asStr(colors.accent),
-      },
+      voice: voiceOut.voice,
+      voice_examples: voiceOut.voice_examples,
+      brand_context: voiceOut.brand_context,
+      brand_colors: voiceOut.brand_colors,
+      // Candidatas vistas no CSS, para a tela oferecer como amostras.
+      color_candidates: colorHints.slice(0, 6).map((h) => h.hex.toUpperCase()),
+      missing_fields: voiceOut.missing,
       scrape_status,
       source_url: homeSignals?.url || website_url,
       about_url: aboutSignals?.url || null,
@@ -2694,12 +2734,25 @@ Não use markdown. Seja específico e concreto.`;
 });
 
 // ---------- /ai/generate-copy ----------
+// A copy só sai daqui depois de passar por `copyProblems` (aiGuards.ts):
+// título e texto preenchidos, dentro dos limites do LinkedIn, sem frase de
+// falha/conversa do modelo, sem parceria/endosso com a empresa-alvo e sem
+// variável que a publicação não preenche. Reprovada, pede de novo dizendo o
+// motivo (até 3 tentativas); se nenhuma passar, devolve 422 com a mensagem
+// que a tela mostra — nunca um 201 com strings vazias.
+const COPY_MAX_ATTEMPTS = 3;
+
 app.post("/make-server-a4d5bbe0/ai/generate-copy", async (c) => {
   try {
-    const { brand_brief, client_voice, client_brand_colors, target_company_name, objective, cta } = await c.req.json();
+    const {
+      brand_brief, client_voice, client_brand_colors, target_company_name, objective, cta,
+      client_brand_context, product_service, audience_market, persona,
+    } = await c.req.json();
     if (!target_company_name) {
-      return c.json({ error: "target_company_name é obrigatório" }, 400);
+      return c.json({ error: "Escolha a empresa-alvo antes de gerar o texto." }, 400);
     }
+    // O template escreve para a variável, não para uma empresa real.
+    const isTemplate = /\{\{\s*company\.name\s*\}\}/.test(target_company_name);
     const colors = client_brand_colors && typeof client_brand_colors === "object" ? client_brand_colors : {};
     const colorLine = [
       colors.primary && `primária ${colors.primary}`,
@@ -2720,19 +2773,31 @@ app.post("/make-server-a4d5bbe0/ai/generate-copy", async (c) => {
 
 REGRAS CRÍTICAS:
 - O TOM DE VOZ é do cliente Maestro (o anunciante), descrito em <client_voice>. Mantenha esse tom rigorosamente.
-- A MENSAGEM é direcionada à empresa-alvo (target_company_name) e deve usar referências dos "key_messaging_themes" do brief para ressoar com ela.
-- Headline: até 150 caracteres, alta conversão, mencione a empresa-alvo OU um problema específico do contexto dela.
-- BodyText: até 500 caracteres, 2-3 frases curtas, primeira frase puxa atenção (pode mencionar a empresa-alvo), última frase incentiva o CTA.
+- O anunciante vende o que está em <advertiser>. A MENSAGEM é direcionada à empresa-alvo (target_company_name) e deve usar referências dos "key_messaging_themes" do brief para ressoar com ela.
+- Headline: até 150 caracteres (nunca mais de ${LINKEDIN_HEADLINE_MAX}), alta conversão, mencione a empresa-alvo OU um problema específico do contexto dela.
+- BodyText: até 500 caracteres (nunca mais de ${LINKEDIN_INTRO_MAX}), 2-3 frases curtas, primeira frase puxa atenção (pode mencionar a empresa-alvo), última frase incentiva o CTA.
 - Idioma: português do Brasil, salvo se o tom de voz pedir explicitamente outro idioma.
 - NÃO use emojis salvo se o client_voice pedir.
 - NÃO invente dados (números, prêmios, citações). Use só o que está no brief.
+- NÃO sugira parceria, endosso, patrocínio ou qualquer relação comercial entre o anunciante e a empresa-alvo. A empresa-alvo é o PÚBLICO do anúncio, não uma aliada. Proibido: "parceria", "parceiro", "partner", "em parceria com", "apoiado por" e co-branding como "Anunciante + Empresa" ou "Anunciante x Empresa".
+- ${isTemplate
+      ? "Escreva para a variável {{company.name}} literalmente, sem trocar por um nome. A única outra variável aceita é {{company.industry}}."
+      : "NÃO use variáveis ({{...}}), macros (%NOME%) nem placeholders ([Empresa], [Nome]): escreva o nome real."}
+- Devolva só o texto do anúncio. Sem comentários, sem rótulos ("Headline:"), sem markdown, sem oferecer alternativas.
 - Retorne JSON estrito.`;
 
-    const prompt = `<client_voice>
+    const advertiserLines = [
+      client_brand_context && `Contexto: ${client_brand_context}`,
+      product_service && `Produto/serviço desta campanha: ${product_service}`,
+      audience_market && `Público/mercado: ${audience_market}`,
+      persona && `Persona: ${persona}`,
+    ].filter(Boolean).join("\n");
+
+    const basePrompt = `<client_voice>
 ${client_voice || "(tom de voz não especificado — use tom profissional, direto e confiante)"}
 </client_voice>
 
-${colorLine ? `<client_brand_palette>\n${colorLine}\n(use como referência visual da marca anunciante — pode mencionar ou aludir à identidade, mas não force descrição literal das cores no texto)\n</client_brand_palette>\n\n` : ""}<target_company>
+${advertiserLines ? `<advertiser>\n${advertiserLines}\n</advertiser>\n\n` : ""}${colorLine ? `<client_brand_palette>\n${colorLine}\n(use como referência visual da marca anunciante — pode mencionar ou aludir à identidade, mas não force descrição literal das cores no texto)\n</client_brand_palette>\n\n` : ""}<target_company>
 Nome: ${target_company_name}
 Indústria: ${brand_brief?.industry || "?"}
 Proposta de valor da empresa-alvo: ${brand_brief?.value_proposition || "?"}
@@ -2747,12 +2812,23 @@ CTA: ${cta || "LEARN_MORE"}
 
 Gere headline e bodyText para este anúncio.`;
 
-    const result = await callGeminiText({
-      systemInstruction,
-      prompt,
-      responseSchema: copySchema,
-    });
-    return c.json(result);
+    let lastProblems: string[] = [];
+    for (let attempt = 1; attempt <= COPY_MAX_ATTEMPTS; attempt++) {
+      const prompt = lastProblems.length
+        ? `${basePrompt}\n\nA versão anterior foi recusada porque ${joinPt(lastProblems)}. Escreva uma nova versão que corrija isso.`
+        : basePrompt;
+      const raw = await callGeminiText({ systemInstruction, prompt, responseSchema: copySchema });
+      const copy = { headline: cleanModelText(raw?.headline), bodyText: cleanModelText(raw?.bodyText) };
+      lastProblems = copyProblems(copy, { targetName: target_company_name, allowTemplateVars: isTemplate });
+      if (!lastProblems.length) return c.json(copy);
+      console.log(`[Generate Copy] Tentativa ${attempt} recusada para ${target_company_name}: ${lastProblems.join("; ")}`);
+    }
+
+    const who = isTemplate ? "o template" : target_company_name;
+    return c.json({
+      error: `A IA não conseguiu um texto válido para ${who}: ${joinPt(lastProblems)}. Seu texto atual foi mantido. Tente de novo ou escreva manualmente.`,
+      reasons: lastProblems,
+    }, 422);
   } catch (err: any) {
     console.log("[Generate Copy] Erro:", err.message);
     return c.json({ error: err.message }, 500);
@@ -2930,14 +3006,66 @@ async function callGeminiImageCompose(
 // Generates a single reusable base image for the campaign — same canvas is
 // reused across every target company. The mode controls visual style: a
 // realistic editorial photograph or an abstract illustrative graphic.
+//
+// A base nasce SEM texto e SEM logo: textos e logos são compostos depois, de
+// forma determinística, em /ai/compose-logo-overlay. A exceção é "Textos pela
+// IA": aí a tela manda `baked_texts` e o prompt pede EXATAMENTE esses textos e
+// nenhum outro. Em qualquer caso o prompt proíbe cena de parceria/co-branding,
+// selos, badges e nomes de marca — o produto chegou a gerar "Parceiro
+// Estratégico" e "Partner on Inter" sozinho.
+//
+// A saída tem no mínimo 1200 px no lado maior e a proporção do formato: o que
+// vier menor ou fora da proporção é ampliado e recortado (resvg) para o tamanho
+// exato do formato; se nem isso funcionar, 422.
+const BASE_IMAGE_GUARDRAILS = `NEVER depict partnerships, co-branding, alliances, endorsements or sponsorship: no two-company handshake deals, no "partner"/"parceiro"/"parceria" badges, no seals, ribbons, stamps, certificates, award medals or trust badges, no brand names, no company logos, no product or app UI showing names.`;
+
+async function normalizeBaseImage(
+  bytes: Uint8Array,
+  mime: string,
+  format: AdFormat,
+): Promise<{ bytes: Uint8Array; mime: string; width: number; height: number }> {
+  const target = AD_FORMAT_SIZE[format];
+  const dims = imageDimensions(bytes);
+  if (!needsImageNormalization(dims, target)) {
+    return { bytes, mime, width: dims!.width, height: dims!.height };
+  }
+  await ensureResvg();
+  let binary = "";
+  for (let k = 0; k < bytes.length; k += 0x8000) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + 0x8000)));
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${target.w}" height="${target.h}" viewBox="0 0 ${target.w} ${target.h}">` +
+    `<image href="data:${mime};base64,${btoa(binary)}" x="0" y="0" width="${target.w}" height="${target.h}" preserveAspectRatio="xMidYMid slice"/></svg>`;
+  const png = rasterizeSvg(svg, [], "Inter", target.w);
+  const out = imageDimensions(png);
+  if (!out || Math.max(out.width, out.height) < 1200) {
+    throw new Error("normalização não chegou a 1200 px");
+  }
+  console.log(`[Generate Base Image] Normalizada de ${dims ? `${dims.width}x${dims.height}` : "?"} para ${out.width}x${out.height}`);
+  return { bytes: png, mime: "image/png", width: out.width, height: out.height };
+}
+
 app.post("/make-server-a4d5bbe0/ai/generate-base-image", async (c) => {
   try {
-    const { mode, client_brand_context, prompt_brief, format } = await c.req.json();
+    const { mode, client_brand_context, prompt_brief, baked_texts, format: rawFormat } = await c.req.json();
+    const format: AdFormat = rawFormat === "square" ? "square" : "banner";
     const styleMode: "photo_ai" | "graphic_ai" = mode === "photo_ai" ? "photo_ai" : "graphic_ai";
+
+    // Textos opcionais: vazio nunca bloqueia a geração, só fica fora da imagem.
+    const baked = [baked_texts?.destaque, baked_texts?.complementar]
+      .map((t: unknown) => (typeof t === "string" ? t.trim() : ""))
+      .filter(Boolean);
+    if (baked.some((t) => impliesPartnership(t))) {
+      return c.json({ error: "O texto da imagem sugere parceria ou endosso com a empresa-alvo. Ajuste o texto principal ou o secundário e tente de novo." }, 422);
+    }
 
     const styleDirective = styleMode === "photo_ai"
       ? `Style: REALISTIC EDITORIAL CORPORATE PHOTOGRAPHY. Real people, natural lighting, shallow depth of field, candid yet polished. Avoid stock-photo clichés (forced handshakes, awkward thumbs-up, fake smiles, pointing at screens). No illustration. No 3D render. No abstract shapes. Pure photography.`
       : `Style: CLEAN EDITORIAL ILLUSTRATION or abstract conceptual graphic. Geometric, minimalist, vector-feel. Avoid photorealistic people. No stock-photo clichés. No UI mockups.`;
+
+    const textRule = baked.length
+      ? `TEXT: render ONLY the following text, verbatim, exactly as written, legible and with strong contrast (place it over a calm, solid or darkened area): ${baked.map((t) => `"${t}"`).join(" and ")}. Do NOT add any other text, words, letters, numbers, taglines, labels, logos or watermarks.`
+      : `CRITICAL: do NOT render any text, words, letters, numbers, logos, or watermarks. The image is a clean canvas — text and logos will be added programmatically afterwards. Leave generous negative space (especially in the corners and across the top third) so overlays don't compete with subjects.`;
 
     const prompt = `Generate a single LinkedIn-style B2B advertisement BASE IMAGE for an ABM campaign.
 
@@ -2945,9 +3073,11 @@ ${format === "square"
   ? "Aspect ratio: 1:1, suitable for 1200x1200 pixels. Square composition."
   : "Aspect ratio: 1.91:1, suitable for 1200x628 pixels. Landscape composition."}
 
-CRITICAL: do NOT render any text, words, letters, numbers, logos, or watermarks. The image is a clean canvas — text and logos will be added programmatically afterwards. Leave generous negative space (especially in the corners and across the top third) so overlays don't compete with subjects.
+${textRule}
 
-${client_brand_context ? `Advertiser brand context (the company running the ads): ${client_brand_context}` : ""}
+${BASE_IMAGE_GUARDRAILS}
+
+${client_brand_context ? `Advertiser brand context (the company running the ads; use it for mood only, never write its name): ${client_brand_context}` : ""}
 ${prompt_brief ? `Specific direction for this image: ${prompt_brief}` : ""}
 
 ${styleDirective}`;
@@ -2955,11 +3085,22 @@ ${styleDirective}`;
     const generated = await callGeminiImageCompose(prompt, []);
 
     const binaryStr = atob(generated.base64);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-    const stored = await saveImageToStorage(bytes, generated.mime, "base", `base-${styleMode}`);
+    const raw = new Uint8Array(binaryStr.length);
+    for (let k = 0; k < binaryStr.length; k++) raw[k] = binaryStr.charCodeAt(k);
+    let normalized: { bytes: Uint8Array; mime: string; width: number; height: number };
+    try {
+      normalized = await normalizeBaseImage(raw, generated.mime, format);
+    } catch (err: any) {
+      console.log("[Generate Base Image] Falha ao normalizar:", err.message);
+      const { w, h } = AD_FORMAT_SIZE[format];
+      return c.json({ error: `A imagem gerada ficou abaixo de ${w} × ${h} px. Tente gerar de novo ou envie uma imagem própria.` }, 422);
+    }
+    const stored = await saveImageToStorage(normalized.bytes, normalized.mime, "base", `base-${styleMode}`);
 
-    return c.json({ success: true, url: stored.url, path: stored.path, filename: stored.filename, mode: styleMode });
+    return c.json({
+      success: true, url: stored.url, path: stored.path, filename: stored.filename, mode: styleMode,
+      width: normalized.width, height: normalized.height,
+    });
   } catch (err: any) {
     console.log("[Generate Base Image] Erro:", err.message);
     return c.json({ error: err.message }, 500);
@@ -3105,9 +3246,9 @@ app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
     } = body;
     // `banner` continua sendo o default para não quebrar chamadas antigas.
     const format: AdFormat = body.format === "square" ? "square" : "banner";
-    if (!base_image_url) return c.json({ error: "base_image_url é obrigatório" }, 400);
-    if (!target_company_name) return c.json({ error: "target_company_name é obrigatório" }, 400);
-    if (!layout) return c.json({ error: "layout é obrigatório" }, 400);
+    if (!base_image_url) return c.json({ error: "Defina a imagem-base antes de montar o anúncio." }, 400);
+    if (!target_company_name) return c.json({ error: "Escolha a empresa-alvo antes de montar o anúncio." }, 400);
+    if (!layout) return c.json({ error: "Posicione os textos e logos no preview antes de montar o anúncio." }, 400);
 
     const baseImg = await fetchAsBase64(base_image_url);
     if (!baseImg) return c.json({ error: "Não foi possível baixar a imagem base" }, 500);
@@ -3116,6 +3257,13 @@ app.post("/make-server-a4d5bbe0/ai/compose-logo-overlay", async (c) => {
       { ...layout.destaque, text: (texto_destaque || "").trim(), weight: 700, widthPx: destaque_width_px },
       { ...layout.complementar, text: (texto_complementar || "").trim(), weight: 400, widthPx: complementar_width_px },
     ];
+    // A composição só desenha o que a tela mandou: os dois textos (vazios
+    // ficam de fora) e os logos. Nenhum rótulo é acrescentado ao lado do logo
+    // da conta-alvo — e texto que insinue parceria com ela é recusado aqui,
+    // pela mesma regra da copy.
+    if (texts.some((t) => t.text && impliesPartnership(t.text, target_company_name))) {
+      return c.json({ error: `O texto da imagem sugere parceria ou endosso com ${target_company_name}. Ajuste o texto principal ou o secundário e tente de novo.` }, 422);
+    }
 
     const logos: SvgLogoLayer[] = [];
 

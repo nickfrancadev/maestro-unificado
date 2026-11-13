@@ -14,6 +14,10 @@ import {
   alignOffsetPx,
   OVERLAY_STYLE,
   LOGO_WRAP_ASPECT,
+  legibleTextLayer,
+  legibilityNote,
+  contrastRatio,
+  MIN_BOX_OPACITY,
 } from './overlayLayout';
 
 describe('createDefaultOverlayLayout', () => {
@@ -338,4 +342,42 @@ describe('paridade cliente ↔ servidor', () => {
       expect(got.h).toBeCloseTo(expected.h, 2);
     },
   );
+});
+
+describe('legibleTextLayer — contraste garantido sobre a foto', () => {
+  const base = { x: 0.5, y: 0.5, sizePx: 40, align: 'center' as const };
+
+  it('o padrão (texto branco, caixa preta 55%) já é legível e não muda', () => {
+    const layer = { ...base, color: '#FFFFFF', backdrop: createDefaultBackdrop() };
+    expect(legibleTextLayer(layer)).toBe(layer);
+    expect(legibilityNote(layer)).toBeNull();
+  });
+
+  it('texto escuro sem fundo ganha caixa clara', () => {
+    const layer = { ...base, color: '#1E293B', backdrop: createDefaultBackdrop('none') };
+    const eff = legibleTextLayer(layer);
+    expect(eff.backdrop.mode).toBe('box');
+    expect(contrastRatio(eff.color, eff.backdrop.color)).toBeGreaterThanOrEqual(4.5);
+    expect(legibilityNote(layer)).toMatch(/caixa clara/);
+  });
+
+  it('texto claro sem fundo ganha sombra', () => {
+    const layer = { ...base, color: '#FFFFFF', backdrop: createDefaultBackdrop('none') };
+    expect(legibleTextLayer(layer).backdrop.mode).toBe('shadow');
+  });
+
+  it('caixa da mesma cor do texto troca de cor e respeita a opacidade mínima', () => {
+    const layer = { ...base, color: '#111111', backdrop: { ...createDefaultBackdrop(), color: '#222222', opacity: 10 } };
+    const eff = legibleTextLayer(layer);
+    expect(eff.backdrop.color).toBe('#FFFFFF');
+    expect(eff.backdrop.opacity).toBe(MIN_BOX_OPACITY);
+  });
+
+  it('effectiveLayout aplica a regra nos dois textos', () => {
+    const layout = createDefaultOverlayLayout();
+    layout.destaque = { ...layout.destaque, color: '#000000', backdrop: createDefaultBackdrop('shadow') };
+    const eff = effectiveLayout(layout, 'banner');
+    expect(eff.destaque.backdrop.mode).toBe('box');
+    expect(eff.complementar.backdrop).toEqual(layout.complementar.backdrop);
+  });
 });

@@ -97,7 +97,7 @@ export function BriefPane({
           <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">{extractWarning}</p>
         )}
         {extractError && (
-          <p className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">{extractError}</p>
+          <p role="alert" className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">{extractError}</p>
         )}
 
         {/* Campos sempre visíveis e editáveis, nos dois estados */}
