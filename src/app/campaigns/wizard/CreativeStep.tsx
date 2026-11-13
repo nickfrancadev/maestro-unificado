@@ -1012,14 +1012,13 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // sai `?token=undefined` — que o logo.dev responde com 401. Como é string
   // truthy, ela venceria o `||` e afogaria a versão do cliente, que TEM a
   // guarda. Descartar aqui é o que impede o logo quebrado dentro do anúncio.
-  // Último degrau: derivar o domínio do NOME da conta, que é o mesmo palpite
-  // que a Segmentação já usa para as empresas similares. Sem ele, uma conta
-  // que veio da busca do LinkedIn sem `domain` cai direto no avatar de letra
-  // mesmo existindo logo publicado — e o anúncio perde o logo à toa.
   // Mesma cadeia de resolução que o avatar da sidebar usa (ver
   // `resolveCompanyLogoUrl`), para o logo dentro do anúncio nunca divergir do
   // que a lista mostra.
   const targetLogoUrl = previewCompany ? resolveCompanyLogoUrl(previewCompany) : null;
+  // Sem domínio confirmado não há logo da conta: nem no preview, nem na arte.
+  // Avisar antes de gerar é o que evita descobrir só no anúncio publicado.
+  const targetWithoutDomain = !!previewCompany && !previewCompany.domain && !targetLogoUrl;
   const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
 
   // ----------------- Cabeçalho do anúncio (anunciante) -----------------
@@ -1845,6 +1844,16 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   {imageCfg.layout.paired ? 'Desagrupar' : 'Agrupar como par'}
                 </button>
               </div>
+
+              {targetWithoutDomain && imageCfg.layout.targetLogo.enabled && (
+                <p className="flex items-start gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-1.5">
+                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                  <span>
+                    Não achamos o site de {previewCompany?.label} no LinkedIn, então não sabemos qual é o logo dela.
+                    O anúncio sai sem o logo da conta — melhor que com o logo de outra empresa.
+                  </span>
+                </p>
+              )}
 
               {(brokenLogo.advertiserLogo || brokenLogo.targetLogo) && (
                 <p className="flex items-start gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-1.5">

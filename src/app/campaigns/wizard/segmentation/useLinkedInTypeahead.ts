@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { linkedInTypeahead } from '@/lib/linkedin';
-import { projectId } from '@/utils/supabase/info';
 import type { FacetItem } from './types';
 
 export type LinkedInFacetType = 'companies' | 'locations' | 'titles' | 'industries';
@@ -8,8 +7,6 @@ export type LinkedInFacetType = 'companies' | 'locations' | 'titles' | 'industri
 // Estado explícito da busca, para a UI distinguir "nada encontrado" de
 // "a API falhou" em vez de só fechar o dropdown em silêncio.
 export type TypeaheadStatus = 'idle' | 'loading' | 'empty' | 'error' | 'results';
-
-const LOGO_PROXY_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-a4d5bbe0/logo-proxy`;
 
 // Real-time typeahead against the LinkedIn ad-targeting entities API.
 // Returns whatever the LinkedIn API responds with. There is no offline
@@ -49,16 +46,16 @@ export function useLinkedInTypeahead(facetType: LinkedInFacetType) {
           const name = r.name || '';
 
           if (facetType === 'companies') {
-            const nameLower = name.toLowerCase().replace(/\s+/g, '');
-            // Server-side logo proxy bypasses CORS (Clearbit → Google Favicons)
-            const proxyLogoUrl = `${LOGO_PROXY_BASE}?domain=${encodeURIComponent(nameLower + '.com')}`;
+            // Sem logo até o enriquecimento trazer o site REAL da empresa.
+            // Chutar "<nome>.com" pega outra marca: "Inter" → inter.com, que
+            // redireciona para a Intercom, e o anúncio saía com o logo "Fin".
             return {
               id: orgId || urn || String(Math.random()),
               label: name,
               urn,
               subtitle: '',
               domain: '',
-              logoUrl: proxyLogoUrl,
+              logoUrl: undefined,
               employeeCount: undefined,
               industry: '',
             };
