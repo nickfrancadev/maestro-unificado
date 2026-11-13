@@ -296,14 +296,74 @@ export function resolveCreativeForCompany(
   };
 }
 
-// Objective → API type + costType mapping (synced with server CAMPAIGN_OBJECTIVE_MAP)
 /** Mínimo de orçamento por conjunto aceito pelo LinkedIn (diário ou total). */
 export const MIN_BUDGET_PER_AD_SET = 10;
 
-export const OBJECTIVE_MAP: Record<string, { type: string; costType: string; label: string; description: string }> = {
-  brand_awareness:  { type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Reconhecimento da marca', description: 'Maximiza impressões nas contas-alvo. Recomendado para ABM.' },
-  website_visits:   { type: 'SPONSORED_UPDATES', costType: 'CPC', label: 'Visitas ao site', description: 'Direciona tráfego para landing pages personalizadas.' },
-  engagement:       { type: 'SPONSORED_UPDATES', costType: 'CPC', label: 'Engajamento', description: 'Aumenta interações com o conteúdo do anúncio.' },
-  lead_generation:  { type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Geração de leads', description: 'Coleta leads diretamente no LinkedIn via formulário nativo.' },
-  video_views:      { type: 'SPONSORED_UPDATES', costType: 'CPV', label: 'Visualizações de vídeo', description: 'Otimiza para reproduções de vídeo.' },
+export type ManualBidding = 'manual_cpm' | 'manual_cpc';
+
+export interface ObjectiveInfo {
+  type: string;
+  /** Como o LinkedIn cobra no lance automático. É o `cost_type` que vai ao servidor. */
+  costType: string;
+  label: string;
+  description: string;
+  /** A cobrança em português, para não mostrar o enum cru na tela. */
+  costLabel: string;
+  /** Lances manuais que o LinkedIn aceita junto da otimização que o servidor envia. */
+  manualBidding: ManualBidding[];
+}
+
+// Objetivo → tipo + costType. Espelha o CAMPAIGN_OBJECTIVE_MAP do servidor
+// (supabase/functions/make-server-a4d5bbe0/index.ts), com uma diferença que é
+// de propósito: o servidor usa o `cost_type` que o front manda e SEMPRE envia a
+// otimização do objetivo (MAX_CLICK em visitas ao site e engajamento). O
+// LinkedIn recusa CPC junto de MAX_CLICK, então esses dois objetivos vão como
+// CPM: o LinkedIn otimiza para cliques e cobra por mil impressões. O rótulo diz
+// isso, e não "CPC", porque é o que de fato vai ao ar.
+export const OBJECTIVE_MAP: Record<string, ObjectiveInfo> = {
+  brand_awareness: {
+    type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Reconhecimento da marca',
+    description: 'Mostra o anúncio para o máximo de pessoas das empresas-alvo. Recomendado para ABM.',
+    costLabel: 'Cobra por mil impressões (CPM)', manualBidding: ['manual_cpm'],
+  },
+  website_visits: {
+    type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Visitas ao site',
+    description: 'O LinkedIn entrega para quem tende a clicar e levar o tráfego à sua página.',
+    costLabel: 'Otimiza para cliques, cobra por mil impressões (CPM)', manualBidding: ['manual_cpm'],
+  },
+  engagement: {
+    type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Engajamento',
+    description: 'O LinkedIn entrega para quem tende a interagir com o anúncio.',
+    costLabel: 'Otimiza para cliques, cobra por mil impressões (CPM)', manualBidding: ['manual_cpm'],
+  },
+  lead_generation: {
+    type: 'SPONSORED_UPDATES', costType: 'CPM', label: 'Geração de leads',
+    description: 'Coleta contatos direto no LinkedIn, com o formulário do próprio LinkedIn.',
+    costLabel: 'Cobra por mil impressões (CPM)', manualBidding: ['manual_cpm'],
+  },
+  video_views: {
+    type: 'SPONSORED_UPDATES', costType: 'CPV', label: 'Visualizações de vídeo',
+    description: 'Otimiza para reproduções de vídeo.',
+    costLabel: 'Cobra por visualização de vídeo (CPV)', manualBidding: [],
+  },
 };
+
+/**
+ * O `cost_type` que de fato vai ao servidor. Lance manual escolhe a cobrança;
+ * no automático vale a do objetivo. Derivado na hora (e não lido de
+ * `config.costType`) para um rascunho antigo, salvo com CPC, não mandar a
+ * combinação que o LinkedIn recusa.
+ */
+export function effectiveCostType(config: Pick<CampaignConfig, 'objective' | 'biddingStrategy'>): 'CPM' | 'CPC' | 'CPV' {
+  const obj = OBJECTIVE_MAP[config.objective] ?? OBJECTIVE_MAP.brand_awareness;
+  if (config.biddingStrategy === 'manual_cpm' && obj.manualBidding.includes('manual_cpm')) return 'CPM';
+  if (config.biddingStrategy === 'manual_cpc' && obj.manualBidding.includes('manual_cpc')) return 'CPC';
+  return obj.costType as 'CPM' | 'CPC' | 'CPV';
+}
+
+/** A cobrança em português, coerente com `effectiveCostType`. */
+export function costTypeLabel(config: Pick<CampaignConfig, 'objective' | 'biddingStrategy'>): string {
+  const obj = OBJECTIVE_MAP[config.objective] ?? OBJECTIVE_MAP.brand_awareness;
+  if (config.biddingStrategy === 'automated' || !(obj.manualBidding as string[]).includes(config.biddingStrategy)) return obj.costLabel;
+  return effectiveCostType(config) === 'CPC' ? 'Lance manual, cobra por clique (CPC)' : 'Lance manual, cobra por mil impressões (CPM)';
+}

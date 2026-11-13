@@ -46,6 +46,10 @@ export interface LinkedInCampaign {
   totalBudget: { amount: string; currency: string } | null;
   dailyBudget: { amount: string; currency: string } | null;
   runSchedule: { start: number | null; end: number | null } | null;
+  /** URN do grupo de campanhas (urn:li:sponsoredCampaignGroup:…). O produto
+   *  publica um grupo por lançamento e um conjunto por empresa dentro dele;
+   *  a lista agrupa por aqui. Ausente em respostas antigas. */
+  campaignGroup?: string | null;
 }
 
 export interface CampaignAnalyticsSummary {
@@ -54,6 +58,8 @@ export interface CampaignAnalyticsSummary {
   ctr: string;
   cost: number;
   currency: string;
+  /** Preenchido quando o resumo não carregou: a tela mostra "—", não zeros. */
+  error?: string;
 }
 
 export interface CampaignAnalyticsDetail {
@@ -138,6 +144,8 @@ export interface CampaignCommentsResponse {
 export async function fetchLinkedInCampaigns(): Promise<{
   campaigns: LinkedInCampaign[];
   currency: string;
+  /** Nome da conta de anúncios selecionada, para a lista não depender do status. */
+  adAccountName?: string | null;
 }> {
   try {
     const response = await fetch(`${SERVER_BASE}/linkedin/campaigns-list`, {
@@ -163,13 +171,14 @@ export async function fetchCampaignAnalyticsSummary(
       `${SERVER_BASE}/linkedin/campaign-analytics-summary?campaignId=${campaignId}`,
       { headers: headers() },
     );
+    // Falha volta com `error`: quem chama mostra "—" em vez de um gasto zerado falso.
     if (!response.ok) {
-      return { impressions: 0, clicks: 0, ctr: '0', cost: 0, currency: 'USD' };
+      return { impressions: 0, clicks: 0, ctr: '0', cost: 0, currency: 'USD', error: `HTTP ${response.status}` };
     }
     return await response.json();
   } catch (err: any) {
     console.error('[Campaign Analytics Summary] Erro:', err);
-    return { impressions: 0, clicks: 0, ctr: '0', cost: 0, currency: 'USD' };
+    return { impressions: 0, clicks: 0, ctr: '0', cost: 0, currency: 'USD', error: err.message || 'Erro de rede' };
   }
 }
 
@@ -222,14 +231,17 @@ export async function fetchCampaignAnalyticsFull(
       `${SERVER_BASE}/linkedin/campaign-analytics-full?campaignId=${campaignId}&dateRange=${dateRange}`,
       { headers: headers() },
     );
+    // Falha volta com `error`: sem ele, a tela confundiria "não carregou" com
+    // "a campanha não teve entrega" e mostraria o estado vazio errado.
     if (!response.ok) {
       console.warn('[Campaign Analytics Full] Fetch failed:', response.status);
-      return { ...EMPTY_FULL };
+      return { ...EMPTY_FULL, error: `HTTP ${response.status}` };
     }
-    return await response.json();
+    // Resposta incompleta não pode derrubar a tela: o que faltar vem vazio.
+    return { ...EMPTY_FULL, ...(await response.json()) };
   } catch (err: any) {
     console.error('[Campaign Analytics Full] Erro:', err);
-    return { ...EMPTY_FULL };
+    return { ...EMPTY_FULL, error: err.message || 'Erro de rede' };
   }
 }
 
@@ -241,7 +253,7 @@ export async function fetchCampaignComments(
       `${SERVER_BASE}/linkedin/campaign-comments?campaignId=${campaignId}`,
       { headers: headers() },
     );
-    return await response.json();
+    return { comments: [], total: 0, ...(await response.json()) };
   } catch (err: any) {
     console.error('[Campaign Comments] Erro:', err);
     return { comments: [], total: 0, error: err.message };

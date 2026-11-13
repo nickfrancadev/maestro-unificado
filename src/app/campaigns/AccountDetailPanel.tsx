@@ -17,12 +17,14 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
   const t = account.totals;
   const color = accountColor(colorIndex);
   const money = (v: number) => fmtCurrency(v, currency);
-  const ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0;
-  const cpc = t.clicks > 0 ? t.costInLocalCurrency / t.clicks : 0;
-  const cpm = t.impressions > 0 ? (t.costInLocalCurrency / t.impressions) * 1000 : 0;
+  // Derivadas sem denominador ficam null → "—" (nunca "0,00%" ou "R$ 0,00").
+  const ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : null;
+  const cpc = t.clicks > 0 ? t.costInLocalCurrency / t.clicks : null;
+  const cpm = t.impressions > 0 ? (t.costInLocalCurrency / t.impressions) * 1000 : null;
   const engagementRate = t.impressions > 0
     ? ((t.clicks + t.likes + t.comments + t.shares + t.follows) / t.impressions) * 100
-    : 0;
+    : null;
+  const pctOrDash = (v: number | null) => fmtOptional(v, n => fmtPct(n));
   const cpl = t.oneClickLeads > 0 ? t.costInLocalCurrency / t.oneClickLeads : null;
   const gradId = React.useId();
   const series = account.timeSeries.map(p => ({ ...p, dateLabel: fmtDateLabel(p.date) }));
@@ -57,7 +59,7 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
           <p className="text-xs text-slate-500 flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-green-600" /> CTR · CPC</p>
-          <p className="text-lg font-bold text-slate-900">{fmtPct(ctr)} · {money(cpc)}</p>
+          <p className="text-lg font-bold text-slate-900">{pctOrDash(ctr)} · {fmtOptional(cpc, money)}</p>
         </div>
       </div>
 
@@ -95,8 +97,8 @@ export function AccountDetailPanel({ account, colorIndex, currency, variant, onB
 
       {/* Custo e Eficiência */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPM</p><p className="text-base font-bold text-slate-900">{money(cpm)}</p><p className="text-[11px] text-slate-400">Custo por mil impressões</p></div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Taxa de engajamento</p><p className="text-base font-bold text-slate-900">{fmtPct(engagementRate)}</p><p className="text-[11px] text-slate-400">Engajamento / impressões</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPM</p><p className="text-base font-bold text-slate-900">{fmtOptional(cpm, money)}</p><p className="text-[11px] text-slate-400">Custo por mil impressões</p></div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">Taxa de engajamento</p><p className="text-base font-bold text-slate-900">{pctOrDash(engagementRate)}</p><p className="text-[11px] text-slate-400">Engajamento / impressões</p></div>
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm"><p className="text-xs text-slate-500">CPL</p><p className="text-base font-bold text-slate-900">{fmtOptional(cpl, money)}</p><p className="text-[11px] text-slate-400">Custo por lead</p></div>
       </div>
 

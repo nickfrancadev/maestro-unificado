@@ -41,6 +41,7 @@ import { statusLabel, plural } from './labels';
 import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
 import { AccountDetailPanel } from './AccountDetailPanel';
+import { periodLabel } from './CampaignList';
 
 
 const DATE_RANGES = [
@@ -50,11 +51,43 @@ const DATE_RANGES = [
   { key: 'all', label: 'Tudo' },
 ];
 
-function fmtTimestamp(ts: number | null): string {
-  if (!ts) return '-';
+function fmtTs(ts: number): string {
   const d = new Date(ts);
-  const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+/** O que a tela mostra: carregando, erro, sem entrega no período ou os números. */
+export type AnalyticsState = 'loading' | 'error' | 'empty' | 'data';
+
+/**
+ * Decide o estado da tela. "Sem entrega" é zero impressões num resumo que
+ * CARREGOU; resumo que falhou é erro (antes os dois viravam uma grade de
+ * zeros). A divisão por empresa só aparece como indisponível quando a busca
+ * dela falhou de verdade, nunca por falta de entrega.
+ */
+export function analyticsView(input: {
+  loading: boolean;
+  data: Pick<CampaignAnalyticsFull, 'impressions' | 'error'> | null;
+  loadError?: string | null;
+  breakdownFailed?: boolean;
+}): { state: AnalyticsState; showBreakdownError: boolean } {
+  const { loading, data, loadError, breakdownFailed } = input;
+  let state: AnalyticsState;
+  if (loading) state = 'loading';
+  else if (loadError || !data || data.error) state = 'error';
+  else if (!data.impressions) state = 'empty';
+  else state = 'data';
+  return { state, showBreakdownError: state === 'data' && !!breakdownFailed };
+}
+
+/**
+ * Métrica derivada (CPC, CPM, CPL, CTR…) só existe com denominador > 0.
+ * O servidor devolve "0" nesses casos; aqui vira null e a tela mostra "—",
+ * nunca "US$ 0,00".
+ */
+export function derivedMetric(value: string | null | undefined, denominator: number | null | undefined): number | null {
+  if (!denominator || denominator <= 0) return null;
+  return toNum(value);
 }
 
 function relativeTime(iso: string): string {
@@ -131,6 +164,8 @@ export function CampaignAnalytics() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [byAccount, setByAccount] = useState<CampaignAnalyticsByAccount | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [breakdownFailed, setBreakdownFailed] = useState(false);
   const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
   const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
@@ -160,19 +195,31 @@ export function CampaignAnalytics() {
   // Load analytics
   const loadAnalytics = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       if (isMockCampaign(campaignId)) {
         await new Promise(r => setTimeout(r, 400));
-        const byAcc = getMockAnalyticsByAccount(dateRange);
-        setByAccount(byAcc);
         setData(getMockAnalyticsFull(dateRange));
+        // A divisão por empresa é uma busca à parte: se só ela falhar, os
+        // totais continuam valendo e a tela avisa que a divisão não veio.
+        try {
+          setByAccount(getMockAnalyticsByAccount(dateRange));
+          setBreakdownFailed(false);
+        } catch (err) {
+          console.error('[CampaignAnalytics] Divisão por empresa falhou:', err);
+          setByAccount(null);
+          setBreakdownFailed(true);
+        }
       } else {
+        // Cada conjunto real já é uma empresa: não há divisão a buscar.
         setByAccount(null);
+        setBreakdownFailed(false);
         const result = await fetchCampaignAnalyticsFull(campaignId, dateRange);
         setData(result);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[CampaignAnalytics] Erro:', err);
+      setLoadError(err?.message || 'Erro ao carregar');
     } finally {
       setLoading(false);
     }
@@ -214,8 +261,14 @@ export function CampaignAnalytics() {
   const endDate = campaign?.runSchedule?.end || null;
   const currency = data?.currency || 'BRL';
   const money = (v: number) => fmtCurrency(v, currency);
-  const pct = (v: string | null | undefined) => fmtOptional(toNum(v), n => fmtPct(n));
-  const moneyStr = (v: string | null | undefined) => fmtOptional(toNum(v), money);
+  // Derivadas: "—" quando o denominador é zero (sem impressões, cliques ou leads).
+  const pct = (v: string | null | undefined, denom: number | null | undefined) => fmtOptional(derivedMetric(v, denom), n => fmtPct(n));
+  const moneyStr = (v: string | null | undefined, denom: number | null | undefined) => fmtOptional(derivedMetric(v, denom), money);
+  const campaignBudget = campaign?.dailyBudget
+    ? `${fmtCurrency(parseFloat(campaign.dailyBudget.amount), campaign.dailyBudget.currency)}/dia`
+    : campaign?.totalBudget
+    ? `${fmtCurrency(parseFloat(campaign.totalBudget.amount), campaign.totalBudget.currency)} total`
+    : null;
   const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
 
   const accounts = byAccount?.accounts ?? [];
@@ -282,6 +335,9 @@ export function CampaignAnalytics() {
     return { ...agg, delta: data?.delta ?? {} };
   }, [byAccount, data, selectedAccounts, loading]);
 
+  const view = analyticsView({ loading, data: d, loadError, breakdownFailed });
+  const hasNumbers = view.state === 'data';
+
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
@@ -293,14 +349,19 @@ export function CampaignAnalytics() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{campaignName}</h1>
             <div className="flex items-center gap-2 text-sm text-slate-500 mt-1">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(rawStatus)}`}>
-                {rawStatus ? statusLabel(rawStatus) : 'Desconhecido'}
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" />
-                {fmtTimestamp(startDate)} — {endDate ? fmtTimestamp(endDate) : 'em andamento'}
-              </span>
+              {/* Só o que se sabe: sem a campanha carregada, nada de "Desconhecido" ou "— —". */}
+              {rawStatus && (
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(rawStatus)}`}>
+                  {statusLabel(rawStatus)}
+                </span>
+              )}
+              {rawStatus && startDate && <span>•</span>}
+              {startDate && (
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {periodLabel(startDate, endDate)}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -358,7 +419,7 @@ export function CampaignAnalytics() {
           <>
 
           {/* ===== BLOCO 1 — Métricas agregadas (todas as empresas) ===== */}
-          {byAccount && !loading && (
+          {byAccount && hasNumbers && (
             <div>
               <h3 className="text-lg font-bold text-slate-800">Métricas agregadas</h3>
               <p className="text-xs text-slate-400">Soma de todas as empresas da campanha.</p>
@@ -370,17 +431,44 @@ export function CampaignAnalytics() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[1,2,3,4].map(i => <SkeletonCard key={i} />)}
             </div>
-          ) : !byAccount ? (
+          ) : view.state === 'error' ? (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+              <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-700">Não foi possível carregar os números do LinkedIn</p>
+              <p className="text-xs text-slate-500 mt-1">Isso não quer dizer que a campanha está sem entrega. Tente de novo em instantes.</p>
+              <button onClick={loadAnalytics} className="mt-4 px-4 py-2 text-sm font-medium text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm">
+                Tentar de novo
+              </button>
+            </div>
+          ) : !byAccount || view.state === 'empty' ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} label="Investimento total" value={fmtOptional(d?.costInLocalCurrency, money)} delta={d?.delta?.cost} />
               <MetricCard icon={<Eye className="w-4 h-4 text-blue-600" />} label="Impressões" value={fmtOptional(d?.impressions)} delta={d?.delta?.impressions} />
               <MetricCard icon={<MousePointerClick className="w-4 h-4 text-purple-600" />} label="Cliques" value={fmtOptional(d?.clicks)} delta={d?.delta?.clicks} />
-              <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={pct(d?.ctr)} delta={null} />
+              <MetricCard icon={<TrendingUp className="w-4 h-4 text-green-600" />} label="CTR" value={pct(d?.ctr, d?.impressions)} delta={null} />
             </div>
           ) : null}
 
+          {/* Sem impressões no período: um estado vazio claro no lugar da grade de zeros */}
+          {view.state === 'empty' && (
+            <NoDeliveryState
+              startDate={startDate}
+              status={rawStatus}
+              budget={campaignBudget}
+              rangeLabel={dateRange === 'all' ? null : selectedRangeLabel}
+              onShowAll={dateRange === 'all' ? null : () => setDateRange('all')}
+            />
+          )}
+
+          {view.showBreakdownError && (
+            <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <Info className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+              Divisão por empresa indisponível agora. Os totais acima são da campanha inteira; atualize a página para tentar de novo.
+            </div>
+          )}
+
           {/* Engagement chart agregado — só quando NÃO há dados por empresa (o comparativo por empresa vai no bloco 2) */}
-          {!byAccount && (
+          {!byAccount && hasNumbers && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between mb-5">
                 <h3 className="font-bold text-slate-800">Engajamento ao longo do tempo</h3>
@@ -428,14 +516,14 @@ export function CampaignAnalytics() {
           {byAccount && loading && (
             <div className="space-y-4">{[1,2,3].map(i => <SkeletonCard key={i} className="h-32" />)}</div>
           )}
-          {byAccount && !loading && (
+          {byAccount && hasNumbers && (
             <div className="space-y-4">
               <MetricPanel icon={<DollarSign className="w-4 h-4 text-[#FF5F39]" />} title="Investimento & Custo">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <StatCell label="Investimento total" value={fmtOptional(d?.costInLocalCurrency, money)} delta={d?.delta?.cost} />
-                  <StatCell label="CPC" value={moneyStr(d?.cpc)} sub="Custo por clique" />
-                  <StatCell label="CPM" value={moneyStr(d?.cpm)} sub="Custo por mil impr." />
-                  <StatCell label="CPL" value={moneyStr(d?.cpl)} sub="Custo por lead" />
+                  <StatCell label="CPC" value={moneyStr(d?.cpc, d?.clicks)} sub="Custo por clique" />
+                  <StatCell label="CPM" value={moneyStr(d?.cpm, d?.impressions)} sub="Custo por mil impr." />
+                  <StatCell label="CPL" value={moneyStr(d?.cpl, d?.oneClickLeads)} sub="Custo por lead" />
                 </div>
               </MetricPanel>
 
@@ -443,7 +531,7 @@ export function CampaignAnalytics() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <StatCell label="Impressões" value={fmtOptional(d?.impressions)} delta={d?.delta?.impressions} />
                   <StatCell label="Cliques" value={fmtOptional(d?.clicks)} delta={d?.delta?.clicks} />
-                  <StatCell label="CTR" value={pct(d?.ctr)} sub="Taxa de cliques" />
+                  <StatCell label="CTR" value={pct(d?.ctr, d?.impressions)} sub="Taxa de cliques" />
                 </div>
               </MetricPanel>
 
@@ -453,14 +541,14 @@ export function CampaignAnalytics() {
                   <StatCell label="Compartilhamentos" value={fmtOptional(d?.shares)} delta={d?.delta?.shares} />
                   <StatCell label="Comentários" value={fmtOptional(d?.comments)} delta={d?.delta?.comments} />
                   <StatCell label="Seguidores" value={fmtOptional(d?.follows)} delta={d?.delta?.follows} />
-                  <StatCell label="Taxa de engajamento" value={pct(d?.engagementRate)} sub="Engaj./impressões" />
+                  <StatCell label="Taxa de engajamento" value={pct(d?.engagementRate, d?.impressions)} sub="Engaj./impressões" />
                 </div>
               </MetricPanel>
 
               <MetricPanel icon={<Target className="w-4 h-4 text-green-600" />} title="Conversões">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <StatCell label="Conversões Totais" value={fmtOptional(d?.externalWebsiteConversions)} delta={d?.delta?.conversions} />
-                  <StatCell label="Pós-Clique" value={fmtOptional(d?.externalWebsitePostClickConversions)} sub={`Taxa: ${pct(d?.postClickConvRate)}`} />
+                  <StatCell label="Pós-Clique" value={fmtOptional(d?.externalWebsitePostClickConversions)} sub={`Taxa: ${pct(d?.postClickConvRate, d?.clicks)}`} />
                   <StatCell label="Pós-Visualização" value={fmtOptional(d?.externalWebsitePostViewConversions)} sub="Viu o anúncio, sem clicar" />
                   <StatCell label="Leads (One-Click)" value={fmtOptional(d?.oneClickLeads)} delta={d?.delta?.oneClickLeads} tooltip="Requer configuração de Lead Gen Form no LinkedIn Campaign Manager" />
                 </div>
@@ -474,7 +562,7 @@ export function CampaignAnalytics() {
                     sub={d?.approximateMemberReach == null && accounts.length > 1 ? 'Não somável entre empresas' : 'Membros únicos'}
                   />
                   <StatCell label="Impressões Virais" value={fmtOptional(d?.viralImpressions)} />
-                  <StatCell label="Amplificação" value={pct(d?.viralAmplification)} sub="Virais/total" />
+                  <StatCell label="Amplificação" value={pct(d?.viralAmplification, d?.impressions)} sub="Virais/total" />
                   <StatCell label="Cliques virais" value={fmtOptional(d?.viralClicks)} />
                 </div>
               </MetricPanel>
@@ -482,12 +570,12 @@ export function CampaignAnalytics() {
           )}
 
           {/* Fallback (sem dados por empresa): layout antigo de cards */}
-          {!byAccount && !loading && (
+          {!byAccount && hasNumbers && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <SmallCard label="CPC" value={moneyStr(d?.cpc)} sub="Custo por clique" delta={null} />
-                <SmallCard label="CPM" value={moneyStr(d?.cpm)} sub="Custo por mil impressões" delta={null} />
-                <SmallCard label="Taxa de engajamento" value={pct(d?.engagementRate)} sub="(cliques + curtidas + comentários + compartilhamentos + seguidores) / impressões" delta={null} />
+                <SmallCard label="CPC" value={moneyStr(d?.cpc, d?.clicks)} sub="Custo por clique" delta={null} />
+                <SmallCard label="CPM" value={moneyStr(d?.cpm, d?.impressions)} sub="Custo por mil impressões" delta={null} />
+                <SmallCard label="Taxa de engajamento" value={pct(d?.engagementRate, d?.impressions)} sub="(cliques + curtidas + comentários + compartilhamentos + seguidores) / impressões" delta={null} />
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <IconCard icon={<Heart className="w-4 h-4 text-rose-500" />} label="Curtidas" value={fmtOptional(d?.likes)} delta={d?.delta?.likes} />
@@ -499,7 +587,7 @@ export function CampaignAnalytics() {
           )}
 
           {/* ===== BLOCO 2 — Por empresa (comparação + detalhe) ===== */}
-          {byAccount && (
+          {byAccount && (loading || hasNumbers) && (
             <>
               {loading
                 ? <SkeletonCard className="h-64" />
@@ -589,6 +677,63 @@ export function CampaignAnalytics() {
 }
 
 // ---- Sub-components ----
+
+// Estado vazio único para "a campanha ainda não entregou": diz desde quando,
+// o que conferir e quando os números aparecem, no lugar de dezenas de zeros.
+function NoDeliveryState({ startDate, status, budget, rangeLabel, onShowAll }: {
+  startDate: number | null;
+  status: string;
+  budget: string | null;
+  rangeLabel: string | null;
+  onShowAll: (() => void) | null;
+}) {
+  const notStarted = startDate != null && startDate > Date.now();
+  const since = startDate == null
+    ? 'A campanha ainda não teve impressões'
+    : notStarted
+    ? `A campanha começa em ${fmtTs(startDate)}`
+    : `A data de início é ${fmtTs(startDate)} e a campanha ainda não teve impressões`;
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+      <div className="flex items-start gap-3">
+        <div className="p-2 bg-[#FFF1ED] rounded-lg shrink-0">
+          <Eye className="w-5 h-5 text-[#FF5F39]" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-slate-800">Ainda sem entrega</h3>
+          <p className="text-sm text-slate-600 mt-1">
+            {since}{!notStarted && rangeLabel ? ` nos últimos ${rangeLabel}` : ''}.
+            {' '}Os números aparecem aqui até 24 horas depois das primeiras impressões.
+          </p>
+          {!notStarted && (
+            <>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4 mb-2">O que conferir</p>
+              <ul className="space-y-1.5 text-sm text-slate-600">
+                <li>
+                  <span className="font-medium text-slate-800">Status:</span>{' '}
+                  {status ? `${statusLabel(status)}. ` : ''}Só campanhas ativas exibem anúncios.
+                </li>
+                <li>
+                  <span className="font-medium text-slate-800">Orçamento:</span>{' '}
+                  {budget ? `${budget}. ` : ''}Orçamento ou lance abaixo do mínimo do LinkedIn trava a entrega.
+                </li>
+                <li>
+                  <span className="font-medium text-slate-800">Pagamento:</span>{' '}
+                  a conta de anúncios precisa de um cartão válido no LinkedIn.
+                </li>
+              </ul>
+            </>
+          )}
+          {onShowAll && (
+            <button onClick={onShowAll} className="mt-4 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg">
+              Ver desde o início
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Painel que agrupa uma família de métricas (cabeçalho + grid interno)
 function MetricPanel({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
@@ -692,8 +837,9 @@ function CommentsCard({ commentsData, commentsLoading, headerSuffix }: {
         ) : commentsData?.error && commentsData.total === 0 ? (
           <div className="p-8 text-center">
             <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-500">Não foi possível carregar comentários.</p>
-            <p className="text-xs text-slate-400 mt-1">{commentsData.error}</p>
+            {/* O erro técnico fica no title, para suporte; na tela, só a frase. */}
+            <p className="text-sm font-medium text-slate-500" title={commentsData.error}>Não foi possível carregar os comentários.</p>
+            <p className="text-xs text-slate-400 mt-1">Se o anúncio ainda não foi publicado, não há comentários para mostrar.</p>
           </div>
         ) : commentsData && commentsData.comments.length === 0 ? (
           <div className="p-8 text-center">

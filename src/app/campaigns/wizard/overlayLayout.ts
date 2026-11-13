@@ -269,6 +269,76 @@ export function effectiveTextSize(layer: TextLayer, measuredWidthPx: number, for
   return Math.min(layer.sizePx, maxTextSizePx(measuredWidthPx, layer.sizePx, format));
 }
 
+// ---------- Contraste garantido do texto sobre a foto ----------
+// A base é uma foto qualquer (rosto, céu, escritório claro): sem caixa ou
+// sombra adequada, texto escuro some. O fundo escolhido pelo usuário vale
+// enquanto garante leitura; quando não garante, o efetivo corrige:
+//   - 'box': caixa com no mínimo 50% de opacidade e cor que contraste ≥ 4.5:1
+//     com o texto (senão vira preta ou branca, a que contrastar mais);
+//   - 'shadow'/'none' com texto claro: sombra escura (a sombra só ajuda texto
+//     claro);
+//   - 'shadow'/'none' com texto escuro: caixa branca a 75%.
+// Derivado, não gravado — mesma lógica de `effectiveTextSize`.
+export const MIN_BOX_OPACITY = 50;
+const MIN_TEXT_CONTRAST = 4.5;
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = (hex || '').trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return null;
+  const h = m[1].length === 3 ? m[1].split('').map((c) => c + c).join('') : m[1];
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function relativeLuminance(hex: string): number | null {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  if (la === null || lb === null) return 1;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+export function legibleTextLayer(layer: TextLayer): TextLayer {
+  const lum = relativeLuminance(layer.color);
+  // Cor que não dá para ler (ex.: nome de cor em vez de hex) fica como está.
+  if (lum === null) return layer;
+  const bd = layer.backdrop;
+  const lightText = contrastRatio(layer.color, '#000000') >= contrastRatio(layer.color, '#FFFFFF');
+  if (bd.mode === 'box') {
+    const color = contrastRatio(layer.color, bd.color) >= MIN_TEXT_CONTRAST
+      ? bd.color
+      : (lightText ? '#000000' : '#FFFFFF');
+    const opacity = Math.max(bd.opacity, MIN_BOX_OPACITY);
+    if (color === bd.color && opacity === bd.opacity) return layer;
+    return { ...layer, backdrop: { ...bd, color, opacity } };
+  }
+  if (lightText) {
+    return bd.mode === 'shadow' ? layer : { ...layer, backdrop: { ...bd, mode: 'shadow' } };
+  }
+  return { ...layer, backdrop: { ...bd, mode: 'box', color: '#FFFFFF', opacity: Math.max(bd.opacity, 75) } };
+}
+
+// Frase curta para o card dizer por que o preview não mostra exatamente o
+// fundo escolhido. `null` quando o escolhido já garante leitura.
+export function legibilityNote(layer: TextLayer): string | null {
+  const eff = legibleTextLayer(layer);
+  if (eff === layer) return null;
+  if (eff.backdrop.mode !== layer.backdrop.mode) {
+    return eff.backdrop.mode === 'shadow'
+      ? 'Para o texto ficar legível sobre a foto, o anúncio usa sombra.'
+      : 'Texto escuro precisa de fundo: o anúncio usa uma caixa clara atrás dele.';
+  }
+  return 'Para o texto ficar legível sobre a foto, o anúncio reforça a caixa de fundo.';
+}
+
 // Layout EFETIVO: no modo par a GEOMETRIA do logo da conta deixa de ser
 // independente (x/y/sizePx/wrap seguem o anunciante). `enabled` continua
 // sendo de cada camada — "Agrupar como par" liga os dois no clique porque é
@@ -280,7 +350,8 @@ export function effectiveTextSize(layer: TextLayer, measuredWidthPx: number, for
 // estão gravados — quem não mede (ainda) não quebra.
 //
 // Preview e payload chamam isto, nunca o layout cru — é o que garante que a
-// imagem gerada seja a que estava na tela.
+// imagem gerada seja a que estava na tela. Inclui o contraste garantido dos
+// textos (`legibleTextLayer`).
 export function effectiveLayout(
   layout: OverlayLayout,
   format: AdFormat,
@@ -315,6 +386,12 @@ export function effectiveLayout(
       complementar: { ...result.complementar, sizePx: effectiveTextSize(layout.complementar, measured.complementarWidthPx, format) },
     };
   }
+
+  result = {
+    ...result,
+    destaque: legibleTextLayer(result.destaque),
+    complementar: legibleTextLayer(result.complementar),
+  };
 
   return { ...result, complementar: stackedComplementar(result, format) };
 }

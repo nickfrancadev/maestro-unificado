@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { BriefStep, createEmptyBriefDraft } from './BriefStep';
 import type { BriefDraft } from './BriefPane';
-import { saveClientVoice } from '@/lib/ai';
+import { saveClientVoice, extractBrandVoice, AiRequestError } from '@/lib/ai';
 import type { CreativeData } from './types';
 
 afterEach(cleanup);
@@ -16,6 +16,13 @@ vi.mock('@/lib/ai', async (orig) => ({
     product_service: '', audience_market: '', persona: '',
   }),
   saveClientVoice: vi.fn().mockResolvedValue(undefined),
+  // Extração real do site, com candidatas de cor vindas do CSS.
+  extractBrandVoice: vi.fn().mockResolvedValue({
+    voice: 'Técnico e didático.', voice_examples: [], brand_context: 'SaaS de ABM.',
+    brand_colors: { primary: '#FF5F39', secondary: '#0F172A', accent: '#6366F1' },
+    color_candidates: ['#FF5F39', '#E54A26', '#0F172A'],
+    scrape_status: 'ok', source_url: 'https://exemplo.com', about_url: null,
+  }),
 }));
 
 /**
@@ -128,13 +135,13 @@ describe('BriefStep — candidatas de cor sobrevivem ao save', () => {
       fireEvent.click(screen.getByRole('button', { name: /extrair com ia/i }));
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
 
-      expect(screen.getByRole('button', { name: /usar #E54A26/i })).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: /usar #E54A26/i }).length).toBeGreaterThan(0);
 
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: /salvar marca/i }));
       });
 
-      expect(screen.getByRole('button', { name: /usar #E54A26/i })).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: /usar #E54A26/i }).length).toBeGreaterThan(0);
     } finally {
       vi.useRealTimers();
     }
@@ -160,5 +167,47 @@ describe('BriefStep — rascunho vive no pai', () => {
 
     rerender(<Host mounted />);
     expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Não salvo ainda');
+  });
+});
+
+// Achado do QA do produto: extração que falha precisa aparecer e não pode
+// deixar lixo do modelo nos campos.
+describe('BriefStep — extração do site', () => {
+  const extract = () => {
+    fireEvent.change(screen.getByLabelText(/website da sua empresa/i), { target: { value: 'https://exemplo.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /extrair com ia/i }));
+  };
+
+  it('falha mostra o que preencher e mantém os campos', async () => {
+    vi.mocked(extractBrandVoice).mockRejectedValueOnce(
+      new AiRequestError('Não conseguimos extrair a marca deste site. Preencha manualmente o tom de voz, o contexto e as cores.', 422),
+    );
+    renderStep();
+    fireEvent.change(screen.getByLabelText(/tom de voz/i), { target: { value: 'Minha voz' } });
+    extract();
+    await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Preencha manualmente o tom de voz, o contexto e as cores\. Seus campos foram mantidos/));
+    expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Minha voz');
+  });
+
+  it('resposta em que o modelo está conversando não entra nos campos', async () => {
+    vi.mocked(extractBrandVoice).mockResolvedValueOnce({
+      voice: 'Se preferir, posso analisar outra página.', voice_examples: [], brand_context: '1. **Contexto**',
+      brand_colors: { primary: '', secondary: '', accent: '' }, scrape_status: 'ok', source_url: null, about_url: null,
+    });
+    renderStep();
+    extract();
+    await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Não conseguimos extrair a marca/));
+    expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('sem cores, preenche o resto e pede as cores à mão', async () => {
+    vi.mocked(extractBrandVoice).mockResolvedValueOnce({
+      voice: 'Direto e técnico.', voice_examples: [], brand_context: 'SaaS de ABM.',
+      brand_colors: { primary: 'nenhuma', secondary: '', accent: '' }, scrape_status: 'ok', source_url: null, about_url: null,
+    });
+    renderStep();
+    extract();
+    await vi.waitFor(() => expect(screen.getByText(/Não encontramos as cores no site/)).toBeTruthy());
+    expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Direto e técnico.');
   });
 });

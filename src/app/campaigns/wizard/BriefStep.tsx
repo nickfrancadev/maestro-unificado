@@ -3,7 +3,15 @@ import { PaintBucket } from 'lucide-react';
 import { BriefPane, type BriefDraft } from './BriefPane';
 import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
 import type { CreativeData } from './types';
-import { fetchClientVoice, saveClientVoice } from '@/lib/ai';
+import {
+  fetchClientVoice,
+  saveClientVoice,
+  extractBrandVoice,
+  sanitizeBrandExtraction,
+  AiRequestError,
+  joinPt,
+  type BrandExtraction,
+} from '@/lib/ai';
 
 export function createEmptyBriefDraft(): BriefDraft {
   return {
@@ -217,17 +225,61 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
     }));
   };
 
+  // Só campos que vieram de fato entram no rascunho; o que a extração não
+  // achou mantém o valor anterior (ou fica vazio para preenchimento manual).
+  // Cores ausentes não derrubam o resto: a paleta anterior fica.
+  const applyExtractionToDraft = (r: BrandExtraction, url: string) => {
+    const colorsFound = !!(r.brand_colors.primary || r.brand_colors.secondary || r.brand_colors.accent);
+    const candidates = r.color_candidates ?? [];
+    const optionsFor = (chosen: string) => [...new Set([chosen, ...candidates].filter(Boolean))].slice(0, 4);
+    setDraft((d) => ({
+      ...d,
+      voice: r.voice || d.voice,
+      context: r.brand_context || d.context,
+      brandColors: colorsFound ? r.brand_colors : d.brandColors,
+      colorOptions: candidates.length
+        ? {
+          primary: optionsFor(r.brand_colors.primary),
+          secondary: optionsFor(r.brand_colors.secondary),
+          accent: optionsFor(r.brand_colors.accent),
+        }
+        : d.colorOptions,
+      source: 'website',
+      extractedRef: url,
+    }));
+  };
+
   const handleExtract = async () => {
     const url = draft.websiteUrl.trim();
     if (!url) return;
     setExtracting(true);
     setExtractError(null);
     setExtractWarning(null);
-    // Mock: simula latência de rede e preenche a partir da fixture.
-    await new Promise((r) => setTimeout(r, 900));
-    applyFixtureToDraft('website', url);
-    setExtractWarning('Extração simulada (mock) — revise os campos antes de salvar.');
-    setExtracting(false);
+    try {
+      // Validado de novo aqui, antes de tocar no rascunho: nada da resposta
+      // crua do modelo (ou de texto em que ele está conversando) é gravado.
+      const result = sanitizeBrandExtraction(await extractBrandVoice({ website_url: url }));
+      if (!result) {
+        setExtractError(`Não conseguimos extrair a marca de ${url}. Seus campos foram mantidos; preencha manualmente o tom de voz, o contexto e as cores.`);
+        return;
+      }
+      applyExtractionToDraft(result, url);
+      const missing = [
+        !result.voice && 'o tom de voz',
+        !result.brand_context && 'o contexto da marca',
+        !(result.brand_colors.primary || result.brand_colors.secondary || result.brand_colors.accent) && 'as cores',
+      ].filter((m): m is string => !!m);
+      setExtractWarning(missing.length
+        ? `Não encontramos ${joinPt(missing)} no site. Preencha manualmente e revise antes de salvar.`
+        : 'Marca extraída do site. Revise os campos antes de salvar.');
+    } catch (e: unknown) {
+      // 422 = o servidor recusou a extração e já diz o que preencher.
+      setExtractError(e instanceof AiRequestError && e.status === 422
+        ? `${e.message} Seus campos foram mantidos.`
+        : 'Não conseguimos extrair a marca agora. Seus campos foram mantidos; tente de novo ou preencha manualmente o tom de voz, o contexto e as cores.');
+    } finally {
+      setExtracting(false);
+    }
   };
 
   const handleBrandBookUpload = async (file: File) => {

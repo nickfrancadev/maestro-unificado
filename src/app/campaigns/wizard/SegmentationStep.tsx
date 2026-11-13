@@ -53,7 +53,9 @@ import {
   FACET_URN_MAP,
   setAccountFacet,
 } from "./segmentation/targeting";
-import { useAudienceCount, smallAdSets, MIN_AUDIENCE } from "./segmentation/useAudienceCount";
+import { smallAdSets, audienceScale, MIN_AUDIENCE } from "./segmentation/useAudienceCount";
+import type { AudienceState, AdSetAudience } from "./segmentation/useAudienceCount";
+import { plural } from "../labels";
 import { useLinkedInTypeahead } from "./segmentation/useLinkedInTypeahead";
 import type { LinkedInFacetType } from "./segmentation/useLinkedInTypeahead";
 import type {
@@ -87,7 +89,32 @@ export interface AudienceCheck {
 interface SegmentationStepProps {
   data: TargetingData;
   onChange: (data: TargetingData) => void;
-  onAudienceCheck?: (check: AudienceCheck) => void;
+  /**
+   * Público por conjunto, calculado no wizard (useAudienceCount). Vive lá, e
+   * não aqui, porque a Revisão e o rascunho reaberto direto no passo 5 também
+   * precisam saber quem está abaixo de 300 sem passar por esta tela.
+   */
+  audience: AudienceState;
+  /** Empresa aberta ao chegar, vinda do link "Ir para Segmentação · Inter" da Revisão. */
+  initialActiveId?: string;
+}
+
+/** "Inter", "Inter e Nubank", "Inter, Nubank e Itaú". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+/** Frase que nomeia as empresas abaixo do mínimo: "Inter está abaixo de 300 pessoas". */
+export function smallAudienceSentence(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length > 3) return `${names.length} empresas estão abaixo de ${MIN_AUDIENCE} pessoas`;
+  return `${joinNames(names)} ${names.length === 1 ? "está" : "estão"} abaixo de ${MIN_AUDIENCE} pessoas`;
+}
+
+/** Número curto do público de um conjunto, para a lista e o badge. */
+function audienceLabel(a: AdSetAudience): string {
+  return a.isPrivacyFloor ? `< ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR");
 }
 
 // ===============================
@@ -146,7 +173,7 @@ function CompanyLogo({
 
   return (
     <div
-      className={`${sizeClasses[size]} rounded-xl bg-gradient-to-br from-blue-500 to-[#FF5F39] flex items-center justify-center text-white font-bold border border-blue-300`}
+      className={`${sizeClasses[size]} rounded-xl bg-gradient-to-br from-[#E54A26] to-[#FF5F39] flex items-center justify-center text-white font-bold border border-[#FFD0C2]`}
     >
       {item.label.charAt(0).toUpperCase()}
     </div>
@@ -179,6 +206,9 @@ function CompanyHeroCard({
   >([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
   const [similarExpanded, setSimilarExpanded] = useState(false);
+  // Mostra 3 sugestões; o resto fica atrás do "Ver mais" para a lista não
+  // empurrar os conjuntos de anúncio para fora da tela.
+  const [showAllSimilar, setShowAllSimilar] = useState(false);
   const prevUrnsRef = useRef<string>("");
 
   // ---- Logo lazy loading with cache ----
@@ -474,12 +504,12 @@ function CompanyHeroCard({
   const { inc, exc } = countSelections(selection);
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 via-white to-[#FFF1ED] rounded-2xl border-2 border-blue-200 shadow-md overflow-visible">
+    <div className="bg-gradient-to-br from-slate-50 via-white to-[#FFF1ED] rounded-2xl border-2 border-[#FFD0C2] shadow-md overflow-visible">
       {/* Hero Header */}
-      <div className="px-6 py-5 border-b border-blue-100">
+      <div className="px-6 py-5 border-b border-[#FFE3DA]">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-[#FF5F39] flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#E54A26] to-[#FF5F39] flex items-center justify-center shadow-lg">
               <Building2 className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -487,7 +517,7 @@ function CompanyHeroCard({
                 <h3 className="text-lg font-bold text-slate-800">
                   Empresas-alvo
                 </h3>
-                <span className="text-[10px] font-bold bg-gradient-to-r from-blue-600 to-[#FF5F39] text-white px-2.5 py-0.5 rounded-full shadow-sm">
+                <span className="text-[10px] font-bold bg-gradient-to-r from-[#E54A26] to-[#FF5F39] text-white px-2.5 py-0.5 rounded-full shadow-sm">
                   ABM
                 </span>
                 <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
@@ -495,20 +525,20 @@ function CompanyHeroCard({
                 </span>
               </div>
               <p className="text-sm text-slate-500 mt-0.5">
-                Selecione as empresas que deseja atingir com sua
-                campanha ABM
+                Cada empresa vira um conjunto de anúncio, com
+                segmentação e orçamento próprios
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {inc > 0 && (
-              <span className="text-xs font-bold bg-blue-600 text-white px-2.5 py-1 rounded-full shadow-sm">
-                {inc} empresa{inc !== 1 ? "s" : ""}
+              <span className="text-xs font-bold bg-[#FF5F39] text-white px-2.5 py-1 rounded-full shadow-sm">
+                {plural(inc, "empresa")}
               </span>
             )}
             {exc > 0 && (
               <span className="text-xs font-bold bg-red-500 text-white px-2.5 py-1 rounded-full shadow-sm">
-                {exc} excluída{exc !== 1 ? "s" : ""}
+                {plural(exc, "excluída")}
               </span>
             )}
           </div>
@@ -521,7 +551,7 @@ function CompanyHeroCard({
         <div className="relative" ref={dropdownRef}>
           <div className="relative">
             {typeahead.isLoading ? (
-              <Loader2 className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" />
+              <Loader2 className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#FF5F39] animate-spin" />
             ) : (
               <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             )}
@@ -535,8 +565,8 @@ function CompanyHeroCard({
                 typeahead.query.length >= 2 &&
                 typeahead.setIsOpen(true)
               }
-              placeholder="Buscar empresa por nome ou domínio..."
-              className="w-full pl-12 pr-4 py-3.5 text-sm border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 bg-white shadow-sm placeholder:text-slate-400"
+              placeholder="Buscar empresa por nome ou domínio"
+              className="w-full pl-12 pr-4 py-3.5 text-sm border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF5F39] focus:border-[#FF5F39] bg-white shadow-sm placeholder:text-slate-400"
             />
           </div>
 
@@ -544,7 +574,7 @@ function CompanyHeroCard({
           {typeahead.isLoading &&
             typeahead.query.length >= 2 && (
               <div className="absolute z-50 top-full mt-2 w-full bg-white rounded-xl border border-slate-200 shadow-lg p-4 flex items-center justify-center gap-2 text-sm text-slate-500">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                <Loader2 className="w-4 h-4 animate-spin text-[#FF5F39]" />
                 Buscando organizações no LinkedIn...
               </div>
             )}
@@ -571,7 +601,7 @@ function CompanyHeroCard({
                         typeahead.setQuery("");
                         typeahead.setIsOpen(false);
                       }}
-                      className={`w-full text-left px-4 py-3 hover:bg-blue-50 flex items-center gap-3 border-b border-slate-100 last:border-0 transition-colors ${
+                      className={`w-full text-left px-4 py-3 hover:bg-[#FFF1ED] flex items-center gap-3 border-b border-slate-100 last:border-0 transition-colors ${
                         status ? "bg-slate-50" : ""
                       }`}
                     >
@@ -589,7 +619,7 @@ function CompanyHeroCard({
                             {item.label}
                           </span>
                           {status === "included" && (
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full shrink-0">
+                            <span className="text-[10px] font-bold text-[#E54A26] bg-[#FFE3DA] px-2 py-0.5 rounded-full shrink-0">
                               incluído
                             </span>
                           )}
@@ -660,8 +690,8 @@ function CompanyHeroCard({
         {selection.included.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-blue-600" />
-              <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">
+              <CheckCircle2 className="w-4 h-4 text-[#E54A26]" />
+              <p className="text-xs font-bold text-[#E54A26] uppercase tracking-wider">
                 Empresas Incluídas ({selection.included.length})
               </p>
             </div>
@@ -682,7 +712,7 @@ function CompanyHeroCard({
                 return (
                   <div
                     key={`inc-${item.id}`}
-                    className="group flex items-center gap-3 bg-white rounded-xl border-2 border-blue-200 p-3.5 shadow-sm hover:shadow-md hover:border-blue-300 transition-all"
+                    className="group flex items-center gap-3 bg-white rounded-xl border-2 border-[#FFD0C2] p-3.5 shadow-sm hover:shadow-md hover:border-[#FF5F39] transition-all"
                   >
                     {isEnriching ? (
                       <div className="w-11 h-11 rounded-xl bg-slate-200 animate-pulse shrink-0" />
@@ -717,7 +747,7 @@ function CompanyHeroCard({
                             }
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[11px] text-blue-500 flex items-center gap-1 hover:text-blue-700 hover:underline truncate max-w-[160px]"
+                            className="text-[11px] text-[#FF5F39] flex items-center gap-1 hover:text-[#E54A26] hover:underline truncate max-w-[160px]"
                           >
                             <Globe className="w-3 h-3 shrink-0" />
                             {displayDomain}
@@ -728,7 +758,7 @@ function CompanyHeroCard({
                             href={displayLinkedinUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[11px] text-blue-500 flex items-center gap-1 hover:text-blue-700 hover:underline"
+                            className="text-[11px] text-[#FF5F39] flex items-center gap-1 hover:text-[#E54A26] hover:underline"
                           >
                             <ExternalLink className="w-3 h-3 shrink-0" />
                             LinkedIn
@@ -795,7 +825,7 @@ function CompanyHeroCard({
         {/* Similar Entities Section */}
         {selection.included.length > 0 &&
           (similarCompanies.length > 0 || loadingSimilar) && (
-            <div className="bg-gradient-to-r from-purple-50 to-[#FFF1ED] rounded-xl border border-purple-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-50 to-[#FFF1ED] rounded-xl border border-slate-200 overflow-hidden">
               <button
                 onClick={() =>
                   setSimilarExpanded(!similarExpanded)
@@ -803,37 +833,38 @@ function CompanyHeroCard({
                 className="w-full flex items-center justify-between px-4 py-3 text-left"
               >
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-purple-600" />
-                  <span className="text-sm font-semibold text-purple-800">
+                  <Sparkles className="w-4 h-4 text-[#FF5F39]" />
+                  <span className="text-sm font-semibold text-slate-800">
                     Empresas similares sugeridas
                   </span>
                   {!loadingSimilar &&
                     similarCompanies.length > 0 && (
-                      <span className="text-[10px] font-bold bg-purple-200 text-purple-700 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
                         {similarCompanies.length}
                       </span>
                     )}
                   {loadingSimilar && (
-                    <Loader2 className="w-3.5 h-3.5 text-purple-500 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 text-slate-500 animate-spin" />
                   )}
                 </div>
                 {similarExpanded ? (
-                  <ChevronUp className="w-4 h-4 text-purple-400" />
+                  <ChevronUp className="w-4 h-4 text-slate-400" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-purple-400" />
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
                 )}
               </button>
 
               {similarExpanded && (
                 <div className="px-4 pb-4">
                   {loadingSimilar ? (
-                    <div className="flex items-center justify-center gap-2 py-4 text-sm text-purple-500">
+                    <div className="flex items-center justify-center gap-2 py-4 text-sm text-slate-500">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Buscando empresas similares...
                     </div>
                   ) : similarCompanies.length > 0 ? (
+                    <>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {similarCompanies.map((item) => {
+                      {(showAllSimilar ? similarCompanies : similarCompanies.slice(0, 3)).map((item) => {
                         const alreadySelected = isSelected(
                           item.id,
                         );
@@ -853,8 +884,8 @@ function CompanyHeroCard({
                             disabled={!!alreadySelected}
                             className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-all ${
                               alreadySelected
-                                ? "bg-blue-50 border-blue-200 opacity-60"
-                                : "bg-white border-purple-200 hover:border-purple-400 hover:shadow-sm"
+                                ? "bg-[#FFF1ED] border-[#FFD0C2] opacity-60"
+                                : "bg-white border-slate-200 hover:border-[#FF5F39] hover:shadow-sm"
                             }`}
                           >
                             <CompanyLogo
@@ -868,16 +899,25 @@ function CompanyHeroCard({
                               {item.label}
                             </span>
                             {alreadySelected ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                              <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5F39] shrink-0" />
                             ) : (
-                              <Plus className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              <Plus className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                             )}
                           </button>
                         );
                       })}
                     </div>
+                    {similarCompanies.length > 3 && (
+                      <button
+                        onClick={() => setShowAllSimilar((v) => !v)}
+                        className="mt-2 text-xs font-medium text-[#E54A26] hover:text-[#FF5F39] hover:underline cursor-pointer"
+                      >
+                        {showAllSimilar ? "Ver menos" : `Ver mais (${similarCompanies.length - 3})`}
+                      </button>
+                    )}
+                    </>
                   ) : (
-                    <p className="text-xs text-purple-500 text-center py-2">
+                    <p className="text-xs text-slate-500 text-center py-2">
                       Nenhuma empresa similar encontrada
                     </p>
                   )}
@@ -889,9 +929,9 @@ function CompanyHeroCard({
         {/* Empty state */}
         {selection.included.length === 0 &&
           selection.excluded.length === 0 && (
-            <div className="text-center py-6 bg-white/60 rounded-xl border border-dashed border-blue-200">
-              <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto mb-3">
-                <Building2 className="w-7 h-7 text-blue-500" />
+            <div className="text-center py-6 bg-white/60 rounded-xl border border-dashed border-[#FFD0C2]">
+              <div className="w-14 h-14 rounded-2xl bg-[#FFE3DA] flex items-center justify-center mx-auto mb-3">
+                <Building2 className="w-7 h-7 text-[#FF5F39]" />
               </div>
               <p className="text-sm font-medium text-slate-600">
                 Nenhuma empresa selecionada
@@ -1051,7 +1091,7 @@ function FacetCard({
                 {label}
               </span>
               {badgeText && (
-                <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-bold bg-[#FFE3DA] text-[#E54A26] px-1.5 py-0.5 rounded">
                   {badgeText}
                 </span>
               )}
@@ -1063,7 +1103,7 @@ function FacetCard({
         </div>
         <div className="flex items-center gap-2">
           {inc > 0 && (
-            <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+            <span className="text-xs font-semibold bg-[#FFF1ED] text-[#E54A26] px-2 py-0.5 rounded-full border border-[#FFD0C2]">
               +{inc}
             </span>
           )}
@@ -1088,7 +1128,7 @@ function FacetCard({
             <div className="relative" ref={dropdownRef}>
               <div className="relative">
                 {typeahead.isLoading ? (
-                  <Loader2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 animate-spin" />
+                  <Loader2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#FF5F39] animate-spin" />
                 ) : (
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 )}
@@ -1103,7 +1143,7 @@ function FacetCard({
                     typeahead.setIsOpen(true)
                   }
                   placeholder={`Buscar ${label.replace(/\s*\*$/, "").toLowerCase()}...`}
-                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF5F39] focus:border-transparent bg-white"
                 />
               </div>
               {typeahead.isOpen &&
@@ -1134,7 +1174,7 @@ function FacetCard({
                             )}
                           </div>
                           {status === "included" && (
-                            <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                            <span className="text-[10px] font-semibold text-[#E54A26] bg-[#FFF1ED] px-1.5 py-0.5 rounded">
                               incluído
                             </span>
                           )}
@@ -1164,7 +1204,7 @@ function FacetCard({
                       setFilterText(e.target.value)
                     }
                     placeholder="Filtrar opções..."
-                    className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF5F39] focus:border-transparent"
                   />
                 </div>
               )}
@@ -1205,14 +1245,14 @@ function FacetCard({
                 {selection.included.map((item) => (
                   <span
                     key={`inc-${item.id}`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#FFF1ED] text-[#E54A26] border border-[#FFD0C2]"
                   >
                     {item.label}
                     <button
                       onClick={() =>
                         removeItem(item, "included")
                       }
-                      className="hover:bg-blue-200 rounded-full p-0.5"
+                      className="hover:bg-[#FFD0C2] rounded-full p-0.5"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -1249,10 +1289,10 @@ function FacetCard({
 
 function AudienceSummary({
   data,
-  onAudienceCheck,
+  audience,
 }: {
   data: TargetingData;
-  onAudienceCheck?: (check: AudienceCheck) => void;
+  audience: AudienceState;
 }) {
   const {
     count: estimatedSize,
@@ -1260,46 +1300,41 @@ function AudienceSummary({
     isLoading,
     isFromApi,
     hasAnySelection,
-  } = useAudienceCount(data);
+  } = audience;
 
   // O LinkedIn exige no mínimo 300 membros POR conjunto de anúncio. O privacy
-  // floor (API devolve 0) significa justamente "menos de 300".
+  // floor (API devolve 0) significa justamente "menos de 300". A conta vale
+  // para cada empresa, personalizada ou não: useAudienceCount consulta uma vez
+  // por conjunto, com o override da empresa ou o padrão.
   const small = smallAdSets(perAdSet);
-  const smallKey = small.map((a) => a.id).join(",");
-  useEffect(() => {
-    onAudienceCheck?.({ small: smallKey ? smallKey.split(",") : [], pending: isLoading });
-  }, [smallKey, isLoading, onAudienceCheck]);
+  const smallNames = small.map((a) => a.label);
 
   const getStatus = () => {
     if (!hasAnySelection || estimatedSize === null) return null;
+    // Nunca sugerir "adicione empresas": cada empresa é um conjunto novo e não
+    // aumenta o público das que já estão abaixo do mínimo.
     if (small.length > 0)
       return {
         color: "red",
         icon: <AlertTriangle className="w-4 h-4" />,
-        label: `${small.length === 1 ? "1 conjunto ficou" : `${small.length} conjuntos ficaram`} abaixo de ${MIN_AUDIENCE} pessoas, e o LinkedIn não aceita. Adicione localizações ou remova filtros de senioridade/função.`,
+        label: `${smallAudienceSentence(smallNames)}, e o LinkedIn não aceita. Amplie a localização ou tire filtros de senioridade e função ${small.length === 1 ? "dessa empresa" : "dessas empresas"}.`,
       };
     if (perAdSet.length === 0 && estimatedSize < MIN_AUDIENCE)
       return {
         color: "red",
         icon: <AlertTriangle className="w-4 h-4" />,
-        label: `Público abaixo de ${MIN_AUDIENCE} pessoas: o LinkedIn não aceita. Adicione localizações ou remova filtros de senioridade/função.`,
+        label: `Público abaixo de ${MIN_AUDIENCE} pessoas: o LinkedIn não aceita. Amplie a localização ou tire filtros de senioridade e função.`,
       };
-    if (estimatedSize >= 5000)
+    if (perAdSet.length > 0 && perAdSet.every((a) => a.count >= 1000))
       return {
         color: "green",
         icon: <CheckCircle2 className="w-4 h-4" />,
-        label: "Público saudável",
-      };
-    if (estimatedSize >= 1000)
-      return {
-        color: "amber",
-        icon: <Zap className="w-4 h-4" />,
-        label: "Segmentação precisa",
+        label: "Todas as empresas com público suficiente",
       };
     return {
-      color: "red",
-      icon: <AlertTriangle className="w-4 h-4" />,
-      label: "Público pequeno: a entrega pode ficar limitada",
+      color: "amber",
+      icon: <Zap className="w-4 h-4" />,
+      label: "Público pequeno em alguma empresa: a entrega pode ficar limitada",
     };
   };
 
@@ -1310,11 +1345,11 @@ function AudienceSummary({
     seniorities: "Senioridade",
     jobFunctions: "Função / Área",
     jobTitles: "Cargo",
-    yearsOfExperience: "Anos de Experiência",
+    yearsOfExperience: "Anos de experiência",
   };
 
-  // The sidebar summarizes the DEFAULT person facets ("Padrão — todas as
-  // contas"). Per-account overrides are surfaced as a count below.
+  // O painel resume as facetas do PADRÃO. As empresas personalizadas aparecem
+  // na lista por conjunto, com o próprio público.
   const def = data.defaultTargeting;
   const customCount = Object.keys(data.overrides).length;
   const includedFacets = PERSON_FACET_KEYS.filter(
@@ -1326,10 +1361,12 @@ function AudienceSummary({
 
   return (
     <div className="space-y-4">
-      {/* Estimated Audience */}
+      {/* Público por conjunto, numa régua de restrito a amplo (referência:
+          painel de público por grupo do Pinterest). O número somado sozinho
+          escondia a empresa que o LinkedIn ia recusar. */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-          Audiência Estimada
+          Público estimado
         </p>
         {hasAnySelection && estimatedSize !== null ? (
           <>
@@ -1342,16 +1379,17 @@ function AudienceSummary({
               )}
             </div>
             <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
-              profissionais {isFromApi ? "" : "estimados"}
-              {perAdSet.length > 1 ? ` somando os ${perAdSet.length} conjuntos` : ""}
+              {isFromApi ? "profissionais" : "profissionais (estimativa)"}
+              {perAdSet.length > 1 ? ` somando ${perAdSet.length} empresas` : ""}
               {isFromApi && (
                 <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
-                  LinkedIn API
+                  dado do LinkedIn
                 </span>
               )}
             </p>
             {status && (
               <div
+                role={status.color === "red" ? "alert" : undefined}
                 className={`mt-3 flex items-start gap-2 text-sm font-medium rounded-lg px-3 py-2 [&>svg]:shrink-0 [&>svg]:mt-0.5 ${
                   status.color === "green"
                     ? "bg-green-50 text-green-700"
@@ -1364,19 +1402,35 @@ function AudienceSummary({
                 {status.label}
               </div>
             )}
-            {perAdSet.length > 1 && (
-              <ul className="mt-3 space-y-1">
+            {perAdSet.length > 0 && (
+              <ul className="mt-4 space-y-3">
                 {perAdSet.map((a) => {
                   const isSmall = small.some((x) => x.id === a.id);
+                  const pos = a.isPrivacyFloor ? 0 : audienceScale(a.count);
                   return (
-                    <li key={a.id} className="flex items-center justify-between gap-2 text-xs">
-                      <span className={`truncate ${isSmall ? "text-red-700 font-medium" : "text-slate-600"}`}>{a.label}</span>
-                      <span className={`shrink-0 tabular-nums ${isSmall ? "text-red-700 font-semibold" : "text-slate-500"}`}>
-                        {a.isPrivacyFloor ? `menos de ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR")}
-                      </span>
+                    <li key={a.id} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className={`truncate ${isSmall ? "text-red-700 font-medium" : "text-slate-600"}`}>
+                          {a.label}
+                          {data.overrides[a.id] ? <span className="text-slate-400 font-normal"> · personalizada</span> : null}
+                        </span>
+                        <span className={`shrink-0 tabular-nums ${isSmall ? "text-red-700 font-semibold" : "text-slate-500"}`}>
+                          {a.isPrivacyFloor ? `menos de ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR")}
+                        </span>
+                      </div>
+                      <div className="relative h-1.5 rounded-full bg-gradient-to-r from-red-100 via-amber-100 to-green-100" aria-hidden>
+                        <span
+                          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full border-2 border-white shadow ${isSmall ? "bg-red-500" : "bg-[#FF5F39]"}`}
+                          style={{ left: `${Math.max(4, Math.min(96, pos * 100))}%` }}
+                        />
+                      </div>
                     </li>
                   );
                 })}
+                <li className="flex justify-between text-[10px] text-slate-400 uppercase tracking-wider">
+                  <span>Restrito</span>
+                  <span>Amplo</span>
+                </li>
               </ul>
             )}
           </>
@@ -1386,46 +1440,25 @@ function AudienceSummary({
               <Target className="w-6 h-6 text-slate-400" />
             </div>
             <p className="text-sm text-slate-400">
-              Selecione critérios para estimar o público
+              Escolha empresas e localização para estimar o público
             </p>
           </div>
         )}
       </div>
 
-      {/* Company logos summary (one ad set per account) */}
       {data.companies.included.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-            <Building2 className="w-3 h-3" />
-            Conjuntos de anúncio
-          </p>
-          <p className="text-[11px] text-slate-400 mb-3">
-            {data.companies.included.length} conta
-            {data.companies.included.length !== 1 ? "s" : ""}
-            {customCount > 0
-              ? ` · ${customCount} personalizada${customCount !== 1 ? "s" : ""}`
-              : " · todas usando o padrão"}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {data.companies.included.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-1.5 bg-blue-50 rounded-lg px-2 py-1.5 border border-blue-200"
-              >
-                <CompanyLogo item={item} size="sm" />
-                <span className="text-xs font-medium text-blue-700">
-                  {item.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <p className="text-[11px] text-slate-500 px-1">
+          {plural(data.companies.included.length, "empresa")}
+          {customCount > 0
+            ? ` · ${plural(customCount, "personalizada")}`
+            : " · todas usando o padrão"}
+        </p>
       )}
 
       {/* Default Included Facets */}
       {includedFacets.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <p className="text-xs font-semibold text-[#E54A26] uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Plus className="w-3 h-3" />
             Incluindo (padrão)
           </p>
@@ -1439,7 +1472,7 @@ function AudienceSummary({
                   {def[facetKey].included.map((item) => (
                     <span
                       key={item.id}
-                      className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                      className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-[#FFF1ED] text-[#E54A26] border border-[#FFD0C2]"
                     >
                       {item.label}
                     </span>
@@ -1485,10 +1518,9 @@ function AudienceSummary({
         <div className="flex gap-2">
           <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
           <p className="text-xs text-slate-500">
-            A estimativa usa a API de Audience Count do LinkedIn
-            quando conectado. Quando offline, exibe uma
-            estimativa local aproximada. O número final pode
-            variar após a publicação.
+            Com o LinkedIn conectado, o número vem do próprio LinkedIn.
+            Sem conexão, é uma estimativa aproximada. O público real
+            pode variar depois da publicação.
           </p>
         </div>
       </div>
@@ -1540,7 +1572,7 @@ const PERSON_FACET_CONFIG: Array<{
   {
     key: "jobTitles",
     icon: <User className="w-4 h-4" />,
-    label: "Cargo (Job Title)",
+    label: "Cargo",
     description: "Título específico do profissional",
     type: "typeahead",
   },
@@ -1557,10 +1589,24 @@ const PERSON_FACET_CONFIG: Array<{
 export function SegmentationStep({
   data,
   onChange,
-  onAudienceCheck,
+  audience,
+  initialActiveId,
 }: SegmentationStepProps) {
   const accounts = data.companies.included;
-  const [activeId, setActiveId] = useState<string>(DEFAULT_ADSET_ID);
+  const [activeId, setActiveId] = useState<string>(
+    initialActiveId && accounts.some((a) => a.id === initialActiveId) ? initialActiveId : DEFAULT_ADSET_ID,
+  );
+  const audienceById = useMemo(
+    () => new Map(audience.perAdSet.map((a) => [a.id, a])),
+    [audience.perAdSet],
+  );
+  const smallIds = useMemo(
+    () => new Set(smallAdSets(audience.perAdSet).map((a) => a.id)),
+    [audience.perAdSet],
+  );
+  // "Aplicar o padrão a todas" apaga personalizações: confirma na própria
+  // tela, num segundo clique, em vez do window.confirm do navegador.
+  const [confirmApplyAll, setConfirmApplyAll] = useState(false);
 
   // If the active account was removed, fall back to the default panel.
   useEffect(() => {
@@ -1616,10 +1662,7 @@ export function SegmentationStep({
   // "Aplicar a todas": clear every override so all accounts inherit the default.
   const applyDefaultToAll = useCallback(() => {
     if (Object.keys(data.overrides).length === 0) return;
-    const ok = window.confirm(
-      `Aplicar o padrão a todas as contas? A segmentação própria de ${Object.keys(data.overrides).length} conta(s) será removida.`,
-    );
-    if (!ok) return;
+    setConfirmApplyAll(false);
     onChange({ ...data, overrides: {} });
   }, [data, onChange]);
 
@@ -1675,43 +1718,55 @@ export function SegmentationStep({
                     onClick={() => setActiveId(DEFAULT_ADSET_ID)}
                     className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
                       isDefault
-                        ? "bg-blue-50 ring-1 ring-blue-200"
+                        ? "bg-[#FFF1ED] ring-1 ring-[#FFD0C2]"
                         : "hover:bg-slate-50"
                     }`}
                   >
                     <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
                       <Settings2 className="w-4 h-4 text-slate-400" />
-                      Padrão (todas)
+                      Padrão (todas as empresas)
                     </span>
                     <ChevronRight className="w-4 h-4 text-slate-300" />
                   </button>
-                  {accounts.map((acc) => (
+                  {accounts.map((acc) => {
+                    const aud = audienceById.get(acc.id);
+                    const isSmall = smallIds.has(acc.id);
+                    return (
                     <button
                       key={acc.id}
                       onClick={() => setActiveId(acc.id)}
                       className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
                         activeId === acc.id
-                          ? "bg-blue-50 ring-1 ring-blue-200"
+                          ? "bg-[#FFF1ED] ring-1 ring-[#FFD0C2]"
                           : "hover:bg-slate-50"
                       }`}
                     >
                       <span className="flex items-center gap-2 min-w-0">
                         <CompanyLogo item={acc} size="sm" />
-                        <span className="text-sm font-medium text-slate-700 truncate">
-                          {acc.label}
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-slate-700 truncate">
+                            {acc.label}
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            {isOverridden(acc.id) ? "personalizada" : "segue o padrão"}
+                          </span>
                         </span>
                       </span>
+                      {/* Público do conjunto ao lado do nome: a empresa que o
+                          LinkedIn vai recusar aparece aqui, não só no total. */}
                       <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                          isOverridden(acc.id)
-                            ? "bg-amber-100 text-amber-700"
+                        title={isSmall ? `Abaixo de ${MIN_AUDIENCE} pessoas: o LinkedIn não aceita` : "Público estimado deste conjunto"}
+                        className={`text-[10px] font-semibold tabular-nums px-2 py-0.5 rounded-full flex-shrink-0 ${
+                          isSmall
+                            ? "bg-red-100 text-red-700"
                             : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {isOverridden(acc.id) ? "personalizado" : "padrão"}
+                        {aud ? audienceLabel(aud) : "…"}
                       </span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Detail panel */}
@@ -1719,25 +1774,45 @@ export function SegmentationStep({
                   <div className="flex items-center justify-between gap-3">
                     <h4 className="text-sm font-bold text-slate-700 truncate">
                       {isDefault
-                        ? "Padrão — aplicado a todas as contas"
+                        ? "Padrão: vale para todas as empresas"
                         : `Conjunto: ${activeAccount?.label ?? ""}`}
                     </h4>
                     {isDefault ? (
+                      confirmApplyAll && overrideCount > 0 ? (
+                        <span className="flex items-center gap-2 text-xs shrink-0">
+                          <span className="text-slate-600">
+                            Apagar a segmentação própria de {plural(overrideCount, "empresa")}?
+                          </span>
+                          <button
+                            onClick={applyDefaultToAll}
+                            className="font-semibold text-white bg-[#FF5F39] hover:bg-[#E54A26] px-2.5 py-1 rounded-md cursor-pointer"
+                          >
+                            Aplicar
+                          </button>
+                          <button
+                            onClick={() => setConfirmApplyAll(false)}
+                            className="font-medium text-slate-500 hover:text-slate-700 cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                        </span>
+                      ) : (
                       <button
-                        onClick={applyDefaultToAll}
+                        onClick={() => setConfirmApplyAll(true)}
                         disabled={overrideCount === 0}
                         title={
                           overrideCount === 0
-                            ? "Todas as contas já usam o padrão"
-                            : `Remove a segmentação própria de ${overrideCount} conta${overrideCount !== 1 ? "s" : ""} e aplica o padrão a todas`
+                            ? "Todas as empresas já usam o padrão"
+                            : `Remove a segmentação própria de ${plural(overrideCount, "empresa")} e aplica o padrão a todas`
                         }
                         className="flex items-center gap-1.5 text-xs font-medium text-[#E54A26] hover:text-[#FF5F39] disabled:text-slate-300 disabled:cursor-not-allowed cursor-pointer shrink-0"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         {overrideCount === 0
                           ? "Todas usam o padrão"
-                          : `Aplicar o padrão às ${overrideCount} personalizada${overrideCount !== 1 ? "s" : ""}`}
+                          : `Aplicar o padrão ${overrideCount === 1 ? "à personalizada" : `às ${overrideCount} personalizadas`}`}
                       </button>
+                      )
                     ) : (
                       <button
                         onClick={resetActiveToDefault}
@@ -1752,7 +1827,7 @@ export function SegmentationStep({
 
                   {!isDefault && !isOverridden(activeId) && (
                     <p className="text-[11px] text-slate-400">
-                      Esta conta usa o padrão. Editar abaixo cria uma configuração só dela.
+                      Esta empresa segue o padrão. Editar abaixo cria uma segmentação só dela.
                     </p>
                   )}
 
@@ -1781,7 +1856,7 @@ export function SegmentationStep({
         {/* Right - Summary Panel (sticky) */}
         <div className="w-[35%] shrink-0">
           <div className="sticky top-0">
-            <AudienceSummary data={data} onAudienceCheck={onAudienceCheck} />
+            <AudienceSummary data={data} audience={audience} />
           </div>
         </div>
       </div>
