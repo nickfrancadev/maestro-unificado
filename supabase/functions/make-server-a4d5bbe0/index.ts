@@ -623,7 +623,6 @@ app.post("/make-server-a4d5bbe0/linkedin/org-logos", async (c) => {
 
     for (const [orgId, orgData] of Object.entries(orgResults) as [string, any][]) {
       const website: string | null = orgData?.localizedWebsite || orgData?.website?.localized?.["en_US"] || null;
-      const vanity: string | null = orgData?.vanityName || null;
       let domain: string | null = null;
 
       if (website) {
@@ -631,9 +630,7 @@ app.post("/make-server-a4d5bbe0/linkedin/org-logos", async (c) => {
           domain = new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace(/^www\./, "");
         } catch { /* ignore malformed */ }
       }
-      if (!domain && vanity) {
-        domain = `${vanity}.com`;
-      }
+      // Sem site, sem logo: "<vanity>.com" é palpite e pode ser outra marca.
 
       if (domain) {
         // Sem a chave NÃO monta URL. Montar com `token=undefined` produz 401
@@ -2860,26 +2857,11 @@ async function fetchAsBase64(url: string): Promise<{ base64: string; mime: strin
   }
 }
 
-// Generate plausible domain variants for a single domain. Solves cases like
-// itau.com.br → 404 on logo.dev but itau.com → 200. Order matters: variants
-// most likely to match the brand's primary registration come first.
+// Só o domínio informado. Variantes (.com.br → .com) e sufixos inventados
+// apontam para OUTRA empresa com frequência — e um logo errado no anúncio é
+// pior que nenhum.
 function domainVariants(domain: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  const push = (d: string) => {
-    if (d && !seen.has(d)) { seen.add(d); out.push(d); }
-  };
-  push(domain);
-  // Brazilian sites often have global .com counterparts in logo.dev's index
-  // even when the .com.br resolves nowhere.
-  if (domain.endsWith(".com.br")) {
-    const stem = domain.slice(0, -".com.br".length);
-    push(`${stem}.com`);
-    push(`${stem}-unibanco.com`); // hand-tuned for orgs with two-word names
-  } else if (domain.endsWith(".com")) {
-    push(`${domain}.br`);
-  }
-  return out;
+  return domain ? [domain] : [];
 }
 
 // Try multiple sources to fetch a usable raster of a company logo. logo.dev
@@ -2908,27 +2890,10 @@ async function fetchCompanyLogoRaster(domain: string): Promise<{ base64: string;
   return null;
 }
 
-// When the LinkedIn typeahead-derived FacetItem has no domain (the lazy
-// enrichment hasn't run, or selection happened before hover), guess from
-// the company name. Tries common TLDs — first match wins.
-async function resolveCompanyLogoByName(name: string): Promise<{ logo: { base64: string; mime: string }; domain: string } | null> {
-  const slug = name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 40);
-  if (!slug) return null;
-  const candidates = [`${slug}.com`, `${slug}.com.br`, `${slug}.io`, `${slug}.co`, `${slug}.net`];
-  for (const candidate of candidates) {
-    const logo = await fetchCompanyLogoRaster(candidate);
-    if (logo) return { logo, domain: candidate };
-  }
-  return null;
-}
-
-// Resolve a target company logo with progressive fallbacks: explicit domain,
-// then best-guess from the name. Returns null if everything fails.
+// Logo da empresa-alvo (ou do anunciante) a partir do domínio CONFIRMADO.
+// Não adivinha pelo nome: "Inter" → inter.com é a Intercom, e o anúncio saía
+// com o logo "Fin". Sem domínio, devolve null e a arte sai sem esse logo
+// (`logo_applied: false` avisa o cliente).
 async function resolveTargetLogo(
   name: string,
   domain: string | null | undefined,
@@ -2937,12 +2902,7 @@ async function resolveTargetLogo(
     const direct = await fetchCompanyLogoRaster(domain);
     if (direct) return direct;
   }
-  const guess = await resolveCompanyLogoByName(name);
-  if (guess) {
-    console.log(`[Logo] Resolved "${name}" via guessed domain: ${guess.domain}`);
-    return guess.logo;
-  }
-  console.log(`[Logo] No logo found for "${name}" (domain=${domain || "-"})`);
+  console.log(`[Logo] Sem logo para "${name}" (domain=${domain || "-"}) — sem palpite pelo nome`);
   return null;
 }
 

@@ -416,14 +416,12 @@ function CompanyHeroCard({
           .filter((r) => !selectedUrns.has(r.urn))
           .map((r) => {
             const orgId = r.urn.split(":").pop() || "";
-            const nameLower = r.name
-              .toLowerCase()
-              .replace(/\s+/g, "");
             return {
               id: orgId || r.urn,
               label: r.name,
               urn: r.urn,
-              logoUrl: logoDevUrl(`${nameLower}.com`),
+              // Sem palpite pelo nome: só o domínio confirmado vira logo.
+              logoUrl: undefined,
             };
           })
           .filter((item) => !selectedIds.has(item.id));

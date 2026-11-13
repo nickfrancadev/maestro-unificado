@@ -19,10 +19,9 @@ describe('resolveCompanyLogoUrl', () => {
     expect(url).toContain('/logo-proxy?domain=nubank.com.br');
   });
 
-  it('sem domínio, deriva um palpite a partir do nome', () => {
+  it('sem domínio confirmado, não chuta pelo nome (Inter → inter.com é a Intercom)', () => {
     vi.stubEnv('VITE_SUPABASE_PROJECT_ID', 'proj');
-    expect(resolveCompanyLogoUrl({ id: 'c1', label: 'Itaú Unibanco' }))
-      .toContain('domain=ita');
+    expect(resolveCompanyLogoUrl({ id: 'c1', label: 'Inter' })).toBeNull();
   });
 
   it('devolve null quando não há nada resolvível', () => {
@@ -78,11 +77,7 @@ describe('CompanyAvatar', () => {
     // 1º candidato: proxy pelo domain real
     expect(img(container)!.src).toContain('/logo-proxy?domain=nubank.com.br');
     fireEvent.error(img(container)!);
-    // 2º: proxy pelo palpite derivado do nome (variante .com)
-    expect(img(container)!.src).toContain('/logo-proxy?domain=nubank.com');
-    expect(img(container)!.src).not.toContain('.com.br');
-    fireEvent.error(img(container)!);
-    // 3º: logo.dev direto com a chave do cliente
+    // 2º: logo.dev direto com a chave do cliente
     expect(img(container)!.src).toContain('img.logo.dev/nubank.com.br');
     fireEvent.error(img(container)!);
     // Esgotou: letra
@@ -90,13 +85,13 @@ describe('CompanyAvatar', () => {
     expect(screen.getByText('N')).toBeInTheDocument();
   });
 
-  it('não repete candidato duplicado (domain igual ao palpite do nome)', () => {
+  it('não repete candidato duplicado (proxy e logo.dev do mesmo domínio)', () => {
     vi.stubEnv('VITE_SUPABASE_PROJECT_ID', 'proj');
     vi.stubEnv('VITE_LOGO_DEV_KEY', '');
     const { container } = render(
       <CompanyAvatar company={{ id: 'c1', label: 'Nubank', domain: 'nubank.com' }} />,
     );
-    // proxy(domain) e proxy(palpite) são a MESMA URL — uma tentativa só.
+    // Sem chave do cliente só sobra o proxy: uma tentativa e depois a letra.
     expect(img(container)!.src).toContain('/logo-proxy?domain=nubank.com');
     fireEvent.error(img(container)!);
     expect(img(container)).toBeNull();

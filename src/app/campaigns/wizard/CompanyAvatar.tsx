@@ -10,13 +10,9 @@ export function usableLogoUrl(url: string | null | undefined): string | null {
   return /[?&]token=(undefined|null)?(&|$)/i.test(url) ? null : url;
 }
 
-// "Tera" → "tera.com". Palpite, não verdade: o logo.dev devolve 404 para
-// domínio que não existe e a tela cai no avatar de letra, então errar aqui
-// custa nada. Mesma heurística de `SegmentationStep`.
-export function domainFromCompanyName(name: string | undefined): string | undefined {
-  const slug = (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  return slug ? `${slug}.com` : undefined;
-}
+// Regra: logo de empresa-alvo só sai de um domínio CONFIRMADO (o site que o
+// LinkedIn informa). Derivar "<nome>.com" do nome já trocou marcas: "Inter" →
+// inter.com → Intercom → logo "Fin" dentro do anúncio. Sem domínio, iniciais.
 
 export function getAccountColor(name: string) {
   const colors: Record<string, string> = {
@@ -42,7 +38,6 @@ export function companyLogoCandidates(company: Pick<FacetItem, 'label' | 'domain
   const candidates = [
     usableLogoUrl(company.logoUrl),
     logoProxyUrl(company.domain),
-    logoProxyUrl(domainFromCompanyName(company.label)),
     logoDevUrl(company.domain),
   ].filter((u): u is string => !!u);
   return [...new Set(candidates)];
