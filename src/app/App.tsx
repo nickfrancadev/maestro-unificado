@@ -15,7 +15,7 @@ import { Integrations } from "./integrations/Integrations";
 import { LinkedInOAuthCallback } from "./integrations/LinkedInOAuthCallback";
 import { AdsPipelineDocs } from "./pages/AdsPipelineDocs";
 import { CampaignList } from "./campaigns/CampaignList";
-import { CampaignWizard } from "./campaigns/CampaignWizard";
+import { CampaignEditRoute } from "./campaigns/edit/CampaignEditRoute";
 import { CampaignAnalytics } from "./campaigns/CampaignAnalytics";
 import { AdvancedCampaignCreator } from "./campaigns/AdvancedCampaignCreator";
 import { UsagePortfolio } from "./pages/usage/UsagePortfolio";
@@ -101,9 +101,9 @@ export default function App() {
           <Route path="segmentos" element={<Placeholder title="Segmentos" />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="campaigns" element={<CampaignList />} />
-          <Route path="campaigns/new" element={<CampaignWizard />} />
+          <Route path="campaigns/new" element={<CampaignEditRoute />} />
           <Route path="campaigns/new/advanced" element={<AdvancedCampaignCreator />} />
-          <Route path="campaigns/:id/edit" element={<CampaignWizard />} />
+          <Route path="campaigns/:id/edit" element={<CampaignEditRoute />} />
           <Route path="campaigns/:id" element={<CampaignAnalytics />} />
           <Route path="landing-pages" element={<LandingPagesOverview />} />
           <Route path="landing-pages/new" element={<CreateSelector />} />

@@ -324,3 +324,55 @@ export async function runCampaignPipeline(
 
   return { success: true, steps };
 }
+
+// --- Editar campanha publicada (grupo = uma campanha por empresa) ---
+// Os dados vêm do LinkedIn (GET do grupo + campanhas do grupo), não do KV do
+// publish: ver o comentário da rota edit-data no servidor.
+
+import type { UpdateRequest } from '../../../supabase/functions/make-server-a4d5bbe0/campaignEditGuards';
+import type { EditDataResponse, UpdateResponse } from '../../app/campaigns/edit/publishedEdit';
+
+export type { UpdateRequest as PublishedCampaignsUpdate };
+
+export interface FetchGroupForEditResult {
+  ok: boolean;
+  /** HTTP do servidor; 0 = erro de rede. 404 = grupo não existe nesta conta. */
+  status: number;
+  data?: EditDataResponse;
+  error?: string;
+}
+
+export async function fetchPublishedGroupForEdit(groupId: string): Promise<FetchGroupForEditResult> {
+  try {
+    const response = await fetch(
+      `${SERVER_BASE}/linkedin/campaign-groups/${encodeURIComponent(groupId)}/edit-data`,
+      { headers: headers() },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, status: response.status, error: data.error || `HTTP ${response.status}` };
+    return { ok: true, status: response.status, data };
+  } catch (err: any) {
+    return { ok: false, status: 0, error: err?.message || 'erro de rede' };
+  }
+}
+
+/**
+ * Salva as mudanças no LinkedIn. Nunca lança: erro de validação (422), de rede
+ * ou do LinkedIn volta em `error`, e o resultado por empresa em `results`.
+ */
+export async function updatePublishedCampaigns(req: UpdateRequest): Promise<UpdateResponse> {
+  try {
+    const response = await fetch(`${SERVER_BASE}/linkedin/campaigns/update`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(req),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok && !data.results) {
+      return { success: false, error: data.error || `HTTP ${response.status}` };
+    }
+    return data as UpdateResponse;
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'erro de rede' };
+  }
+}

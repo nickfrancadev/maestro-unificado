@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ChevronDown,
   FileText,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -173,6 +174,17 @@ export function aggregateStatus(statuses: string[]): string {
   return statuses[0] ?? '';
 }
 
+/**
+ * Id do grupo para a tela "Editar campanha publicada" (campaigns/:id/edit), ou
+ * null quando não dá para editar: grupo montado só pelo nome (sem URN do
+ * LinkedIn) ou com todas as empresas encerradas/canceladas.
+ */
+export function editGroupIdFor(group: Pick<CampaignGroup, 'key' | 'children'>): string | null {
+  if (!group.key.startsWith('group:')) return null;
+  if (!group.children.some(c => ['Active', 'Paused', 'Draft'].includes(c.status))) return null;
+  return group.key.split(':').pop() || null;
+}
+
 export interface GroupSummary {
   status: string;
   activeCount: number;
@@ -322,7 +334,7 @@ const getStatusColor = (status: string) => {
   }
 };
 
-function StatusBadge({ status, detail }: { status: string; detail?: string }) {
+export function StatusBadge({ status, detail }: { status: string; detail?: string }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${getStatusColor(status)}`}>
       {statusLabel(status)}
@@ -378,6 +390,9 @@ export function CampaignList() {
   const navigate = useNavigate();
   const onCreateCampaign = () => navigate('/campaigns/new');
   const onContinueDraft = (id: string) => navigate(`/campaigns/${id}/edit`);
+  // Grupo publicado: tela de edição própria; por empresa, já focada nela.
+  const onEditGroup = (groupId: string, campaignId?: string) =>
+    navigate(`/campaigns/${groupId}/edit${campaignId ? `?empresa=${encodeURIComponent(campaignId)}` : ''}`);
   // A demonstração tem uma tela de analytics só; cada conjunto real tem a sua.
   const onViewPerformance = (row: CampaignRow) => navigate(`/campaigns/${row.isMock ? MOCK_CAMPAIGN_ID : row.id}`);
   const [filter, setFilter] = useState('all');
@@ -776,6 +791,7 @@ export function CampaignList() {
                 const pausable = group.children.filter(c => c.status === 'Active');
                 const activatable = group.children.filter(c => c.status === 'Paused');
                 const mixed = s.activeCount > 0 && s.activeCount < s.companies;
+                const editId = editGroupIdFor(group);
                 return (
                   <React.Fragment key={group.key}>
                     <tr className={`hover:bg-slate-50 transition-colors ${isOpen ? 'bg-slate-50/60' : ''}`}>
@@ -827,6 +843,15 @@ export function CampaignList() {
                               className="px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 bg-white hover:bg-green-50 hover:border-green-200 rounded-lg disabled:opacity-40"
                             >
                               Ativar todas
+                            </button>
+                          )}
+                          {editId && (
+                            <button
+                              onClick={() => onEditGroup(editId)}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#E54A26] border border-[#FFD0C2] bg-white hover:bg-[#FFF1ED] rounded-lg disabled:opacity-40"
+                            >
+                              <Pencil className="w-3.5 h-3.5" /> Editar
                             </button>
                           )}
                         </div>
@@ -888,6 +913,15 @@ export function CampaignList() {
                                   <PlayCircle className="w-3.5 h-3.5" /> Ativar
                                 </button>
                               ) : null}
+                              {editId && ['Active', 'Paused', 'Draft'].includes(row.status) && (
+                                <button
+                                  onClick={() => onEditGroup(editId, row.id)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:text-[#E54A26] hover:bg-[#FFF1ED] rounded"
+                                  title={`Editar orçamento, período e público de ${row.company}`}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" /> Editar
+                                </button>
+                              )}
                               <button
                                 onClick={() => onViewPerformance(row)}
                                 className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:text-[#E54A26] hover:bg-[#FFF1ED] rounded"

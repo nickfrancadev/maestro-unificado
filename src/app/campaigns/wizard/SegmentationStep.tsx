@@ -961,7 +961,7 @@ export function CompanyHeroCard({
 // FacetCard Component (regular)
 // ===============================
 
-interface FacetCardProps {
+export interface FacetCardProps {
   id: string;
   icon: React.ReactNode;
   label: string;
@@ -974,7 +974,7 @@ interface FacetCardProps {
   defaultOpen?: boolean;
 }
 
-function FacetCard({
+export function FacetCard({
   id,
   icon,
   label,
@@ -1545,7 +1545,7 @@ function AudienceSummary({
 const DEFAULT_ADSET_ID = "__default__";
 
 // Per-facet display config for the detail panel. Order = display order.
-const PERSON_FACET_CONFIG: Array<{
+export const PERSON_FACET_CONFIG: Array<{
   key: keyof PersonTargeting;
   icon: React.ReactNode;
   label: string;
