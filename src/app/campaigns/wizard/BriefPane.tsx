@@ -3,6 +3,7 @@ import { Sparkles, Loader2, Upload, Settings2, CheckCircle2 } from 'lucide-react
 import { FontPicker } from './FontPicker';
 import { MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
 import type { BrandKit } from './brandKit';
+import { BRAND_BOOK_MAX_MB } from '@/lib/ai';
 
 const MAX_ASSET_MB = 5;
 function makeImageObjectUrl(file: File, onError: (msg: string) => void): string | null {
@@ -409,7 +410,7 @@ function BrandBookDropzone({ disabled, onFile }: { disabled: boolean; onFile: (f
   const handle = (file?: File) => {
     if (!file) return;
     if (file.type !== 'application/pdf') { setErr('Envie um arquivo PDF.'); return; }
-    if (file.size > 20 * 1024 * 1024) { setErr('PDF excede 20MB.'); return; }
+    if (file.size > BRAND_BOOK_MAX_MB * 1024 * 1024) { setErr(`O PDF passa de ${BRAND_BOOK_MAX_MB} MB.`); return; }
     setErr(null); onFile(file);
   };
   const pick = () => {

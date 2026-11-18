@@ -29,6 +29,7 @@ import {
   LINKEDIN_HEADLINE_MAX,
   LINKEDIN_INTRO_MAX,
 } from "./aiGuards.ts";
+import { registerBrandBookRoute, geminiPdfRequestBody } from "./brandBook.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -3351,6 +3352,22 @@ app.post("/make-server-a4d5bbe0/ai/client-voice", async (c) => {
   } catch (err: any) {
     return c.json({ error: err.message }, 500);
   }
+});
+
+// Brand book em PDF: rota em brandBook.ts; aqui só o acesso ao Storage e ao Gemini.
+registerBrandBookRoute(app, {
+  download: async (path) => {
+    const { data, error } = await supabaseAdmin.storage.from(CREATIVE_BUCKET).download(path);
+    return error || !data ? null : new Uint8Array(await data.arrayBuffer());
+  },
+  generate: async (opts) => {
+    if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY não configurada no servidor");
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${GEMINI_KEY}`;
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(geminiPdfRequestBody(opts)) });
+    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const text = (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    try { return JSON.parse(text); } catch { return {}; }
+  },
 });
 
 Deno.serve(app.fetch);

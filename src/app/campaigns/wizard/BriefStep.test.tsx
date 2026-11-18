@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { BriefStep, createEmptyBriefDraft } from './BriefStep';
 import type { BriefDraft } from './BriefPane';
-import { saveClientVoice, extractBrandVoice, AiRequestError } from '@/lib/ai';
+import { saveClientVoice, extractBrandVoice, extractBrandBook, AiRequestError } from '@/lib/ai';
 import type { CreativeData } from './types';
 
 afterEach(cleanup);
@@ -16,6 +16,12 @@ vi.mock('@/lib/ai', async (orig) => ({
     product_service: '', audience_market: '', persona: '',
   }),
   saveClientVoice: vi.fn().mockResolvedValue(undefined),
+  // Extração real do brand book (PDF): o envio e a leitura moram no servidor.
+  extractBrandBook: vi.fn().mockResolvedValue({
+    voice: 'Voz do manual.', voice_examples: [], brand_context: 'Contexto do manual.',
+    brand_colors: { primary: '#123456', secondary: '', accent: '' },
+    color_candidates: [], scrape_status: 'ok', source_url: null, about_url: null,
+  }),
   // Extração real do site, com candidatas de cor vindas do CSS.
   extractBrandVoice: vi.fn().mockResolvedValue({
     voice: 'Técnico e didático.', voice_examples: [], brand_context: 'SaaS de ABM.',
@@ -209,5 +215,35 @@ describe('BriefStep — extração do site', () => {
     extract();
     await vi.waitFor(() => expect(screen.getByText(/Não encontramos as cores no site/)).toBeTruthy());
     expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Direto e técnico.');
+  });
+});
+
+describe('BriefStep — brand book em PDF', () => {
+  const dropPdf = () => {
+    const file = new File(['%PDF'], 'manual.pdf', { type: 'application/pdf' });
+    const zone = screen.getByText('Arraste o PDF ou clique para enviar').parentElement!;
+    fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+    return file;
+  };
+
+  it('envia o PDF de verdade e preenche a marca com o que o servidor extraiu', async () => {
+    vi.mocked(extractBrandBook).mockClear();
+    renderStep();
+    let file!: File;
+    await act(async () => { file = dropPdf(); });
+    expect(vi.mocked(extractBrandBook)).toHaveBeenCalledWith(file);
+    expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Voz do manual.');
+    expect(screen.getByText(/Não encontramos as cores no PDF|Marca extraída do PDF/)).toBeTruthy();
+    // Nada da fixture antiga.
+    expect(screen.queryByText(/mock/i)).toBeNull();
+  });
+
+  it('422 mostra a mensagem do servidor e mantém os campos', async () => {
+    vi.mocked(extractBrandBook).mockRejectedValueOnce(new AiRequestError('Não conseguimos extrair a marca de manual.pdf.', 422, ['cores']));
+    renderStep();
+    fireEvent.change(screen.getByLabelText(/tom de voz/i), { target: { value: 'Meu tom' } });
+    await act(async () => { dropPdf(); });
+    expect(screen.getByText('Não conseguimos extrair a marca de manual.pdf. Seus campos foram mantidos.')).toBeTruthy();
+    expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Meu tom');
   });
 });

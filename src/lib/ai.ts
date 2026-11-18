@@ -3,6 +3,7 @@
 
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import type { OverlayLayout } from '@/app/campaigns/wizard/overlayLayout';
+import { uploadCreativeImageToStorage } from '@/lib/linkedin/creativeUpload';
 
 const SERVER_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-a4d5bbe0`;
 const headers = () => ({
@@ -369,6 +370,28 @@ export async function extractBrandVoice(input: {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify(input),
+  });
+  if (!res.ok) await throwAiError(res);
+  return res.json();
+}
+
+/** Teto do brand book em PDF. Espelha BRAND_BOOK_MAX_BYTES do servidor (brandBook.ts). */
+export const BRAND_BOOK_MAX_MB = 15;
+
+// Extração da marca a partir do brand book em PDF. Dois passos: o PDF sobe ao
+// Storage pela mesma rota da imagem-base (`/creative-upload`) e o servidor lê
+// de lá pelo caminho (`/ai/extract-brand-book`). A resposta tem o mesmo formato
+// da extração pelo site e passa pelo mesmo `sanitizeBrandExtraction` na tela.
+// Falha no envio vira AiRequestError com status 0 (falha técnica, frase da tela).
+export async function extractBrandBook(file: File): Promise<BrandExtraction> {
+  const upload = await uploadCreativeImageToStorage(file);
+  if (!upload.success || !upload.path) {
+    throw new AiRequestError(upload.error || 'Falha no envio do PDF', 0);
+  }
+  const res = await fetch(`${SERVER_BASE}/ai/extract-brand-book`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ brandbook_path: upload.path, filename: file.name }),
   });
   if (!res.ok) await throwAiError(res);
   return res.json();
