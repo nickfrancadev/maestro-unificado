@@ -50,6 +50,8 @@ export interface LinkedInCampaign {
    *  publica um grupo por lançamento e um conjunto por empresa dentro dele;
    *  a lista agrupa por aqui. Ausente em respostas antigas. */
   campaignGroup?: string | null;
+  /** Status do grupo no LinkedIn. Conjunto ativo em grupo pausado vem como "Paused" em `status`. */
+  campaignGroupStatus?: string | null;
 }
 
 export interface CampaignAnalyticsSummary {

@@ -25,6 +25,9 @@ export interface CampaignStepResult {
   linkedin_campaign_id?: string;
   asset_urn?: string;
   creative_id?: string;
+  /** Ativar: status real depois da mudança (ACTIVE, PAUSED…), já considerando o grupo. */
+  status?: string;
+  group_status?: string;
 }
 
 // Generic dispatcher — every action posts to the same endpoint.
@@ -130,6 +133,8 @@ export async function createCreative(params: CreateCreativeParams): Promise<Camp
 export interface ActivateCampaignParams {
   campaign_id: string;
   linkedin_campaign_id: string;
+  /** Grupo do conjunto (id ou URN). O servidor ativa o grupo antes: ele nasce pausado. */
+  campaign_group_id?: string | null;
 }
 
 export async function activateCampaign(
@@ -320,6 +325,7 @@ export async function runCampaignPipeline(
     const actResult = await activateCampaign({
       campaign_id: campaignId,
       linkedin_campaign_id: campResult.linkedin_campaign_id!,
+      campaign_group_id: resolvedGroupId,
     });
     steps[stepIdx].result = actResult;
     steps[stepIdx].status = actResult.success ? 'success' : 'error';

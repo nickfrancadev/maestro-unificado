@@ -78,6 +78,24 @@ function mapCampaignToRow(c: LinkedInCampaign, currency: string): CampaignRow {
   };
 }
 
+const SERVER_STATUS: Record<string, string> = {
+  ACTIVE: 'Active', PAUSED: 'Paused', DRAFT: 'Draft', ARCHIVED: 'Completed', CANCELED: 'Canceled',
+};
+
+/**
+ * Status que a linha mostra depois de pausar/ativar: o que o servidor leu do
+ * LinkedIn depois da mudança (ativar considera o grupo), não o que foi pedido.
+ */
+export function statusAfterToggle(kind: 'pause' | 'activate', serverStatus?: string): string {
+  if (serverStatus && SERVER_STATUS[serverStatus]) return SERVER_STATUS[serverStatus];
+  return kind === 'pause' ? 'Paused' : 'Active';
+}
+
+/** O que a lista manda para ativar uma empresa: o grupo vai junto, para ser ativado também. */
+export function activationParams(row: Pick<CampaignRow, 'id' | 'campaignGroup'>) {
+  return { campaign_id: row.id, linkedin_campaign_id: row.id, campaign_group_id: row.campaignGroup };
+}
+
 /** Separador que o assistente usa entre a campanha e a empresa (buildLaunchPlan). */
 export const GROUP_SEPARATOR = ' — ';
 
@@ -461,19 +479,22 @@ export function CampaignList() {
   const patchRows = (ids: string[], patch: Partial<CampaignRow>) =>
     setCampaigns(prev => prev.map(c => ids.includes(c.id) ? { ...c, ...patch } : c));
 
-  /** Pausa ou ativa UM conjunto. Nunca lança: devolve o erro para a linha. */
-  const toggleOne = async (row: CampaignRow, kind: 'pause' | 'activate'): Promise<string | null> => {
+  /** Pausa ou ativa UM conjunto. Nunca lança: devolve o erro (ou o status real) para a linha. */
+  const toggleOne = async (row: CampaignRow, kind: 'pause' | 'activate'): Promise<{ error: string | null; status?: string }> => {
     if (row.isMock) {
       await new Promise(r => setTimeout(r, 300));
-      return null;
+      return { error: null };
     }
     try {
-      const params = { campaign_id: row.id, linkedin_campaign_id: row.id };
-      const result = kind === 'pause' ? await pauseCampaign(params) : await activateCampaign(params);
-      return result.success ? null : (result.error || 'erro desconhecido');
+      // Ativar leva o grupo: ele nasce pausado e, sem ativá-lo, o conjunto
+      // "Ativo" não entrega.
+      const result = kind === 'pause'
+        ? await pauseCampaign({ campaign_id: row.id, linkedin_campaign_id: row.id })
+        : await activateCampaign(activationParams(row));
+      return result.success ? { error: null, status: result.status } : { error: result.error || 'erro desconhecido' };
     } catch (err: any) {
       console.error('[CampaignList] Toggle status error:', err);
-      return 'erro de rede';
+      return { error: 'erro de rede' };
     }
   };
 
@@ -485,14 +506,13 @@ export function CampaignList() {
   const handleToggle = async (targets: CompanyRow[], kind: 'pause' | 'activate', groupName: string) => {
     setConfirmAction(null);
     patchRows(targets.map(t => t.id), { actionLoading: true, actionError: null });
-    const newStatus = kind === 'pause' ? 'Paused' : 'Active';
     const verb = kind === 'pause' ? 'pausar' : 'ativar';
 
     const errors = await Promise.all(targets.map(async (t) => {
-      const error = await toggleOne(t, kind);
+      const { error, status } = await toggleOne(t, kind);
       patchRows([t.id], error
         ? { actionLoading: false, actionError: `Não foi possível ${verb}: ${error}` }
-        : { actionLoading: false, actionError: null, status: newStatus });
+        : { actionLoading: false, actionError: null, status: statusAfterToggle(kind, status) });
       return error;
     }));
 

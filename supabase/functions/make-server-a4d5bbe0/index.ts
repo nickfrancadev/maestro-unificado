@@ -35,6 +35,12 @@ import {
   storagePathFromUrl,
   isSafeStoragePath,
 } from "./creativeStorage.ts";
+import {
+  toUrn,
+  urnId,
+  resolveCampaignGroupUrn,
+  effectiveCampaignStatus,
+} from "./publishRules.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -915,6 +921,11 @@ function linkedInHeaders(accessToken: string, extra?: Record<string, string>): R
   };
 }
 
+// Resposta de erro de uma chamada ao LinkedIn durante a publicação.
+function linkedInErrorResponse(c: any, status: number, errText: string, _action: string) {
+  return c.json({ success: false, error: `LinkedIn API ${status}: ${errText}` }, status >= 500 ? 502 : 400);
+}
+
 // Validate integration, return access token or throw
 async function requireLinkedIn(): Promise<{ accessToken: string; integration: any }> {
   const integration = await getLinkedInIntegration();
@@ -1366,66 +1377,93 @@ async function handleCreateCreative(c: any, body: any) {
 }
 
 // ACTION 4: Activate Campaign + Campaign Group (PAUSED → ACTIVE)
+// O grupo nasce PAUSED: conjunto ativo dentro de grupo pausado não entrega.
+// Ativar um conjunto ativa o grupo dele antes (se o grupo falhar, o conjunto
+// não é ativado) e devolve o status REAL lido do LinkedIn depois da mudança.
 async function handleActivate(c: any, body: any) {
-  const { campaign_id, linkedin_campaign_id } = body;
+  const { campaign_id, linkedin_campaign_id, campaign_group_id } = body;
   if (!campaign_id || !linkedin_campaign_id) {
     return c.json({ error: "campaign_id e linkedin_campaign_id são obrigatórios" }, 400);
   }
 
   const { accessToken } = await requireLinkedIn();
-  const liCampStr2 = String(linkedin_campaign_id);
-  const campaignUrn = liCampStr2.startsWith("urn:") ? liCampStr2 : `urn:li:sponsoredCampaign:${liCampStr2}`;
+  const campaignUrn = toUrn(linkedin_campaign_id, "sponsoredCampaign");
+  const campaignUrl = `https://api.linkedin.com/rest/adCampaigns/${encodeURIComponent(campaignUrn)}`;
 
-  // Also activate the campaign group
-  const cgRecord = await kv.get(`campaign_group:${campaign_id}`);
-  if (cgRecord?.linkedin_id) {
-    const cgId = String(cgRecord.linkedin_id);
-    const cgUrn = cgId.startsWith("urn:") ? cgId : `urn:li:sponsoredCampaignGroup:${cgId}`;
-    console.log(`[Activate] Activating Campaign Group ${cgUrn}`);
-    const cgResp = await fetchWithRetry(
-      `https://api.linkedin.com/rest/adCampaignGroups/${encodeURIComponent(cgUrn)}`,
-      {
-        method: "POST",
-        headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }),
-        body: JSON.stringify({ patch: { $set: { status: "ACTIVE" } } }),
-      },
-      "Activate CG"
-    );
-    if (!cgResp.ok) {
-      const errText = await cgResp.text();
-      console.log(`[Activate] Campaign Group activation failed: ${errText}`);
-      // Non-fatal — continue to activate the campaign itself
-    } else {
-      console.log(`[Activate] Campaign Group ${cgId} activated`);
-    }
+  const campaignRecord = await kv.get(`campaign:${campaign_id}`);
+  const groupRecord = await kv.get(`campaign_group:${campaign_id}`);
+  let fromLinkedIn: string | null = null;
+  if (!campaign_group_id && !campaignRecord?.campaign_group_id && !groupRecord?.linkedin_id) {
+    // A lista manda o id do LinkedIn: pergunta ao LinkedIn qual é o grupo.
+    const getResp = await fetchWithRetry(campaignUrl, { method: "GET", headers: linkedInHeaders(accessToken) }, "Get Campaign");
+    if (getResp.ok) fromLinkedIn = (await getResp.json())?.campaignGroup ?? null;
+  }
+  const groupUrn = resolveCampaignGroupUrn({
+    fromRequest: campaign_group_id,
+    fromCampaignRecord: campaignRecord?.campaign_group_id,
+    fromGroupRecord: groupRecord?.linkedin_id,
+    fromLinkedIn,
+  });
+  if (!groupUrn) {
+    await auditLog(campaign_id, "activate", { status: "error", error: "grupo não encontrado" });
+    return c.json({ success: false, error: "Não foi possível achar o grupo desta campanha no LinkedIn. Atualize a lista e tente de novo." }, 422);
   }
 
-  console.log(`[Activate] POST /rest/adCampaigns/${encodeURIComponent(campaignUrn)} (PARTIAL_UPDATE)`);
-  const response = await fetchWithRetry(
-    `https://api.linkedin.com/rest/adCampaigns/${encodeURIComponent(campaignUrn)}`,
+  const groupUrl = `https://api.linkedin.com/rest/adCampaignGroups/${encodeURIComponent(groupUrn)}`;
+  console.log(`[Activate] Activating Campaign Group ${groupUrn}`);
+  const cgResp = await fetchWithRetry(
+    groupUrl,
     {
       method: "POST",
       headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }),
       body: JSON.stringify({ patch: { $set: { status: "ACTIVE" } } }),
     },
-    "Activate"
+    "Activate CG",
+  );
+  if (!cgResp.ok) {
+    const errText = await cgResp.text();
+    await auditLog(campaign_id, "activate", { status: "error", step: "group", http: cgResp.status, error: errText });
+    return linkedInErrorResponse(c, cgResp.status, errText, "ativar o grupo da campanha");
+  }
+
+  console.log(`[Activate] POST ${campaignUrl} (PARTIAL_UPDATE)`);
+  const response = await fetchWithRetry(
+    campaignUrl,
+    {
+      method: "POST",
+      headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }),
+      body: JSON.stringify({ patch: { $set: { status: "ACTIVE" } } }),
+    },
+    "Activate",
   );
 
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "activate", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "ativar a campanha");
   }
 
-  console.log(`[Activate] Campaign ${linkedin_campaign_id} activated`);
-  const record = await kv.get(`campaign:${campaign_id}`);
-  if (record) {
-    record.status = "ACTIVE";
-    record.activated_at = new Date().toISOString();
-    await kv.set(`campaign:${campaign_id}`, record);
+  // Status real depois da mudança (o LinkedIn pode recusar em silêncio,
+  // ex.: conta sem pagamento). A tela mostra este, não o que pediu.
+  let campaignStatus = "ACTIVE";
+  let groupStatus = "ACTIVE";
+  const [campGet, groupGet] = await Promise.all([
+    fetchWithRetry(campaignUrl, { method: "GET", headers: linkedInHeaders(accessToken) }, "Get Campaign"),
+    fetchWithRetry(groupUrl, { method: "GET", headers: linkedInHeaders(accessToken) }, "Get CG"),
+  ]);
+  if (campGet.ok) campaignStatus = (await campGet.json())?.status || campaignStatus;
+  if (groupGet.ok) groupStatus = (await groupGet.json())?.status || groupStatus;
+  const status = effectiveCampaignStatus(campaignStatus, groupStatus);
+
+  console.log(`[Activate] Campaign ${linkedin_campaign_id} → ${campaignStatus}, group ${groupUrn} → ${groupStatus}`);
+  if (campaignRecord) {
+    campaignRecord.status = status;
+    campaignRecord.campaign_group_id = campaignRecord.campaign_group_id || urnId(groupUrn);
+    campaignRecord.activated_at = new Date().toISOString();
+    await kv.set(`campaign:${campaign_id}`, campaignRecord);
   }
-  await auditLog(campaign_id, "activate", { status: "success", linkedin_campaign_id });
-  return c.json({ success: true });
+  await auditLog(campaign_id, "activate", { status: "success", linkedin_campaign_id, campaign_status: campaignStatus, group_status: groupStatus });
+  return c.json({ success: true, status, campaign_status: campaignStatus, group_status: groupStatus, campaign_group_id: urnId(groupUrn) });
 }
 
 // ACTION 5: Pause Campaign (ACTIVE → PAUSED)
@@ -1942,6 +1980,23 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
     }
 
     const data = await response.json();
+
+    // Status dos grupos: conjunto ativo em grupo pausado não entrega, e a
+    // lista precisa mostrar isso. Melhor esforço: sem os grupos, vale o do conjunto.
+    const groupStatus = new Map<string, string>();
+    try {
+      const groupsResp = await fetchWithRetry(
+        `https://api.linkedin.com/rest/adAccounts/${accountIdPath}/adCampaignGroups?q=search&search=${searchExpr}&fields=id,status&count=100`,
+        { headers: linkedInHeaders(accessToken) },
+        "List CGs",
+      );
+      if (groupsResp.ok) {
+        for (const g of (await groupsResp.json()).elements || []) groupStatus.set(String(g.id), g.status);
+      }
+    } catch (e: any) {
+      console.log(`[LinkedIn Campaigns List] grupos indisponíveis: ${e.message}`);
+    }
+
     const statusMap: Record<string, string> = {
       ACTIVE: "Active",
       PAUSED: "Paused",
@@ -1950,11 +2005,15 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
       CANCELED: "Canceled",
     };
 
-    const campaigns = (data.elements || []).map((el: any) => ({
+    const campaigns = (data.elements || []).map((el: any) => {
+      const gStatus = el.campaignGroup ? groupStatus.get(urnId(el.campaignGroup)) ?? null : null;
+      const shown = effectiveCampaignStatus(el.status, gStatus);
+      return {
       id: String(el.id),
       name: el.name || "Sem nome",
-      status: statusMap[el.status] || el.status,
+      status: statusMap[shown] || shown,
       rawStatus: el.status,
+      campaignGroupStatus: gStatus,
       type: el.type || "SPONSORED_UPDATES",
       costType: el.costType || "CPM",
       totalBudget: el.totalBudget
@@ -1969,7 +2028,8 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
       // Grupo de campanhas (URN). A lista do front agrupa os conjuntos de um
       // mesmo lançamento (um por empresa) por este campo.
       campaignGroup: el.campaignGroup || null,
-    }));
+    };
+    });
 
     console.log(`[LinkedIn Campaigns List] Returned ${campaigns.length} campaigns`);
     return c.json({
