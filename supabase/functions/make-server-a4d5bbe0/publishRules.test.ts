@@ -64,3 +64,40 @@ describe('datas com orçamento total (F037) — mesma regra na tela e no servido
     expect(budgetDateProblem({ budgetType: 'total', startDate: '2026-12-10', endDate: '2026-12-10' })).toMatch(/depois da data de início/);
   });
 });
+
+import { creativeProblems, creativeMessage } from './publishRules';
+
+describe('criativo validado no servidor ao publicar (F138)', () => {
+  const ok = { headline: 'ABM para o time do Nubank', description: 'Menos planilha, mais conta certa.', hasImage: true, landingPageUrl: 'https://maestro.abm/p/nubank' };
+
+  it('aceita um anúncio completo', () => {
+    expect(creativeProblems(ok)).toEqual([]);
+  });
+
+  it('recusa título vazio, imagem ausente e texto vazio', () => {
+    const p = creativeProblems({ headline: ' ', description: '', hasImage: false });
+    expect(p).toContain('o título está vazio');
+    expect(p).toContain('o anúncio está sem imagem');
+    expect(p).toContain('o texto do anúncio está vazio');
+  });
+
+  it('recusa o texto de erro da IA', () => {
+    expect(creativeProblems({ ...ok, headline: 'Não encontrado - input manual' })).toContain('o título é uma mensagem da IA, não um texto de anúncio');
+    expect(creativeProblems({ ...ok, description: 'Claro! Aqui está o texto:' }).join()).toMatch(/mensagem da IA/);
+  });
+
+  it('recusa macro e variável que a publicação não preenche', () => {
+    expect(creativeProblems({ ...ok, headline: 'Olá %FIRSTNAME%' }).join()).toContain('%FIRSTNAME%');
+    expect(creativeProblems({ ...ok, description: 'Para {{company.name}}' }).join()).toContain('{{company.name}}');
+    expect(creativeProblems({ ...ok, landingPageUrl: 'https://x.com/{{account.slug}}' }).join()).toMatch(/URL de destino/);
+  });
+
+  it('confere o limite do LinkedIn depois da troca do nome da empresa', () => {
+    expect(creativeProblems({ ...ok, headline: 'a'.repeat(201) }).join()).toMatch(/201 caracteres/);
+    expect(creativeProblems({ ...ok, description: 'a'.repeat(601) }).join()).toMatch(/601 caracteres/);
+  });
+
+  it('a mensagem leva o nome da empresa', () => {
+    expect(creativeMessage('Nubank', ['o título está vazio', 'o anúncio está sem imagem'])).toBe('Nubank: o título está vazio e o anúncio está sem imagem.');
+  });
+});

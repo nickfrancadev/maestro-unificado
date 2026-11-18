@@ -43,6 +43,8 @@ import {
   withDefaultLocation,
   audienceProblem,
   budgetDateProblem,
+  creativeProblems,
+  creativeMessage,
 } from "./publishRules.ts";
 import { objectiveFor, resolveCostType } from "./objectives.ts";
 
@@ -1001,6 +1003,15 @@ async function handleValidateLaunch(c: any, body: any) {
   for (const a of adSets) {
     const company = String(a.company_name || "Empresa");
     const messages: string[] = [];
+    // Criativo (F138): texto de erro da IA, título vazio, imagem ausente,
+    // variável sem preencher e limite de caracteres depois da troca do nome.
+    const creative = creativeProblems({
+      headline: a.headline,
+      description: a.description,
+      hasImage: !!(a.image_url || a.image_path),
+      landingPageUrl: a.landing_page_url,
+    });
+    if (creative.length) messages.push(creativeMessage(company, creative));
     const { criteria, defaulted } = withDefaultLocation(a.targeting_criteria);
     if (defaulted) defaultedLocation.push(company);
     const audience = await fetchAudienceCount(accessToken, criteria);
@@ -1345,6 +1356,12 @@ async function handleCreateCreative(c: any, body: any) {
   const { campaign_id, linkedin_campaign_id, ad_account_id, asset_urn, headline, description, cta, landing_page_url } = body;
   if (!campaign_id || !linkedin_campaign_id || !ad_account_id) {
     return c.json({ error: "campaign_id, linkedin_campaign_id e ad_account_id são obrigatórios" }, 400);
+  }
+  // O servidor não confia na tela (F138): recusa antes de chamar o LinkedIn.
+  const problems = creativeProblems({ headline, description, hasImage: !!asset_urn, landingPageUrl: landing_page_url });
+  if (problems.length) {
+    await auditLog(campaign_id, "create-creative", { status: "refused", problems });
+    return c.json({ success: false, error: creativeMessage(body.company_name || "Empresa", problems), problems }, 422);
   }
 
   const existing = await kv.get(`creative:${campaign_id}`);

@@ -5,6 +5,7 @@ import type { CampaignConfig, CreativeData } from './types';
 import type { CampaignPipelineParams, ValidateLaunchParams } from '@/lib/linkedin';
 import { storagePathFromUrl } from '../../../../supabase/functions/make-server-a4d5bbe0/creativeStorage';
 import { hasLocation, DEFAULT_LOCATION_LABEL, budgetDateProblem } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
+import { LINKEDIN_HEADLINE_MAX, LINKEDIN_INTRO_MAX } from '../../../../supabase/functions/make-server-a4d5bbe0/aiGuards';
 
 export interface AdSetCreative {
   headline: string;
@@ -114,6 +115,15 @@ export function validateLaunchPlan(plan: AdSetPlan[]): Record<string, string[]> 
     else if (AI_ERROR_TEXT.test(headline)) issues.push('O título é uma mensagem de erro da IA, não um texto de anúncio');
     if (!bodyText.trim()) issues.push('Sem texto do anúncio');
     else if (AI_ERROR_TEXT.test(bodyText)) issues.push('O texto é uma mensagem de erro da IA, não um texto de anúncio');
+
+    // Limite do LinkedIn conferido DEPOIS de trocar {{company.name}} pelo nome
+    // desta empresa: o template cabia, o nome comprido pode estourar.
+    if (headline.trim().length > LINKEDIN_HEADLINE_MAX) {
+      issues.push(`O título fica com ${headline.trim().length} caracteres com o nome da empresa; o LinkedIn aceita até ${LINKEDIN_HEADLINE_MAX}`);
+    }
+    if (bodyText.trim().length > LINKEDIN_INTRO_MAX) {
+      issues.push(`O texto fica com ${bodyText.trim().length} caracteres com o nome da empresa; o LinkedIn aceita até ${LINKEDIN_INTRO_MAX}`);
+    }
 
     const headlineVar = headline.match(UNRESOLVED_VAR);
     if (headlineVar) issues.push(`O título tem uma variável que não foi preenchida: ${headlineVar[0]}`);

@@ -2,6 +2,13 @@
 // Puras (sem Deno nem npm) para rodar no Vitest, no estilo de `aiGuards.ts`.
 // Mensagens em português simples: chegam até a tela como estão.
 
+import {
+  looksLikeModelChatter,
+  unsupportedMacro,
+  LINKEDIN_HEADLINE_MAX,
+  LINKEDIN_INTRO_MAX,
+} from "./aiGuards.ts";
+
 // ---------- URNs ----------
 
 export type UrnKind = "sponsoredAccount" | "sponsoredCampaignGroup" | "sponsoredCampaign";
@@ -127,4 +134,51 @@ export function budgetDateProblem(input: {
     }
   }
   return null;
+}
+
+// ---------- Criativo ao publicar (F138) ----------
+
+export interface CreativeToPublish {
+  headline?: string | null;
+  description?: string | null;
+  /** Imagem enviada (URL, caminho no Storage ou asset do LinkedIn). */
+  hasImage: boolean;
+  landingPageUrl?: string | null;
+}
+
+/**
+ * O que impede o anúncio desta empresa de ir ao ar, já com o nome da empresa
+ * trocado no texto. Lista vazia = pode publicar. O servidor não confia na
+ * tela: texto de erro da IA, título vazio, imagem ausente, variável que não
+ * foi preenchida e texto acima do limite do LinkedIn DEPOIS da troca do nome
+ * da empresa (o template cabia, "Itaú Unibanco Holding" pode não caber).
+ */
+export function creativeProblems(creative: CreativeToPublish): string[] {
+  const headline = (creative.headline || "").trim();
+  const body = (creative.description || "").trim();
+  const out: string[] = [];
+  if (!creative.hasImage) out.push("o anúncio está sem imagem");
+  if (!headline) out.push("o título está vazio");
+  if (!body) out.push("o texto do anúncio está vazio");
+  if (headline && looksLikeModelChatter(headline)) out.push("o título é uma mensagem da IA, não um texto de anúncio");
+  if (body && looksLikeModelChatter(body)) out.push("o texto é uma mensagem da IA, não um texto de anúncio");
+  if (headline.length > LINKEDIN_HEADLINE_MAX) {
+    out.push(`o título tem ${headline.length} caracteres com o nome da empresa; o LinkedIn aceita até ${LINKEDIN_HEADLINE_MAX}`);
+  }
+  if (body.length > LINKEDIN_INTRO_MAX) {
+    out.push(`o texto tem ${body.length} caracteres com o nome da empresa; o LinkedIn aceita até ${LINKEDIN_INTRO_MAX}`);
+  }
+  const macro = unsupportedMacro(`${headline}\n${body}`, false);
+  if (macro) out.push(`o texto usa uma variável que a publicação não preenche (${macro})`);
+  const url = (creative.landingPageUrl || "").trim();
+  if (url && !/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(url)) out.push("a URL de destino precisa começar com https://");
+  else if (/\{\{[^}]*\}\}/.test(url)) out.push("a URL de destino tem uma variável que não foi preenchida");
+  return out;
+}
+
+/** "Nubank: o título está vazio e o anúncio está sem imagem." */
+export function creativeMessage(companyName: string, problems: string[]): string {
+  if (!problems.length) return "";
+  const list = problems.length === 1 ? problems[0] : `${problems.slice(0, -1).join(", ")} e ${problems[problems.length - 1]}`;
+  return `${companyName || "Empresa"}: ${list}.`;
 }

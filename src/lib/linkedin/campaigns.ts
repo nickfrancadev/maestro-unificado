@@ -156,6 +156,7 @@ export interface CreateCreativeParams {
   description?: string;
   cta?: string;
   landing_page_url?: string;
+  company_name?: string;
 }
 
 export async function createCreative(params: CreateCreativeParams): Promise<CampaignStepResult> {
@@ -346,6 +347,7 @@ export async function runCampaignPipeline(
       description: params.description,
       cta: params.cta,
       landing_page_url: params.landing_page_url,
+      company_name: params.company_name,
     });
     steps[stepIdx].result = crResult;
     steps[stepIdx].status = crResult.success ? 'success' : 'error';

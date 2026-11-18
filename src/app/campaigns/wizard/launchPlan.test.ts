@@ -303,3 +303,18 @@ describe('Revisão mostra a localização padrão e o servidor confere antes de 
     expect(buildPipelineParams(plan[0], plan, config, { adAccountId: '1', currency: 'BRL' }).company_name).toBe('Nubank');
   });
 });
+
+describe('limite de caracteres por empresa, depois da troca de {{company.name}}', () => {
+  it('o template cabe mas o nome comprido estoura: trava só aquela empresa', () => {
+    const longo = { id: 'c9', label: 'Itaú Unibanco Holding S.A. — Banco de Investimentos e Serviços Financeiros Integrados', urn: 'urn:li:organization:9' };
+    const headline = `${'x'.repeat(180)} {{company.name}}`; // 197 no template
+    const plan = buildLaunchPlan(
+      { ...createDefaultCampaignConfig(), campaignName: 'Q4' },
+      targeting([nubank, longo]),
+      { ...creative(), headline },
+    );
+    const issues = validateLaunchPlan(plan);
+    expect(issues.c1).toBeUndefined();
+    expect(issues.c9.join()).toMatch(/O título fica com \d+ caracteres com o nome da empresa; o LinkedIn aceita até 200/);
+  });
+});
