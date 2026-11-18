@@ -637,6 +637,8 @@ export function CampaignList() {
   const pausedCount = groups.filter(g => g.summary.status === 'Paused').length;
 
   return (
+    // Mesma margem de 32 px do assistente (stepLayout.ts): o AppLayout não dá respiro nenhum.
+    <div className="px-8 py-6">
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -738,14 +740,14 @@ export function CampaignList() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-xs font-semibold text-slate-500 uppercase">
                 {([
-                  { key: 'name', label: 'Campanha', className: 'px-4 py-3 min-w-[240px]' },
-                  { key: 'status', label: 'Status', className: 'px-3 py-3' },
-                  { key: 'companies', label: 'Empresas', className: 'px-3 py-3 text-right' },
-                  { key: 'budget', label: 'Orçamento', className: 'px-3 py-3 text-right' },
-                  { key: 'spend', label: 'Gasto', className: 'px-3 py-3 text-right', title: 'Últimos 90 dias' },
-                  { key: 'impressions', label: 'Impressões', className: 'px-3 py-3 text-right' },
-                  { key: 'ctr', label: 'CTR', className: 'px-3 py-3 text-right' },
-                  { key: 'period', label: 'Período', className: 'px-3 py-3' },
+                  { key: 'name', label: 'Campanha', className: 'px-4 py-3 min-w-[190px]' },
+                  { key: 'status', label: 'Status', className: 'px-2.5 py-3' },
+                  { key: 'companies', label: 'Empresas', className: 'px-2.5 py-3 text-right' },
+                  { key: 'budget', label: 'Orçamento', className: 'px-2.5 py-3 text-right' },
+                  { key: 'spend', label: 'Gasto', className: 'px-2.5 py-3 text-right', title: 'Últimos 90 dias' },
+                  { key: 'impressions', label: 'Impressões', className: 'px-2.5 py-3 text-right' },
+                  { key: 'ctr', label: 'CTR', className: 'px-2.5 py-3 text-right' },
+                  { key: 'period', label: 'Período', className: 'px-2.5 py-3' },
                 ] as { key: SortKey; label: string; className: string; title?: string }[]).map((col) => {
                   const active = sort?.key === col.key;
                   return (
@@ -767,7 +769,7 @@ export function CampaignList() {
                     </th>
                   );
                 })}
-                <th className="px-4 py-3 text-right">Ações</th>
+                <th className="px-3 py-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -800,12 +802,12 @@ export function CampaignList() {
                     return (
                       <tr key={d.id} className="hover:bg-slate-50/70">
                         <td className="pl-12 pr-4 py-3">
-                          <span className="font-medium text-slate-900 block truncate max-w-[280px]">{d.name}</span>
+                          <span className="font-medium text-slate-900 block max-w-[280px] break-words">{d.name}</span>
                           <span className="text-xs text-slate-400">Salvo em {fmtDateTime(d.savedAt)}</span>
                         </td>
-                        <td className="px-3 py-3"><StatusBadge status="Draft" /></td>
-                        <td className="px-3 py-3 text-right text-slate-700 whitespace-nowrap">{adSets > 0 ? plural(adSets, 'empresa') : '—'}</td>
-                        <td className="px-3 py-3 text-right">
+                        <td className="px-2.5 py-3"><StatusBadge status="Draft" /></td>
+                        <td className="px-2.5 py-3 text-right text-slate-700 whitespace-nowrap">{adSets > 0 ? plural(adSets, 'empresa') : '—'}</td>
+                        <td className="px-2.5 py-3 text-right">
                           {perAdSet > 0 && adSets > 0 ? (
                             <span className="font-medium text-slate-900">
                               <span className="whitespace-nowrap">{fmtCurrency(total, account.currency)}{cfg.budgetType === 'total' ? ' total' : '/dia'}</span>
@@ -813,22 +815,24 @@ export function CampaignList() {
                             </span>
                           ) : <span className="text-slate-400">Sem orçamento</span>}
                         </td>
-                        <td className="px-3 py-3 text-right text-slate-400" colSpan={3}>Não publicado</td>
-                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
+                        <td className="px-2.5 py-3 text-right text-slate-400" colSpan={3}>Não publicado</td>
+                        <td className="px-2.5 py-3 text-slate-600 min-w-[132px]">
                           {cfg.startDate
                             ? cfg.endDate ? `${fmtDate(cfg.startDate)} – ${fmtDate(cfg.endDate)}` : `Desde ${fmtDate(cfg.startDate)} · contínua`
                             : '—'}
                         </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
                           {confirming ? (
-                            <div className="inline-flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5" role="alertdialog" aria-label="Confirmar exclusão do rascunho">
-                              <span className="text-xs text-red-700">Excluir este rascunho? Não dá para desfazer.</span>
-                              <button onClick={() => setDraftToDelete(null)} className="px-2 py-1 text-xs font-medium text-slate-600 hover:bg-white rounded">
+                            <div className="inline-flex flex-col items-end gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 whitespace-normal" role="alertdialog" aria-label="Confirmar exclusão do rascunho">
+                              <span className="text-xs text-red-700 text-right max-w-[124px]">Excluir este rascunho? Não dá para desfazer.</span>
+                              <div className="inline-flex items-center gap-1">
+                              <button onClick={() => setDraftToDelete(null)} className="px-1.5 py-1 text-xs font-medium text-slate-600 hover:bg-white rounded">
                                 Cancelar
                               </button>
-                              <button onClick={() => handleDeleteDraft(d.id)} className="px-2 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded">
+                              <button onClick={() => handleDeleteDraft(d.id)} className="px-1.5 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded">
                                 Excluir
                               </button>
+                              </div>
                             </div>
                           ) : (
                             <div className="inline-flex items-center gap-1">
@@ -840,9 +844,11 @@ export function CampaignList() {
                               </button>
                               <button
                                 onClick={() => setDraftToDelete(d.id)}
-                                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-red-600 hover:bg-red-50 rounded"
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:border-red-200 hover:text-red-600"
+                                title="Excluir rascunho"
+                                aria-label={`Excluir rascunho ${d.name}`}
                               >
-                                <Trash2 className="w-3.5 h-3.5" /> Excluir
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           )}
@@ -878,26 +884,26 @@ export function CampaignList() {
                           </span>
                         </button>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-2.5 py-3">
                         <div className="flex items-center gap-2">
                           <StatusBadge status={s.status} detail={mixed ? `${s.activeCount} de ${s.companies}` : undefined} />
                           {busy && <Loader2 className="w-3.5 h-3.5 text-[#FF5F39] animate-spin" />}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right text-slate-700 whitespace-nowrap">{plural(s.companies, 'empresa')}</td>
-                      <td className="px-3 py-3 text-right font-medium text-slate-900 whitespace-nowrap">{budgetLabel(s.dailyBudget, s.totalBudget, s.currency)}</td>
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                      <td className="px-2.5 py-3 text-right text-slate-700 whitespace-nowrap">{plural(s.companies, 'empresa')}</td>
+                      <td className="px-2.5 py-3 text-right font-medium text-slate-900 whitespace-nowrap">{budgetLabel(s.dailyBudget, s.totalBudget, s.currency)}</td>
+                      <td className="px-2.5 py-3 text-right whitespace-nowrap">
                         {s.loading && s.spend == null ? <Loader2 className="w-3.5 h-3.5 text-slate-300 animate-spin inline" /> : (
                           <span className="font-medium text-slate-900" title={s.partial ? 'Soma só das empresas com dados' : 'Últimos 90 dias'}>
                             {fmtOptional(s.spend, money)}{s.partial && <span className="text-slate-400">*</span>}
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-right text-slate-700">{s.loading && s.impressions == null ? '' : fmtOptional(s.impressions)}</td>
-                      <td className="px-3 py-3 text-right text-slate-700">{s.loading && s.ctr == null ? '' : fmtOptional(s.ctr, n => fmtPct(n))}</td>
-                      <td className="px-3 py-3 text-slate-600 min-w-[150px]">{periodLabel(s.start, s.end, s.continuous)}</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1.5">
+                      <td className="px-2.5 py-3 text-right text-slate-700">{s.loading && s.impressions == null ? '' : fmtOptional(s.impressions)}</td>
+                      <td className="px-2.5 py-3 text-right text-slate-700">{s.loading && s.ctr == null ? '' : fmtOptional(s.ctr, n => fmtPct(n))}</td>
+                      <td className="px-2.5 py-3 text-slate-600 min-w-[132px]">{periodLabel(s.start, s.end, s.continuous)}</td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1">
                           {(isMockGroup || group.children[0]?.campaignGroup) && (
                             <button
                               onClick={() => onViewGroup(group.children[0])}
@@ -934,9 +940,13 @@ export function CampaignList() {
                             <button
                               onClick={() => onEditGroup(editId)}
                               disabled={busy}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[#E54A26] border border-[#FFD0C2] bg-white hover:bg-[#FFF1ED] rounded-lg disabled:opacity-40"
+                              className="inline-flex items-center justify-center gap-1 h-8 min-w-8 px-2 min-[1400px]:px-2.5 text-xs font-medium text-[#E54A26] border border-[#FFD0C2] bg-white hover:bg-[#FFF1ED] rounded-lg disabled:opacity-40"
+                              title="Editar campanha publicada"
+                              aria-label={`Editar ${group.name}`}
                             >
-                              <Pencil className="w-3.5 h-3.5" /> Editar
+                              <Pencil className="w-3.5 h-3.5" />
+                              {/* Em tela menor que 1400 px o botão fica só com o ícone, para a tabela caber sem rolar. */}
+                              <span className="hidden min-[1400px]:inline" aria-hidden="true">Editar</span>
                             </button>
                           )}
                         </div>
@@ -954,17 +964,17 @@ export function CampaignList() {
                             <span className="text-slate-800">{row.company}</span>
                             {row.actionError && <span className="block text-xs text-red-600 mt-0.5">{row.actionError}</span>}
                           </td>
-                          <td className="px-3 py-2.5">
+                          <td className="px-2.5 py-2.5">
                             <div className="flex items-center gap-2">
                               <StatusBadge status={row.status} />
                               {row.actionLoading && <Loader2 className="w-3.5 h-3.5 text-[#FF5F39] animate-spin" />}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5" />
-                          <td className="px-3 py-2.5 text-right text-slate-700 whitespace-nowrap">
+                          <td className="px-2.5 py-2.5" />
+                          <td className="px-2.5 py-2.5 text-right text-slate-700 whitespace-nowrap">
                             {row.budget > 0 ? `${rowMoney(row.budget)}${row.budgetType === 'daily' ? '/dia' : ' total'}` : '—'}
                           </td>
-                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                          <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
                             {row.analyticsLoading ? <Loader2 className="w-3.5 h-3.5 text-slate-300 animate-spin inline" /> : (
                               <span
                                 className="text-slate-700"
@@ -976,11 +986,11 @@ export function CampaignList() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right text-slate-600">{row.analyticsLoading ? '' : fmtOptional(a?.impressions)}</td>
-                          <td className="px-3 py-2.5 text-right text-slate-600">{row.analyticsLoading ? '' : fmtOptional(ctr, n => fmtPct(n))}</td>
-                          <td className="px-3 py-2.5 text-slate-500 min-w-[150px]">{periodLabel(row.startDate, row.endDate)}</td>
-                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                            <div className="inline-flex items-center gap-1">
+                          <td className="px-2.5 py-2.5 text-right text-slate-600">{row.analyticsLoading ? '' : fmtOptional(a?.impressions)}</td>
+                          <td className="px-2.5 py-2.5 text-right text-slate-600">{row.analyticsLoading ? '' : fmtOptional(ctr, n => fmtPct(n))}</td>
+                          <td className="px-2.5 py-2.5 text-slate-500 min-w-[132px]">{periodLabel(row.startDate, row.endDate)}</td>
+                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-0.5">
                               {row.status === 'Active' ? (
                                 <button
                                   onClick={() => setConfirmAction({ type: 'pause', targets: [row], groupName: group.name, bulk: false })}
@@ -1069,13 +1079,13 @@ export function CampaignList() {
                   <td className="px-4 py-3 text-xs uppercase tracking-wide text-slate-500">
                     Total da conta{linkedinConnected && account.name ? ` · ${account.name}` : ''}
                   </td>
-                  <td className="px-3 py-3" />
-                  <td className="px-3 py-3 text-right whitespace-nowrap">{plural(footer.companies, 'empresa')}</td>
-                  <td className="px-3 py-3 text-right whitespace-nowrap">{budgetLabel(footer.dailyBudget, footer.totalBudget, footer.currency)}</td>
-                  <td className="px-3 py-3 text-right whitespace-nowrap">{fmtOptional(footer.spend, n => fmtCurrency(n, footer.currency))}</td>
-                  <td className="px-3 py-3 text-right">{fmtOptional(footer.impressions)}</td>
-                  <td className="px-3 py-3 text-right">{fmtOptional(footer.ctr, n => fmtPct(n))}</td>
-                  <td className="px-3 py-3" colSpan={2} />
+                  <td className="px-2.5 py-3" />
+                  <td className="px-2.5 py-3 text-right whitespace-nowrap">{plural(footer.companies, 'empresa')}</td>
+                  <td className="px-2.5 py-3 text-right whitespace-nowrap">{budgetLabel(footer.dailyBudget, footer.totalBudget, footer.currency)}</td>
+                  <td className="px-2.5 py-3 text-right whitespace-nowrap">{fmtOptional(footer.spend, n => fmtCurrency(n, footer.currency))}</td>
+                  <td className="px-2.5 py-3 text-right">{fmtOptional(footer.impressions)}</td>
+                  <td className="px-2.5 py-3 text-right">{fmtOptional(footer.ctr, n => fmtPct(n))}</td>
+                  <td className="px-2.5 py-3" colSpan={2} />
                 </tr>
               </tfoot>
             )}
@@ -1135,6 +1145,7 @@ export function CampaignList() {
           />
         );
       })()}
+    </div>
     </div>
   );
 }
