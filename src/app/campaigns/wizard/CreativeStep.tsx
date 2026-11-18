@@ -51,7 +51,9 @@ import {
 import { OverlayCanvas, type OverlayLayerId, measureTextWidthPx } from './OverlayCanvas';
 import { FontPicker } from './FontPicker';
 import { CompanyAvatar, resolveCompanyLogoUrl } from './CompanyAvatar';
-import { createDefaultBrandKit } from './brandKit';
+import { createDefaultBrandKit, followersLabel } from './brandKit';
+import { artStatus, artIssue, composedPatch } from './composition';
+import { crossCompanyMentions, creativeTextsFor, crossMentionIssue } from './crossMention';
 import { ctaLabel } from '../labels';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
@@ -61,6 +63,7 @@ import {
   generateBaseImage,
   composeLogoOverlay,
   AiRequestError,
+  isUserFacingAiError,
   copyProblems,
   impliesPartnership,
   sanitizeBrandBrief,
@@ -116,8 +119,9 @@ type FailureKind = 'brief' | 'copy' | 'templateCopy' | 'baseImage' | 'compose' |
 function friendlyError(kind: FailureKind, err: unknown, label?: string): string {
   console.error(`[CreativeStep] falha em ${kind}${label ? ` (${label})` : ''}:`, err);
   // 422 = o servidor recusou o resultado da IA e já explicou em português o
-  // que fazer. Repetir uma frase genérica por cima esconderia o motivo.
-  if (err instanceof AiRequestError && err.status === 422) return err.message;
+  // que fazer; 429 = limite de uso da IA, com quando tentar de novo. Repetir
+  // uma frase genérica por cima esconderia o motivo.
+  if (isUserFacingAiError(err)) return err.message;
   switch (kind) {
     case 'brief':
       return `Não conseguimos analisar a marca de ${label} agora. Tente de novo em instantes; os textos ainda podem ser gerados sem essa análise.`;
@@ -179,6 +183,11 @@ interface CreativeStepProps {
    * um atalho da Revisão ("Ir para Criativos · <empresa>") cair direto nela.
    */
   initialTarget?: string;
+  /**
+   * Objetivo da campanha (passo Configuração). Vai para a IA de texto: o
+   * texto de "Visitas ao site" pede o clique, o de "Reconhecimento" não.
+   */
+  objective?: string;
 }
 
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
@@ -191,7 +200,7 @@ function statusOf(override: CompanyCreativeOverride | undefined): CompanyStatus 
 
 const STATUS_META: Record<CompanyStatus, { label: string; color: string; dot: string }> = {
   template: { label: 'Segue o template', color: 'text-slate-500 bg-slate-100', dot: 'bg-slate-300' },
-  brief_only: { label: 'Brief gerado', color: 'text-blue-700 bg-blue-50', dot: 'bg-blue-500' },
+  brief_only: { label: 'Perfil gerado', color: 'text-blue-700 bg-blue-50', dot: 'bg-blue-500' },
   fully_personalized: { label: 'Personalizado', color: 'text-emerald-700 bg-emerald-50', dot: 'bg-emerald-500' },
 };
 
@@ -239,20 +248,15 @@ function deriveWebsiteDomain(websiteUrl: string): string | null {
   }
 }
 
-// `brandKit.logo` pode ser um `blob:` — a única via de UI para logo próprio
-// (`LogoGallery.pick()` em `BriefPane.tsx`) usa `URL.createObjectURL(file)`,
-// e esse esquema só resolve dentro desta aba/sessão. O servidor busca a URL
-// com `fetch()` puro (`fetchAsBase64`), nunca alcança um `blob:`, cai no
-// catch e devolve `null` em silêncio — a composição degradaria pro fallback
-// por domínio sem avisar ninguém. Filtrar aqui torna esse fallback uma
-// escolha deliberada, não um acidente silencioso. Resolver de verdade (subir
-// o logo pro Storage, como já se faz com a imagem-base) fica fora do escopo
-// desta task.
+// O logo próprio sobe ao Storage no passo Marca (`LogoGallery` em BriefPane),
+// então `brandKit.logo` é uma URL que o servidor alcança. Só rascunho antigo,
+// de antes disso, ainda pode ter um `blob:` da aba: o servidor não o alcança,
+// e mandar só faria a composição cair em silêncio no fallback por domínio.
 function sendableAdvertiserLogoUrl(logo: string | null): string | null {
   return logo && logo.startsWith('blob:') ? null : logo;
 }
 
-export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId, onEditBrand, initialTarget }: CreativeStepProps) {
+export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId, onEditBrand, initialTarget, objective = 'brand_awareness' }: CreativeStepProps) {
   const navigate = useNavigate();
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   // Camada selecionada no editor — é ela que os controles do card 2 editam.
@@ -512,8 +516,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       if (!brief) {
         const hadBrief = !!creativeDataRef.current?.overrides?.[company.id]?.brief;
         reportError(key, hadBrief
-          ? `Não conseguimos analisar a marca de ${company.label}. O brief anterior foi mantido; se quiser, ajuste setor, proposta de valor e temas no Brand Brief.`
-          : `Não conseguimos analisar a marca de ${company.label}. Os textos podem ser gerados sem essa análise; se quiser, preencha setor, proposta de valor e temas no Brand Brief.`, retry);
+          ? `Não conseguimos analisar a marca de ${company.label}. O brief anterior foi mantido; se quiser, ajuste setor, proposta de valor e temas no perfil da empresa.`
+          : `Não conseguimos analisar a marca de ${company.label}. Os textos podem ser gerados sem essa análise; se quiser, preencha setor, proposta de valor e temas no perfil da empresa.`, retry);
         return null;
       }
       updateOverride(company.id, { brief });
@@ -555,7 +559,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         client_brand_colors: data.brandKit.colors,
         ...advertiserContext(data),
         target_company_name: company.label,
-        objective: 'brand_awareness',
+        objective,
         cta: data.cta,
       });
       // A IA nunca apaga texto: resposta vazia, frase de falha, variável sem
@@ -666,7 +670,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         client_brand_colors: data.brandKit.colors,
         ...advertiserContext(data),
         target_company_name: '{{company.name}}',
-        objective: 'brand_awareness',
+        objective,
         cta: data.cta,
       });
       // Guard against the model echoing a concrete name from the client voice
@@ -764,10 +768,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         destaque_width_px: destaqueWidthPx,
         complementar_width_px: complementarWidthPx,
       });
-      updateOverride(company.id, {
-        imageUrl: result.url,
-        imageFileName: result.filename,
-      });
+      // Grava a arte junto da assinatura do que foi composto: qualquer mudança
+      // depois disso (texto, base, formato, layout, logos) a marca como
+      // desatualizada. Ver composition.ts.
+      updateOverride(company.id, composedPatch(data, company, { url: result.url, filename: result.filename }));
       return true;
     } catch (err: unknown) {
       reportError(key, friendlyError('compose', err, company.label), () => requestImage(company));
@@ -1019,21 +1023,36 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Sem domínio confirmado não há logo da conta: nem no preview, nem na arte.
   // Avisar antes de gerar é o que evita descobrir só no anúncio publicado.
   const targetWithoutDomain = !!previewCompany && !previewCompany.domain && !targetLogoUrl;
+  // Situação da arte composta de cada empresa: desatualizada quando o texto,
+  // a base, o formato, o layout ou os logos mudaram depois de gerar.
+  const companyArt = useMemo(() => {
+    const data = withImageDefaults(creativeData);
+    return Object.fromEntries(companies.map((c) => [c.id, artStatus(data, c)]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creativeData, companies]);
+  const editingArt = editingCompany ? companyArt[editingCompany.id] : undefined;
+  const staleCompanies = companies.filter((c) => companyArt[c.id] === 'stale');
+  // F076: anúncio de uma empresa que cita outra empresa da campanha.
+  const crossMentions = useMemo(() => {
+    const data = withImageDefaults(creativeData);
+    return crossCompanyMentions(companies.map((c) => ({ companyId: c.id, companyName: c.label, texts: creativeTextsFor(data, c) })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creativeData, companies]);
+  const citing = companies.filter((c) => crossMentions[c.id]);
   const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
 
   // ----------------- Cabeçalho do anúncio (anunciante) -----------------
-  // O Brand Kit ainda não tem nome nem seguidores; lê os campos se existirem
-  // (Configurações globais vão trazê-los) e cai para o domínio do site.
-  const advertiserKit = imageCfgSource.brandKit as typeof imageCfgSource.brandKit & { name?: string; followers?: number };
+  // O Brand Kit ainda não tem nome; lê o campo se existir (Configurações
+  // globais vão trazê-lo) e cai para o domínio do site.
+  const advertiserKit = imageCfgSource.brandKit as typeof imageCfgSource.brandKit & { name?: string };
   const siteDomain = deriveWebsiteDomain(advertiserKit.websiteUrl || '');
   const siteName = siteDomain ? siteDomain.split('.')[0] : '';
   const advertiserName = advertiserKit.name?.trim()
     || (siteName ? siteName.charAt(0).toUpperCase() + siteName.slice(1) : 'Minha marca');
   // Chaveado pela URL: trocar o logo no Brand Kit dá nova chance ao <img>.
   const advertiserAvatarUrl = advertiserKit.logo && !brokenLogo[`avatar:${advertiserKit.logo}`] ? advertiserKit.logo : null;
-  const advertiserFollowers = typeof advertiserKit.followers === 'number'
-    ? `${advertiserKit.followers.toLocaleString('pt-BR')} seguidores`
-    : '3.550 seguidores';
+  // Sem o número no kit da marca, o preview não inventa um.
+  const advertiserFollowers = followersLabel(advertiserKit.followers);
   // Domínio sob a imagem: o da URL de destino que esta empresa vai de fato usar.
   const previewDomain = displayDomain(resolved.landingPageUrl);
 
@@ -1079,7 +1098,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       : (effHeadline || effBody);
   const imageSummary = [
     imageCfg.format === 'square' ? 'Quadrado 1:1' : 'Banner 1.91:1',
-    imageCfg.imageMode === 'ai' ? 'Gerada com IA' : 'Upload',
+    imageCfg.imageMode === 'ai' ? 'Gerada com IA' : 'Imagem enviada',
     ...(aiTextsOn ? ['textos pela IA'] : []),
     ...(imageCfg.baseImageUrl ? [] : ['sem imagem-base']),
   ].join(' · ');
@@ -1142,7 +1161,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               <div className={`text-sm truncate ${isTemplate ? 'font-bold text-[#212A46]' : 'font-semibold text-slate-700'}`}>
                 Template global
               </div>
-              <div className="text-[10px] text-slate-500">Aplicado a todas sem override</div>
+              <div className="text-[10px] text-slate-500">Vale para as empresas não personalizadas</div>
             </div>
           </button>
 
@@ -1150,7 +1169,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           {companies.length === 0 && (
             <div className="px-4 py-8 text-center">
               <div className="text-xs text-slate-400">
-                Nenhuma empresa selecionada na Segmentação. Volte ao Step 2 para adicionar empresas-alvo.
+                Nenhuma empresa selecionada na Segmentação. Volte ao passo 2 (Segmentação) para adicionar empresas-alvo.
               </div>
             </div>
           )}
@@ -1180,6 +1199,21 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       {isLoading ? 'Gerando…' : meta.label}
                     </span>
                   </div>
+                  {crossMentions[company.id] && (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded-full">
+                      <AlertTriangle className="w-3 h-3" /> Cita {joinPt(crossMentions[company.id])}
+                    </span>
+                  )}
+                  {!isLoading && companyArt[company.id] === 'stale' && (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                      <AlertTriangle className="w-3 h-3" /> Arte desatualizada
+                    </span>
+                  )}
+                  {!isLoading && companyArt[company.id] === 'missing' && (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                      <AlertTriangle className="w-3 h-3" /> Sem arte gerada
+                    </span>
+                  )}
                 </div>
                 {isLoading && <Loader2 className="w-3.5 h-3.5 text-[#FF5F39] animate-spin shrink-0 mt-1" />}
               </button>
@@ -1263,6 +1297,45 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <button onClick={() => setMissingInputs(null)} aria-label="Fechar aviso" className="text-amber-600 hover:text-amber-800">
               <X className="w-3.5 h-3.5" />
             </button>
+          </div>
+        )}
+
+        {/* Arte composta que não bate mais com o editor: diz qual empresa e
+            oferece refazer. A Revisão barra a publicação enquanto isso. */}
+        {editingCompany && (editingArt === 'stale' || editingArt === 'missing') && !aiImageLoading[editingCompany.id] && (
+          <div role="alert" className="px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="flex-1 min-w-[200px]">
+              {editingCompany.label}: {artIssue(editingArt)}.
+            </span>
+            <button
+              onClick={() => requestImage(editingCompany)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-amber-200 font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              {editingArt === 'stale' ? 'Gerar imagem de novo' : 'Aplicar textos e logos'}
+            </button>
+          </div>
+        )}
+        {editingCompany && crossMentions[editingCompany.id] && (
+          <div role="alert" className="px-6 py-2.5 bg-red-50 border-b border-red-100 text-xs text-red-700 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1">{editingCompany.label}: {crossMentionIssue(crossMentions[editingCompany.id])}.</span>
+          </div>
+        )}
+        {isTemplate && citing.length > 0 && (
+          <div role="alert" className="px-6 py-2.5 bg-red-50 border-b border-red-100 text-xs text-red-700 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1">
+              {citing.map((c) => `${c.label} cita ${joinPt(crossMentions[c.id])}`).join('; ')}: cada anúncio só pode falar da própria empresa.
+            </span>
+          </div>
+        )}
+        {isTemplate && staleCompanies.length > 0 && (
+          <div role="alert" className="px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-900 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="flex-1">
+              Arte desatualizada em {joinPt(staleCompanies.map((c) => c.label))}: gere a imagem de novo antes de publicar.
+            </span>
           </div>
         )}
 
@@ -1404,7 +1477,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               )}
 
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">
-                Headline
+                Título
               </label>
               <div className="relative">
                 <input
@@ -1416,7 +1489,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   maxLength={200}
                   placeholder={isTemplate
                     ? 'Ex: Acelere seu ABM com {{company.name}}'
-                    : 'Headline específico (vazio = usa o template)'}
+                    : 'Título só desta empresa (vazio = usa o template)'}
                   className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
                 />
                 <span className="absolute top-2.5 right-2.5 text-[10px] text-slate-400">
@@ -1436,7 +1509,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 hover:text-[#E54A26]"
                 >
                   <Info className="w-3 h-3" />
-                  Brand Brief de {editingCompany.label}
+                  Perfil da empresa: {editingCompany.label}
                   {briefForEditing && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />}
                 </button>
               )}
@@ -1837,7 +1910,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     });
                   }}
                   disabled={!advertiserLogoUrl}
-                  title={advertiserLogoUrl ? undefined : 'Defina o logo no Brand Kit primeiro'}
+                  title={advertiserLogoUrl ? undefined : 'Defina o logo no passo Marca primeiro'}
                   className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Copy className="w-3 h-3" />
@@ -1872,7 +1945,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 label="Meu logo"
                 layer={imageCfg.layout.advertiserLogo}
                 disabled={!advertiserLogoUrl}
-                disabledHint="Defina o logo no Brand Kit primeiro"
+                disabledHint="Defina o logo no passo Marca primeiro"
                 selected={selectedLayer === 'advertiserLogo'}
                 onSelect={() => setSelectedLayer('advertiserLogo')}
                 onChange={(next) => setLayout({ ...imageCfg.layout, advertiserLogo: next })}
@@ -1975,7 +2048,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between z-10">
               <div className="flex items-center gap-2 text-xs text-slate-600">
                 <Layout className="w-3.5 h-3.5" />
-                <span className="font-medium">Preview LinkedIn</span>
+                <span className="font-medium">Prévia no LinkedIn</span>
                 {previewCompany && (
                   <span className="text-slate-400">— como aparece para <span className="font-semibold text-slate-700">{previewCompany.label}</span></span>
                 )}
@@ -1993,7 +2066,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       onClick={() => setPreviewMode('composed')}
                       className={`px-2 py-1 text-[10px] font-bold rounded ${previewMode === 'composed' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
                     >
-                      Composto
+                      {/* Arte antiga continua visível para comparar, mas dita como tal. */}
+                      {editingArt === 'stale' ? 'Composto (desatualizado)' : 'Composto'}
                     </button>
                   </div>
                 )}
@@ -2033,7 +2107,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                         <h3 className="font-semibold text-slate-900 text-sm">{advertiserName}</h3>
                         <span className="text-slate-500 text-xs">• 3º+</span>
                       </div>
-                      <p className="text-xs text-slate-500">{advertiserFollowers}</p>
+                      {advertiserFollowers && <p className="text-xs text-slate-500">{advertiserFollowers}</p>}
                       <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
                         <span>Promovido</span>
                         <Globe className="w-3 h-3" />
@@ -2083,7 +2157,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       <p className="text-xs uppercase font-semibold text-slate-500 mb-0.5">{previewDomain}</p>
                     )}
                     <p className="text-sm font-semibold text-slate-900 truncate">
-                      {resolved.headline || 'Headline aparecerá aqui'}
+                      {resolved.headline || 'O título aparecerá aqui'}
                     </p>
                   </div>
                   <button className="ml-3 shrink-0 px-4 py-1.5 border border-slate-400 rounded-full text-sm font-semibold text-slate-700">
@@ -2147,7 +2221,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
         <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Info className="w-4 h-4 text-[#FF5F39]" /> Brand Brief
+              <Info className="w-4 h-4 text-[#FF5F39]" /> Perfil da empresa
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">Sinais da marca <span className="font-semibold text-slate-700">{company.label}</span> usados pela IA na personalização.</p>
           </div>
@@ -2165,7 +2239,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
                 onClick={onGenerate}
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FF5F39] hover:bg-[#E54A26] text-white text-sm font-bold rounded-lg shadow-sm"
               >
-                <Wand2 className="w-4 h-4" /> Gerar Brand Brief
+                <Wand2 className="w-4 h-4" /> Gerar perfil da empresa
               </button>
             </div>
           )}
@@ -2183,7 +2257,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
               {draft.scrape_status === 'limited' && (
                 <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>Site bloqueou acesso — brief inferido apenas a partir do nome. Edite os campos abaixo para corrigir.</span>
+                  <span>O site bloqueou o acesso: o perfil foi inferido só a partir do nome. Edite os campos abaixo para corrigir.</span>
                 </div>
               )}
 

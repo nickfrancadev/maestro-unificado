@@ -50,10 +50,11 @@ import {
   createEmptyTargeting,
   resolveTargetingForAccount,
   PERSON_FACET_KEYS,
+  facetBlockedReason,
   FACET_URN_MAP,
   setAccountFacet,
 } from "./segmentation/targeting";
-import { smallAdSets, audienceScale, MIN_AUDIENCE } from "./segmentation/useAudienceCount";
+import { smallAdSets, unconfirmedAdSets, unconfirmedAudienceSentence, audienceScale, MIN_AUDIENCE } from "./segmentation/useAudienceCount";
 import type { AudienceState, AdSetAudience } from "./segmentation/useAudienceCount";
 import { plural } from "../labels";
 import { useLinkedInTypeahead } from "./segmentation/useLinkedInTypeahead";
@@ -84,6 +85,8 @@ export interface AudienceCheck {
   small: string[];
   /** A estimativa ainda está sendo calculada. */
   pending: boolean;
+  /** Ids das empresas cujo público o LinkedIn não confirmou (consulta falhou). */
+  unconfirmed?: string[];
 }
 
 interface SegmentationStepProps {
@@ -112,9 +115,15 @@ export function smallAudienceSentence(names: string[]): string {
   return `${joinNames(names)} ${names.length === 1 ? "está" : "estão"} abaixo de ${MIN_AUDIENCE} pessoas`;
 }
 
-/** Número curto do público de um conjunto, para a lista e o badge. */
-function audienceLabel(a: AdSetAudience): string {
-  return a.isPrivacyFloor ? `< ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR");
+/**
+ * Número curto do público de um conjunto, para a lista e o badge. Só número
+ * confirmado pelo LinkedIn vira número na tela; a estimativa local aparece
+ * como "…" enquanto calcula e como "não confirmado" se a consulta falhou.
+ */
+function audienceLabel(a: AdSetAudience, isLoading: boolean): string {
+  if (a.isPrivacyFloor) return `< ${MIN_AUDIENCE}`;
+  if (a.isFromApi) return a.count.toLocaleString("pt-BR");
+  return isLoading ? "…" : "não confirmado";
 }
 
 // ===============================
@@ -961,7 +970,7 @@ export function CompanyHeroCard({
 // FacetCard Component (regular)
 // ===============================
 
-interface FacetCardProps {
+export interface FacetCardProps {
   id: string;
   icon: React.ReactNode;
   label: string;
@@ -972,9 +981,11 @@ interface FacetCardProps {
   selection: FacetSelection;
   onSelectionChange: (sel: FacetSelection) => void;
   defaultOpen?: boolean;
+  /** Motivo para não aceitar novos itens (regra do LinkedIn). Itens já escolhidos ainda podem sair. */
+  blockedReason?: string | null;
 }
 
-function FacetCard({
+export function FacetCard({
   id,
   icon,
   label,
@@ -985,6 +996,7 @@ function FacetCard({
   selection,
   onSelectionChange,
   defaultOpen = false,
+  blockedReason = null,
 }: FacetCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultOpen);
   const [filterText, setFilterText] = useState("");
@@ -1009,6 +1021,7 @@ function FacetCard({
   // funcionando para o que já estiver lá), só não se alimenta mais daqui.
   const addItem = useCallback(
     (item: FacetItem) => {
+      if (blockedReason) return;
       const newSel = { ...selection };
       newSel.excluded = newSel.excluded.filter((i) => i.id !== item.id);
       if (!newSel.included.find((i) => i.id === item.id)) {
@@ -1016,7 +1029,7 @@ function FacetCard({
       }
       onSelectionChange(newSel);
     },
-    [selection, onSelectionChange],
+    [selection, onSelectionChange, blockedReason],
   );
 
   const removeItem = useCallback(
@@ -1108,6 +1121,12 @@ function FacetCard({
             <p className="text-xs text-slate-400 mt-0.5">
               {description}
             </p>
+            {blockedReason && (
+              <p className="text-xs text-amber-700 mt-0.5 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                {blockedReason}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1152,6 +1171,8 @@ function FacetCard({
                     typeahead.setIsOpen(true)
                   }
                   placeholder={`Buscar ${label.replace(/\s*\*$/, "").toLowerCase()}...`}
+                  disabled={!!blockedReason}
+                  aria-label={`Buscar ${label.replace(/\s*\*$/, "").toLowerCase()}`}
                   className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF5F39] focus:border-transparent bg-white"
                 />
               </div>
@@ -1227,13 +1248,16 @@ function FacetCard({
                     <button
                       key={opt.id}
                       onClick={() => toggleFixedItem(opt)}
+                      // Desabilitada só para ENTRAR: o que já está escolhido sai.
+                      disabled={!!blockedReason && !status}
+                      title={blockedReason && !status ? blockedReason : undefined}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
                         isInc
                           ? "bg-[#FF5F39] text-white border-[#FF5F39] shadow-sm"
                           : isExc
                             ? "bg-red-600 text-white border-red-600 shadow-sm"
                             : "bg-white text-slate-600 border-slate-200 hover:border-slate-400 hover:bg-slate-50"
-                      }`}
+                      } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200`}
                     >
                       {opt.label}
                     </button>
@@ -1296,7 +1320,7 @@ function FacetCard({
 // Audience Summary Panel
 // ===============================
 
-function AudienceSummary({
+export function AudienceSummary({
   data,
   audience,
 }: {
@@ -1317,9 +1341,19 @@ function AudienceSummary({
   // por conjunto, com o override da empresa ou o padrão.
   const small = smallAdSets(perAdSet);
   const smallNames = small.map((a) => a.label);
+  // Consulta que falhou: o número na tela seria só estimativa, e estimativa
+  // não decide o mínimo de 300. Pede para tentar de novo.
+  const unconfirmed = isLoading ? [] : unconfirmedAdSets(perAdSet);
 
   const getStatus = () => {
     if (!hasAnySelection || estimatedSize === null) return null;
+    if (unconfirmed.length > 0)
+      return {
+        color: "red",
+        icon: <AlertTriangle className="w-4 h-4" />,
+        label: `${unconfirmedAudienceSentence(unconfirmed.map((a) => a.label))}. Sem o número do LinkedIn não dá para saber se passa de ${MIN_AUDIENCE} pessoas.`,
+        retry: true,
+      };
     // Nunca sugerir "adicione empresas": cada empresa é um conjunto novo e não
     // aumenta o público das que já estão abaixo do mínimo.
     if (small.length > 0)
@@ -1334,7 +1368,7 @@ function AudienceSummary({
         icon: <AlertTriangle className="w-4 h-4" />,
         label: `Público abaixo de ${MIN_AUDIENCE} pessoas: o LinkedIn não aceita. Amplie a localização ou tire filtros de senioridade e função.`,
       };
-    if (perAdSet.length > 0 && perAdSet.every((a) => a.count >= 1000))
+    if (perAdSet.length > 0 && perAdSet.every((a) => a.isFromApi && a.count >= 1000))
       return {
         color: "green",
         icon: <CheckCircle2 className="w-4 h-4" />,
@@ -1408,7 +1442,18 @@ function AudienceSummary({
                 }`}
               >
                 {status.icon}
-                {status.label}
+                <span className="flex-1">
+                  {status.label}
+                  {"retry" in status && status.retry && (
+                    <button
+                      type="button"
+                      onClick={audience.retry}
+                      className="block mt-2 px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-700 font-semibold hover:bg-red-100"
+                    >
+                      Tentar de novo
+                    </button>
+                  )}
+                </span>
               </div>
             )}
             {perAdSet.length > 0 && (
@@ -1424,7 +1469,7 @@ function AudienceSummary({
                           {data.overrides[a.id] ? <span className="text-slate-400 font-normal"> · personalizada</span> : null}
                         </span>
                         <span className={`shrink-0 tabular-nums ${isSmall ? "text-red-700 font-semibold" : "text-slate-500"}`}>
-                          {a.isPrivacyFloor ? `menos de ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR")}
+                          {a.isPrivacyFloor ? `menos de ${MIN_AUDIENCE}` : audienceLabel(a, isLoading)}
                         </span>
                       </div>
                       <div className="relative h-1.5 rounded-full bg-gradient-to-r from-red-100 via-amber-100 to-green-100" aria-hidden>
@@ -1545,7 +1590,7 @@ function AudienceSummary({
 const DEFAULT_ADSET_ID = "__default__";
 
 // Per-facet display config for the detail panel. Order = display order.
-const PERSON_FACET_CONFIG: Array<{
+export const PERSON_FACET_CONFIG: Array<{
   key: keyof PersonTargeting;
   icon: React.ReactNode;
   label: string;
@@ -1588,7 +1633,7 @@ const PERSON_FACET_CONFIG: Array<{
   {
     key: "yearsOfExperience",
     icon: <Clock className="w-4 h-4" />,
-    label: "Anos de Experiência",
+    label: "Anos de experiência",
     description: "Tempo de experiência profissional",
     type: "fixed",
     options: EXPERIENCE_OPTIONS,
@@ -1771,7 +1816,7 @@ export function SegmentationStep({
                             : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {aud ? audienceLabel(aud) : "…"}
+                        {aud ? audienceLabel(aud, audience.isLoading) : "…"}
                       </span>
                     </button>
                     );
@@ -1854,6 +1899,7 @@ export function SegmentationStep({
                         updateActiveFacet(f.key, sel)
                       }
                       defaultOpen={f.key === "locations"}
+                      blockedReason={facetBlockedReason(activePerson, f.key)}
                     />
                   ))}
                 </div>

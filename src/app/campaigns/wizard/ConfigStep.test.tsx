@@ -71,3 +71,53 @@ describe('ConfigStep: gasto explícito', () => {
     expect(cpc.disabled).toBe(true);
   });
 });
+
+describe('ConfigStep: confirmação de gasto alto', () => {
+  it('abaixo do teto não pede confirmação', () => {
+    render(<Harness adSetCount={2} initial={{ budgetAmount: '10' }} />);
+    expect(screen.queryByLabelText('Confirmo o gasto estimado')).toBeNull();
+  });
+
+  it('acima de 1.000 por mês mostra a frase de gasto e exige marcar', () => {
+    render(<Harness adSetCount={2} initial={{ budgetAmount: '50' }} showErrors />);
+    const group = screen.getByRole('group', { name: 'Confirmação de gasto' });
+    expect(group.textContent).toContain('Você vai gastar até');
+    expect(group.textContent).toContain('por mês');
+    expect(screen.getByText('Marque a confirmação para continuar.')).toBeTruthy();
+    const box = screen.getByLabelText('Confirmo o gasto estimado') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect((screen.getByLabelText('Confirmo o gasto estimado') as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText('Marque a confirmação para continuar.')).toBeNull();
+  });
+
+  it('subir o orçamento depois de confirmar pede confirmação de novo', () => {
+    render(<Harness adSetCount={2} initial={{ budgetAmount: '50' }} />);
+    fireEvent.click(screen.getByLabelText('Confirmo o gasto estimado'));
+    fireEvent.change(screen.getByPlaceholderText('Ex.: 50'), { target: { value: '80' } });
+    expect((screen.getByLabelText('Confirmo o gasto estimado') as HTMLInputElement).checked).toBe(false);
+  });
+});
+
+describe('ConfigStep: orçamento total exige data de fim (F037)', () => {
+  it('a regra entra nos erros do passo e trava o avanço', async () => {
+    const { canProceedFromStep } = await import('./wizardGates');
+    const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '500', budgetType: 'total' as const, endDate: '' };
+    expect(configErrors(config).endDate).toBe('Com orçamento total, defina a data de encerramento.');
+    const state = { campaignConfig: config, targetingData: { companies: { included: [], excluded: [] } } as never, creativeData: {} as never };
+    expect(canProceedFromStep(1, state)).toBe(false);
+    expect(canProceedFromStep(1, { ...state, campaignConfig: { ...config, endDate: '2099-12-31' } })).toBe(true);
+  });
+
+  it('a mensagem aparece ao lado do campo de encerramento', () => {
+    render(<Harness showErrors initial={{ campaignName: 'Q4', budgetAmount: '500', budgetType: 'total', endDate: '' }} />);
+    const field = screen.getByLabelText('Encerramento');
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(field.parentElement!.parentElement!.textContent).toContain('Com orçamento total, defina a data de encerramento.');
+  });
+
+  it('com orçamento total, o campo diz que é obrigatório antes de qualquer erro', () => {
+    render(<Harness initial={{ budgetType: 'total' }} />);
+    expect(screen.getByText(/Obrigatória com orçamento total/)).toBeTruthy();
+  });
+});

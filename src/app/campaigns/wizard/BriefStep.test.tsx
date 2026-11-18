@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { BriefStep, createEmptyBriefDraft } from './BriefStep';
 import type { BriefDraft } from './BriefPane';
-import { saveClientVoice, extractBrandVoice, AiRequestError } from '@/lib/ai';
+import { saveClientVoice, extractBrandVoice, extractBrandBook, AiRequestError } from '@/lib/ai';
 import type { CreativeData } from './types';
 
 afterEach(cleanup);
@@ -16,6 +16,12 @@ vi.mock('@/lib/ai', async (orig) => ({
     product_service: '', audience_market: '', persona: '',
   }),
   saveClientVoice: vi.fn().mockResolvedValue(undefined),
+  // Extração real do brand book (PDF): o envio e a leitura moram no servidor.
+  extractBrandBook: vi.fn().mockResolvedValue({
+    voice: 'Voz do manual.', voice_examples: [], brand_context: 'Contexto do manual.',
+    brand_colors: { primary: '#123456', secondary: '', accent: '' },
+    color_candidates: [], scrape_status: 'ok', source_url: null, about_url: null,
+  }),
   // Extração real do site, com candidatas de cor vindas do CSS.
   extractBrandVoice: vi.fn().mockResolvedValue({
     voice: 'Técnico e didático.', voice_examples: [], brand_context: 'SaaS de ABM.',
@@ -107,13 +113,13 @@ describe('BriefStep', () => {
       const pdf = new File(['%PDF-'], 'manual-da-marca.pdf', { type: 'application/pdf' });
       fireEvent.drop(dropzone, { dataTransfer: { files: [pdf] } });
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-      expect(screen.getByText('Brand Book lido')).toBeTruthy();
+      expect(screen.getByText('Lido do manual da marca')).toBeTruthy();
       expect(screen.getByText('manual-da-marca.pdf')).toBeTruthy();
 
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: /salvar marca/i }));
       });
-      expect(screen.getByText('Brand Book lido')).toBeTruthy();
+      expect(screen.getByText('Lido do manual da marca')).toBeTruthy();
       expect(screen.getByText('manual-da-marca.pdf')).toBeTruthy();
     } finally {
       vi.useRealTimers();
@@ -130,7 +136,7 @@ describe('BriefStep — candidatas de cor sobrevivem ao save', () => {
     try {
       renderStep();
 
-      const url = screen.getByLabelText(/website da sua empresa/i);
+      const url = screen.getByLabelText(/site da sua empresa/i);
       fireEvent.change(url, { target: { value: 'https://exemplo.com' } });
       fireEvent.click(screen.getByRole('button', { name: /extrair com ia/i }));
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
@@ -174,7 +180,7 @@ describe('BriefStep — rascunho vive no pai', () => {
 // deixar lixo do modelo nos campos.
 describe('BriefStep — extração do site', () => {
   const extract = () => {
-    fireEvent.change(screen.getByLabelText(/website da sua empresa/i), { target: { value: 'https://exemplo.com' } });
+    fireEvent.change(screen.getByLabelText(/site da sua empresa/i), { target: { value: 'https://exemplo.com' } });
     fireEvent.click(screen.getByRole('button', { name: /extrair com ia/i }));
   };
 
@@ -209,5 +215,76 @@ describe('BriefStep — extração do site', () => {
     extract();
     await vi.waitFor(() => expect(screen.getByText(/Não encontramos as cores no site/)).toBeTruthy());
     expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Direto e técnico.');
+  });
+});
+
+describe('BriefStep — brand book em PDF', () => {
+  const dropPdf = () => {
+    const file = new File(['%PDF'], 'manual.pdf', { type: 'application/pdf' });
+    const zone = screen.getByText('Arraste o PDF ou clique para enviar').parentElement!;
+    fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+    return file;
+  };
+
+  it('envia o PDF de verdade e preenche a marca com o que o servidor extraiu', async () => {
+    vi.mocked(extractBrandBook).mockClear();
+    renderStep();
+    let file!: File;
+    await act(async () => { file = dropPdf(); });
+    expect(vi.mocked(extractBrandBook)).toHaveBeenCalledWith(file);
+    expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Voz do manual.');
+    expect(screen.getByText(/Não encontramos as cores no PDF|Marca extraída do PDF/)).toBeTruthy();
+    // Nada da fixture antiga.
+    expect(screen.queryByText(/mock/i)).toBeNull();
+  });
+
+  it('422 mostra a mensagem do servidor e mantém os campos', async () => {
+    vi.mocked(extractBrandBook).mockRejectedValueOnce(new AiRequestError('Não conseguimos extrair a marca de manual.pdf.', 422, ['cores']));
+    renderStep();
+    fireEvent.change(screen.getByLabelText(/tom de voz/i), { target: { value: 'Meu tom' } });
+    await act(async () => { dropPdf(); });
+    expect(screen.getByText('Não conseguimos extrair a marca de manual.pdf. Seus campos foram mantidos.')).toBeTruthy();
+    expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Meu tom');
+  });
+});
+
+describe('BriefStep — logo salvo no kit da marca', () => {
+  it('"Salvar marca" grava a URL e o caminho do logo no brandKit', async () => {
+    let saved: CreativeData | undefined;
+    function Host() {
+      const [data, setData] = useState<CreativeData>({ overrides: {} } as never);
+      const [draft, setDraft] = useState<BriefDraft>({
+        ...createEmptyBriefDraft(), voice: 'Direto', logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png',
+      });
+      saved = data;
+      return <BriefStep creativeData={data} onCreativeChange={setData} draft={draft} setDraft={setDraft} />;
+    }
+    render(<Host />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /salvar marca/i })); });
+    expect(saved?.brandKit).toMatchObject({ logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' });
+  });
+});
+
+describe('BriefStep — seguidores opcionais', () => {
+  it('"Salvar marca" grava o número digitado; vazio grava null', async () => {
+    let saved: CreativeData | undefined;
+    function Host({ followers }: { followers: string }) {
+      const [data, setData] = useState<CreativeData>({ overrides: {} } as never);
+      const [draft, setDraft] = useState<BriefDraft>({ ...createEmptyBriefDraft(), voice: 'Direto', followers });
+      saved = data;
+      return <BriefStep creativeData={data} onCreativeChange={setData} draft={draft} setDraft={setDraft} />;
+    }
+    const { unmount } = render(<Host followers="3.550" />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /salvar marca/i })); });
+    expect(saved?.brandKit.followers).toBe(3550);
+    unmount();
+    render(<Host followers="" />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /salvar marca/i })); });
+    expect(saved?.brandKit.followers).toBeNull();
+  });
+
+  it('o campo aparece como opcional', () => {
+    renderStep();
+    expect(screen.getByLabelText(/Seguidores no LinkedIn/)).toBeTruthy();
   });
 });

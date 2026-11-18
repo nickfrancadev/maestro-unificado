@@ -3,6 +3,9 @@ import type { TargetingData, AudienceCheck } from './SegmentationStep';
 import { buildLaunchPlan, validateLaunchPlan } from './launchPlan';
 import type { CampaignConfig, CreativeData } from './types';
 import { MIN_BUDGET_PER_AD_SET } from './types';
+import { isSpendConfirmed } from './spendGuard';
+import { hasTitleConflict } from './segmentation/targeting';
+import { budgetDateProblem } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
 
 export const WIZARD_STEPS = {
   config: 1,
@@ -44,7 +47,11 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
     // Nome da campanha e orçamento por conjunto acima do mínimo do LinkedIn.
     // Antes o aviso de mínimo aparecia em vermelho mas não travava o avanço.
     const budget = parseFloat(campaignConfig.budgetAmount);
-    return !!campaignConfig.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET;
+    // Gasto alto (acima do teto mensal) só avança confirmado, e orçamento
+    // total sem data de fim não avança (F037), igual ao servidor.
+    return !!campaignConfig.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET
+      && isSpendConfirmed(campaignConfig, targetingData.companies.included.length)
+      && !budgetDateProblem(campaignConfig);
   }
 
   if (step === WIZARD_STEPS.segmentation) {
@@ -52,10 +59,17 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
     const accounts = targetingData.companies.included;
     if (accounts.length === 0) return false;
     // Cada conjunto precisa de >=300 pessoas; o LinkedIn recusa abaixo disso.
-    if (state.audienceCheck && (state.audienceCheck.pending || state.audienceCheck.small.length > 0)) return false;
+    // E o número precisa ser confirmado pelo LinkedIn: a estimativa local não
+    // decide o mínimo, nem para travar nem para liberar.
+    if (state.audienceCheck && (
+      state.audienceCheck.pending
+      || state.audienceCheck.small.length > 0
+      || (state.audienceCheck.unconfirmed?.length ?? 0) > 0
+    )) return false;
+    // E nenhum conjunto pode combinar Cargo com Função/Senioridade (F045).
     return accounts.every((acc) => {
       const person = resolveTargetingForAccount(targetingData, acc.id);
-      return person.locations.included.length > 0;
+      return person.locations.included.length > 0 && !hasTitleConflict(person);
     });
   }
 

@@ -42,14 +42,18 @@ import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
 import { AccountDetailPanel } from './AccountDetailPanel';
 import { periodLabel } from './CampaignList';
+import { groupIdFromRoute, groupChildren, groupCampaignMeta, buildGroupBreakdown } from './groupAnalytics';
 
 
-const DATE_RANGES = [
+// "all" = vida da campanha, do início dela até hoje. É o padrão: 30 dias
+// fixos cortavam campanhas longas e enchiam de dias vazios as curtas.
+export const DATE_RANGES = [
+  { key: 'all', label: 'Vida da campanha' },
   { key: '7d', label: '7 dias' },
   { key: '30d', label: '30 dias' },
   { key: '90d', label: '90 dias' },
-  { key: 'all', label: 'Tudo' },
 ];
+export const DEFAULT_DATE_RANGE = 'all';
 
 function fmtTs(ts: number): string {
   const d = new Date(ts);
@@ -154,7 +158,9 @@ export function CampaignAnalytics() {
   const navigate = useNavigate();
   const { id: campaignId = '' } = useParams<{ id: string }>();
   const onBack = () => navigate('/campaigns');
-  const [dateRange, setDateRange] = useState('30d');
+  const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE);
+  /** Lista do LinkedIn consultada (achou ou não a campanha): libera a "vida da campanha". */
+  const [metaLoaded, setMetaLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CampaignAnalyticsFull | null>(null);
   const [campaign, setCampaign] = useState<LinkedInCampaign | null>(null);
@@ -168,6 +174,11 @@ export function CampaignAnalytics() {
   const [breakdownFailed, setBreakdownFailed] = useState(false);
   const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
   const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
+  // Campanha real vista como grupo (/campaigns/group-<id>): um conjunto por empresa.
+  const groupId = groupIdFromRoute(campaignId);
+  const [groupAdSets, setGroupAdSets] = useState<LinkedInCampaign[] | null>(null);
+  /** Empresas do grupo cujo número não carregou (ficam fora da soma). */
+  const [groupFailed, setGroupFailed] = useState<string[]>([]);
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -184,16 +195,29 @@ export function CampaignAnalytics() {
   useEffect(() => {
     if (isMockCampaign(campaignId)) {
       setCampaign(MOCK_CAMPAIGN);
+      setMetaLoaded(true);
       return;
     }
-    fetchLinkedInCampaigns().then(({ campaigns }) => {
+    fetchLinkedInCampaigns().then(({ campaigns, error }) => {
+      setMetaLoaded(true);
+      if (groupId) {
+        const children = groupChildren(campaigns, groupId);
+        setGroupAdSets(error ? [] : children);
+        if (children.length) setCampaign(groupCampaignMeta(groupId, children));
+        return;
+      }
       const found = campaigns.find(c => c.id === campaignId);
       if (found) setCampaign(found);
     });
-  }, [campaignId]);
+  }, [campaignId, groupId]);
 
   // Load analytics
   const loadAnalytics = useCallback(async () => {
+    // Grupo: espera a lista dizer quais conjuntos são dele (segue carregando).
+    if (groupId && groupAdSets === null) return;
+    // Vida da campanha precisa da data de início: espera a lista responder.
+    if (dateRange === 'all' && !metaLoaded) return;
+    const since = campaign?.runSchedule?.start ?? null;
     setLoading(true);
     setLoadError(null);
     try {
@@ -210,11 +234,33 @@ export function CampaignAnalytics() {
           setByAccount(null);
           setBreakdownFailed(true);
         }
+      } else if (groupId) {
+        // Grupo real: cada conjunto é uma empresa. Busca os números de cada
+        // um e monta a mesma tabela por empresa da demonstração.
+        if (!groupAdSets || groupAdSets.length === 0) {
+          setByAccount(null);
+          setData(null);
+          setLoadError('Não foi possível achar as empresas desta campanha no LinkedIn.');
+          return;
+        }
+        const results = await Promise.all(groupAdSets.map(c =>
+          fetchCampaignAnalyticsFull(c.id, dateRange, c.runSchedule?.start ?? since).catch(() => null)));
+        const breakdown = buildGroupBreakdown(groupId, groupAdSets, results, 'BRL');
+        if (!breakdown) {
+          setByAccount(null);
+          setData(null);
+          setLoadError('Não foi possível carregar os números das empresas.');
+          return;
+        }
+        setByAccount(breakdown.byAccount);
+        setGroupFailed(breakdown.failed);
+        setBreakdownFailed(false);
+        setData(aggregateAccounts(breakdown.byAccount.accounts, breakdown.byAccount.currency));
       } else {
-        // Cada conjunto real já é uma empresa: não há divisão a buscar.
+        // Um conjunto avulso já é uma empresa: não há divisão a buscar.
         setByAccount(null);
         setBreakdownFailed(false);
-        const result = await fetchCampaignAnalyticsFull(campaignId, dateRange);
+        const result = await fetchCampaignAnalyticsFull(campaignId, dateRange, since);
         setData(result);
       }
     } catch (err: any) {
@@ -223,7 +269,7 @@ export function CampaignAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [campaignId, dateRange]);
+  }, [campaignId, dateRange, groupId, groupAdSets, metaLoaded, campaign?.runSchedule?.start]);
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
 
@@ -269,7 +315,7 @@ export function CampaignAnalytics() {
     : campaign?.totalBudget
     ? `${fmtCurrency(parseFloat(campaign.totalBudget.amount), campaign.totalBudget.currency)} total`
     : null;
-  const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
+  const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || 'Vida da campanha';
 
   const accounts = byAccount?.accounts ?? [];
   // Sem filtro de seleção: o agregado considera sempre TODAS as empresas.
@@ -322,11 +368,17 @@ export function CampaignAnalytics() {
       }, 250);
       return () => clearTimeout(t);
     }
-    fetchCampaignComments(campaignId).then(d => {
+    // No grupo, os comentários são do anúncio da empresa em foco.
+    const commentsOf = groupId ? focusedAccount?.linkedinCampaignId : campaignId;
+    if (!commentsOf) {
+      setCommentsLoading(groupId ? groupAdSets === null : false);
+      return;
+    }
+    fetchCampaignComments(commentsOf).then(d => {
       setCommentsData(d);
       setCommentsLoading(false);
     }).catch(() => setCommentsLoading(false));
-  }, [campaignId, focusedAccount?.accountId]);
+  }, [campaignId, focusedAccount?.accountId, groupId, groupAdSets]);
 
   // View do dashboard: agregado de TODAS as empresas quando há dados por empresa.
   const d: CampaignAnalyticsFull | null = React.useMemo(() => {
@@ -376,7 +428,7 @@ export function CampaignAnalytics() {
               {selectedRangeLabel}
             </button>
             {dateDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1 w-36">
+              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1 w-44">
                 {DATE_RANGES.map(r => (
                   <button
                     key={r.key}
@@ -389,7 +441,8 @@ export function CampaignAnalytics() {
               </div>
             )}
           </div>
-          {!isMockCampaign(campaignId) && (
+          {/* No grupo, excluir é por empresa, na lista. */}
+          {!isMockCampaign(campaignId) && !groupId && (
             <button
               onClick={() => setShowDeleteConfirm(true)}
               className="flex items-center gap-2 px-3 py-2 bg-white border border-red-200 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 shadow-sm transition-colors"
@@ -458,6 +511,13 @@ export function CampaignAnalytics() {
               rangeLabel={dateRange === 'all' ? null : selectedRangeLabel}
               onShowAll={dateRange === 'all' ? null : () => setDateRange('all')}
             />
+          )}
+
+          {groupFailed.length > 0 && hasNumbers && (
+            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" role="status">
+              <Info className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+              Sem números de {groupFailed.join(', ')} agora. Os totais somam só as outras empresas; atualize para tentar de novo.
+            </div>
           )}
 
           {view.showBreakdownError && (

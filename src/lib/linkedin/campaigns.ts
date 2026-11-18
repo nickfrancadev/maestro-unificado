@@ -6,6 +6,7 @@
 import { SERVER_BASE, headers } from './client';
 
 export type CampaignAction =
+  | 'validate-launch'
   | 'create-campaign-group'
   | 'create-campaign'
   | 'upload-image'
@@ -25,6 +26,15 @@ export interface CampaignStepResult {
   linkedin_campaign_id?: string;
   asset_urn?: string;
   creative_id?: string;
+  /** Ativar: status real depois da mudança (ACTIVE, PAUSED…), já considerando o grupo. */
+  status?: string;
+  group_status?: string;
+  /** validate-launch: o que impede, por empresa. */
+  problems?: { company_name: string; messages: string[] }[];
+  /** Empresas que vão com a localização padrão (Brasil). */
+  default_location?: string[];
+  /** Categoria do erro traduzido pelo servidor ("reconnect" = reconectar em Integrações). */
+  error_kind?: string;
 }
 
 // Generic dispatcher — every action posts to the same endpoint.
@@ -43,14 +53,39 @@ async function campaignAction(
 
     if (!response.ok) {
       console.error(`[LinkedIn] ${action} failed (${response.status}):`, data);
-      return { success: false, error: data.error || `HTTP ${response.status}` };
+      return { ...data, success: false, error: data.error || `HTTP ${response.status}` };
     }
 
     return { success: true, ...data };
   } catch (err: any) {
     console.error(`[LinkedIn] ${action} network error:`, err);
-    return { success: false, error: err.message };
+    // Nunca o texto técnico do navegador ("Failed to fetch").
+    return { success: false, error: 'Sem conexão com o servidor. Confira a internet e tente de novo.' };
   }
+}
+
+// --- Action 0: Validate Launch ---
+// Confere todas as empresas no servidor ANTES de criar qualquer coisa no
+// LinkedIn (público mínimo, datas, criativo). 422 = `problems` por empresa.
+export interface ValidateLaunchAdSet {
+  company_name: string;
+  targeting_criteria: any;
+  headline?: string;
+  description?: string;
+  image_url?: string;
+  image_path?: string;
+  landing_page_url?: string;
+}
+
+export interface ValidateLaunchParams {
+  ad_sets: ValidateLaunchAdSet[];
+  budget_type?: 'daily' | 'total';
+  start_date?: string;
+  end_date?: string;
+}
+
+export async function validateLaunch(params: ValidateLaunchParams): Promise<CampaignStepResult> {
+  return campaignAction('validate-launch', params);
 }
 
 // --- Action 1: Create Campaign Group ---
@@ -62,6 +97,8 @@ export interface CreateCampaignGroupParams {
   budget_amount?: number;
   currency?: string;
   start_date?: string;
+  /** Obrigatória com orçamento total (o servidor recusa sem ela). */
+  end_date?: string;
 }
 
 export async function createCampaignGroup(
@@ -89,6 +126,8 @@ export interface CreateCampaignParams {
   end_date?: string;
   auto_activate?: boolean;
   bidding_strategy?: string;
+  /** Nome da empresa, para a mensagem do servidor (ex.: público abaixo de 300). */
+  company_name?: string;
 }
 
 export async function createCampaign(params: CreateCampaignParams): Promise<CampaignStepResult> {
@@ -98,7 +137,9 @@ export async function createCampaign(params: CreateCampaignParams): Promise<Camp
 // --- Action 3a: Upload Image ---
 export interface UploadImageParams {
   campaign_id: string;
-  image_url: string;
+  image_url?: string;
+  /** Caminho no Storage: o servidor baixa por aqui (a URL assinada vence). */
+  image_path?: string;
   ad_account_id: string;
 }
 
@@ -118,6 +159,7 @@ export interface CreateCreativeParams {
   description?: string;
   cta?: string;
   landing_page_url?: string;
+  company_name?: string;
 }
 
 export async function createCreative(params: CreateCreativeParams): Promise<CampaignStepResult> {
@@ -128,6 +170,8 @@ export async function createCreative(params: CreateCreativeParams): Promise<Camp
 export interface ActivateCampaignParams {
   campaign_id: string;
   linkedin_campaign_id: string;
+  /** Grupo do conjunto (id ou URN). O servidor ativa o grupo antes: ele nasce pausado. */
+  campaign_group_id?: string | null;
 }
 
 export async function activateCampaign(
@@ -181,11 +225,13 @@ export interface CampaignPipelineParams {
   bidding_strategy?: string;
   bid_amount?: number;
   image_url?: string;
+  image_path?: string;
   headline?: string;
   description?: string;
   cta?: string;
   landing_page_url?: string;
   auto_activate?: boolean;
+  company_name?: string;
   // If provided, skip Campaign Group creation and reuse this ID.
   existing_campaign_group_id?: string;
 }
@@ -207,7 +253,8 @@ export async function runCampaignPipeline(
     { action: 'create-campaign', label: 'Criar Campanha com Targeting', status: 'pending' },
   ];
 
-  if (params.image_url) {
+  const hasImage = !!(params.image_url || params.image_path);
+  if (hasImage) {
     steps.push({ action: 'upload-image', label: 'Upload de Imagem', status: 'pending' });
     steps.push({ action: 'create-creative', label: 'Criar Criativo', status: 'pending' });
   }
@@ -233,6 +280,7 @@ export async function runCampaignPipeline(
       budget_amount: params.group_budget_amount ?? params.budget_amount,
       currency: params.currency,
       start_date: params.start_date,
+      end_date: params.end_date,
     });
     steps[0].result = cgResult;
     steps[0].status = cgResult.success ? 'success' : 'error';
@@ -265,6 +313,7 @@ export async function runCampaignPipeline(
     end_date: params.end_date,
     auto_activate: params.auto_activate,
     bidding_strategy: params.bidding_strategy,
+    company_name: params.company_name,
   });
   steps[1].result = campResult;
   steps[1].status = campResult.success ? 'success' : 'error';
@@ -274,12 +323,13 @@ export async function runCampaignPipeline(
   let stepIdx = 2;
 
   // Step 3a: Upload Image (optional)
-  if (params.image_url) {
+  if (hasImage) {
     steps[stepIdx].status = 'running';
     notify();
     const imgResult = await uploadCreativeImage({
       campaign_id: campaignId,
       image_url: params.image_url,
+      image_path: params.image_path,
       ad_account_id: params.ad_account_id,
     });
     steps[stepIdx].result = imgResult;
@@ -300,6 +350,7 @@ export async function runCampaignPipeline(
       description: params.description,
       cta: params.cta,
       landing_page_url: params.landing_page_url,
+      company_name: params.company_name,
     });
     steps[stepIdx].result = crResult;
     steps[stepIdx].status = crResult.success ? 'success' : 'error';
@@ -315,6 +366,7 @@ export async function runCampaignPipeline(
     const actResult = await activateCampaign({
       campaign_id: campaignId,
       linkedin_campaign_id: campResult.linkedin_campaign_id!,
+      campaign_group_id: resolvedGroupId,
     });
     steps[stepIdx].result = actResult;
     steps[stepIdx].status = actResult.success ? 'success' : 'error';
@@ -323,4 +375,56 @@ export async function runCampaignPipeline(
   }
 
   return { success: true, steps };
+}
+
+// --- Editar campanha publicada (grupo = uma campanha por empresa) ---
+// Os dados vêm do LinkedIn (GET do grupo + campanhas do grupo), não do KV do
+// publish: ver o comentário da rota edit-data no servidor.
+
+import type { UpdateRequest } from '../../../supabase/functions/make-server-a4d5bbe0/campaignEditGuards';
+import type { EditDataResponse, UpdateResponse } from '../../app/campaigns/edit/publishedEdit';
+
+export type { UpdateRequest as PublishedCampaignsUpdate };
+
+export interface FetchGroupForEditResult {
+  ok: boolean;
+  /** HTTP do servidor; 0 = erro de rede. 404 = grupo não existe nesta conta. */
+  status: number;
+  data?: EditDataResponse;
+  error?: string;
+}
+
+export async function fetchPublishedGroupForEdit(groupId: string): Promise<FetchGroupForEditResult> {
+  try {
+    const response = await fetch(
+      `${SERVER_BASE}/linkedin/campaign-groups/${encodeURIComponent(groupId)}/edit-data`,
+      { headers: headers() },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, status: response.status, error: data.error || `HTTP ${response.status}` };
+    return { ok: true, status: response.status, data };
+  } catch (err: any) {
+    return { ok: false, status: 0, error: err?.message || 'erro de rede' };
+  }
+}
+
+/**
+ * Salva as mudanças no LinkedIn. Nunca lança: erro de validação (422), de rede
+ * ou do LinkedIn volta em `error`, e o resultado por empresa em `results`.
+ */
+export async function updatePublishedCampaigns(req: UpdateRequest): Promise<UpdateResponse> {
+  try {
+    const response = await fetch(`${SERVER_BASE}/linkedin/campaigns/update`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(req),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok && !data.results) {
+      return { success: false, error: data.error || `HTTP ${response.status}` };
+    }
+    return data as UpdateResponse;
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'erro de rede' };
+  }
 }

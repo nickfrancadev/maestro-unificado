@@ -228,7 +228,7 @@ export function Integrations() {
                       <>
                         <div className="flex items-center gap-2 text-xs text-green-700">
                           <Wallet className="w-3.5 h-3.5" />
-                          <span className="font-semibold">Ad Account: {integration.selected_ad_account_name}</span>
+                          <span className="font-semibold">Conta de anúncios: {integration.selected_ad_account_name}</span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-green-600">
                           <Key className="w-3.5 h-3.5" />

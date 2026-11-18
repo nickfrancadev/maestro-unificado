@@ -17,14 +17,20 @@ import { CreativeStep } from './wizard/CreativeStep';
 import { OrchestrationStep } from './wizard/OrchestrationStep';
 import { SegmentationStep, createEmptyTargeting, smallAudienceSentence } from './wizard/SegmentationStep';
 import { canProceedFromStep, creativeIssues } from './wizard/wizardGates';
+import { isSpendConfirmed } from './wizard/spendGuard';
+import { stepFrame, showAllStepLabels, STEP_GUTTER, STEP_CONTENT_PADDING, STEP_SCROLLBAR_GUTTER } from './wizard/stepLayout';
+import { hasTitleConflict, TITLE_CONFLICT_REASON, resolveTargetingForAccount } from './wizard/segmentation/targeting';
 import type { TargetingData } from './wizard/SegmentationStep';
-import { useAudienceCount, audienceCheckFor } from './wizard/segmentation/useAudienceCount';
+import { useAudienceCount, audienceCheckFor, unconfirmedAudienceSentence } from './wizard/segmentation/useAudienceCount';
 import { TargetAccount, CampaignConfig, createDefaultCampaignConfig, MIN_BUDGET_PER_AD_SET } from './wizard/types';
 import { CreativeData, createDefaultCreativeData } from './wizard/types';
 import type { BriefDraft } from './wizard/BriefPane';
 import { saveDraft, getDraft, deleteDraft, newDraftId, isDraftId } from './drafts';
 import type { CampaignDraft, WizardDraftState } from './drafts';
+import type { LaunchRecord } from './wizard/launchProgress';
+import { budgetDateProblem } from '../../../supabase/functions/make-server-a4d5bbe0/publishRules';
 import { getLinkedInStatus } from '@/lib/linkedin';
+import { refreshCreativeImages, withoutSignedTokens } from '@/lib/linkedin/creativeImages';
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 import { toast } from 'sonner';
 
@@ -44,7 +50,8 @@ function fmtTime(d: Date): string {
 /** O que o rascunho guarda, sem o passo: base da comparação "tem alteração não salva?". */
 function snapshotOf(s: Omit<WizardDraftState, 'step'>): string {
   const { campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts } = s;
-  return JSON.stringify({ campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts });
+  // Sem o token da URL assinada: renovar a imagem não é alteração do usuário.
+  return withoutSignedTokens(JSON.stringify({ campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts }));
 }
 
 export function CampaignWizard() {
@@ -80,6 +87,8 @@ export function CampaignWizard() {
   const [briefDraft, setBriefDraft] = useState<BriefDraft>(() => initial?.briefDraft ?? createEmptyBriefDraft());
   const [selectedAccounts, setSelectedAccounts] = useState<TargetAccount[]>(() => initial?.selectedAccounts ?? []);
   const [targetingData, setTargetingData] = useState<TargetingData>(() => initial?.targetingData ?? createEmptyTargeting());
+  // O que uma publicação anterior deste rascunho já criou no LinkedIn.
+  const [launchRecord, setLaunchRecord] = useState<LaunchRecord | null>(() => initial?.launch ?? null);
 
   // Público por conjunto. Calculado aqui, e não só na Segmentação, porque
   // trava o avanço do passo 2 e a publicação na Revisão, inclusive quando o
@@ -115,6 +124,17 @@ export function CampaignWizard() {
     if (boot.missing) toast.error('Rascunho não encontrado neste navegador. Começando uma campanha nova.');
   }, [boot.missing]);
 
+  // Imagens do rascunho: a URL assinada gravada vence em 2 h. Ao abrir um
+  // rascunho, pede URLs novas a partir do caminho no Storage.
+  const refreshDraftImages = useCallback((d: CampaignDraft) => {
+    refreshCreativeImages(d.state.creativeData, d.imagePaths).then((fresh) => {
+      if (fresh !== d.state.creativeData) setCreativeData((cur) => (cur === d.state.creativeData ? fresh : cur));
+    });
+  }, []);
+  useEffect(() => {
+    if (boot.draft) refreshDraftImages(boot.draft);
+  }, [boot.draft, refreshDraftImages]);
+
   function hydrate(d: CampaignDraft) {
     const s = d.state;
     setDraftId(d.id);
@@ -126,8 +146,10 @@ export function CampaignWizard() {
     setSelectedAccounts(s.selectedAccounts);
     setCurrentStep(s.step);
     setMaxStepReached(s.step);
+    setLaunchRecord(s.launch ?? null);
     setSavedSnapshot(snapshotOf(s));
     setLastSavedAt(new Date(d.savedAt));
+    refreshDraftImages(d);
   }
 
   // Outro rascunho aberto com o wizard já montado (o React Router reaproveita
@@ -143,7 +165,7 @@ export function CampaignWizard() {
   const persist = (step: number): boolean => {
     try {
       const saved = saveDraft(draftId, {
-        campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, step,
+        campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, step, launch: launchRecord,
       });
       setSavedSnapshot(snapshot);
       setLastSavedAt(new Date(saved.savedAt));
@@ -155,6 +177,20 @@ export function CampaignWizard() {
       return false;
     }
   };
+
+  // A Revisão avisa a cada passo criado no LinkedIn; o rascunho grava na hora
+  // (mesmo sem "Salvar rascunho"), para que publicar de novo, inclusive depois
+  // de recarregar a página, continue de onde parou sem duplicar.
+  const handleLaunchRecord = useCallback((record: LaunchRecord) => {
+    setLaunchRecord(record);
+    try {
+      saveDraft(draftId, {
+        campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, step: currentStep, launch: record,
+      });
+    } catch {
+      // Sem armazenamento: vale enquanto a tela estiver aberta.
+    }
+  }, [draftId, campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, currentStep]);
 
   const canProceedFrom = (step: number) =>
     canProceedFromStep(step, { campaignConfig, targetingData, creativeData, audienceCheck });
@@ -283,6 +319,11 @@ export function CampaignWizard() {
       if (!(parseFloat(campaignConfig.budgetAmount) >= MIN_BUDGET_PER_AD_SET)) {
         return `Defina o orçamento por empresa (mínimo ${MIN_BUDGET_PER_AD_SET})`;
       }
+      if (!isSpendConfirmed(campaignConfig, targetingData.companies.included.length)) {
+        return 'Confirme o gasto estimado';
+      }
+      const dateProblem = budgetDateProblem(campaignConfig);
+      if (dateProblem) return dateProblem;
       return 'Campanha configurada';
     }
     if (currentStep === 2) {
@@ -291,10 +332,16 @@ export function CampaignWizard() {
       const custom = Object.keys(targetingData.overrides).length;
       if (n === 0) return 'Escolha ao menos 1 empresa-alvo';
       if (audienceCheck.pending) return 'Calculando o público de cada empresa…';
+      if (audienceCheck.unconfirmed.length > 0) {
+        const names = companies.filter((c) => audienceCheck.unconfirmed.includes(c.id)).map((c) => c.label);
+        return `${unconfirmedAudienceSentence(names)}: tente de novo`;
+      }
       if (audienceCheck.small.length > 0) {
         const names = companies.filter((c) => audienceCheck.small.includes(c.id)).map((c) => c.label);
         return `${smallAudienceSentence(names)}: amplie a localização ou tire filtros`;
       }
+      const conflict = companies.find((c) => hasTitleConflict(resolveTargetingForAccount(targetingData, c.id)));
+      if (conflict) return `${conflict.label}: ${TITLE_CONFLICT_REASON}`;
       if (!canProceed()) return 'Defina a localização de cada empresa';
       return `${n} conjunto${n !== 1 ? 's' : ''} de anúncio${custom > 0 ? ` · ${custom} personalizado${custom !== 1 ? 's' : ''}` : ''}`;
     }
@@ -327,11 +374,15 @@ export function CampaignWizard() {
     : isDirty ? 'Ainda não salvo' : '';
   const stepSummary = getStepSummary();
   const nextEnabled = canProceed();
+  // Uma moldura por passo, a MESMA no topo, no conteúdo e no rodapé (ver stepLayout.ts).
+  const { frameClass, chromeClass, width } = stepFrame(currentStep);
+  const allLabels = showAllStepLabels(currentStep);
 
   return (
     <div ref={wizardRootRef} className="flex flex-col h-full bg-slate-50">
       {/* Wizard Header */}
-      <div className="bg-white border-b border-slate-200 px-8 py-4 flex items-center gap-6 shadow-sm">
+      <div className={`bg-white border-b border-slate-200 shadow-sm overflow-hidden ${STEP_SCROLLBAR_GUTTER} ${STEP_GUTTER} py-4`}>
+      <div data-frame="header" className={`${chromeClass} flex items-center gap-6`}>
         {/* O título encolhe com reticências (nome inteiro no title) e nunca
             invade o stepper. */}
         <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -382,7 +433,7 @@ export function CampaignWizard() {
                   >
                     {isDone ? <Check className="w-3.5 h-3.5" /> : step.id}
                   </div>
-                  <span className={`hidden xl:block text-xs ${isCurrent ? 'font-semibold' : 'font-medium'}`}>{step.label}</span>
+                  <span className={`${allLabels ? 'hidden xl:block' : isCurrent ? 'hidden sm:block' : 'sr-only'} text-xs ${isCurrent ? 'font-semibold' : 'font-medium'}`}>{step.label}</span>
                 </button>
                 {idx < STEPS.length - 1 && (
                   <div className={`w-6 h-0.5 ${currentStep > idx + 1 ? 'bg-[#FF5F39]' : 'bg-slate-200'}`} />
@@ -404,13 +455,13 @@ export function CampaignWizard() {
           </button>
         </div>
       </div>
+      </div>
 
       {/* Step Content */}
-      <div className="flex-1 overflow-y-auto p-8">
-        {/* Criativos (4) é um workspace de 3 colunas e ocupa a largura toda; a
-            Revisão (5) tem uma coluna fixa à direita e precisa de mais espaço
-            que os formulários dos outros passos. */}
-        <div className={currentStep === 4 ? 'h-full' : currentStep === 5 ? 'max-w-7xl mx-auto' : 'max-w-6xl mx-auto h-full'}>
+      <div className={`flex-1 overflow-y-auto ${STEP_SCROLLBAR_GUTTER} ${STEP_CONTENT_PADDING}`}>
+        {/* Largura por passo em stepLayout.ts: 768 px nos formulários, 1152 na
+            Segmentação, 1280 na Revisão e largura total no Criativo. */}
+        <div data-frame="content" className={`${frameClass} ${width === 'review' ? '' : 'h-full'}`}>
           {currentStep === 1 && (
             <ConfigStep
               config={campaignConfig}
@@ -444,6 +495,7 @@ export function CampaignWizard() {
               onCreativeChange={setCreativeData}
               onEditBrand={() => goToStep(3)}
               initialTarget={creativeFocus}
+              objective={campaignConfig.objective}
             />
           )}
           {currentStep === 5 && (
@@ -457,13 +509,17 @@ export function CampaignWizard() {
               creativeData={creativeData}
               audience={audience}
               onGoToStep={handleGoToStepFromReview}
+              draftId={draftId}
+              launchRecord={launchRecord}
+              onLaunchRecord={handleLaunchRecord}
             />
           )}
         </div>
       </div>
 
       {/* Footer Actions */}
-      <div className="bg-white border-t border-slate-200 px-8 py-4 flex justify-between items-center">
+      <div className={`bg-white border-t border-slate-200 overflow-hidden ${STEP_SCROLLBAR_GUTTER} ${STEP_GUTTER} py-4`}>
+      <div data-frame="footer" className={`${chromeClass} flex justify-between items-center gap-3`}>
         <button
           onClick={handleBack}
           disabled={currentStep === 1}
@@ -478,7 +534,7 @@ export function CampaignWizard() {
 
         <div className="flex items-center gap-3">
           {stepSummary && (
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-slate-500 text-right min-w-0">
               {stepSummary}
             </span>
           )}
@@ -498,6 +554,7 @@ export function CampaignWizard() {
             <span className="text-xs text-slate-400">Publique pela coluna da direita, depois de conferir o checklist.</span>
           )}
         </div>
+      </div>
       </div>
 
       {/* Sair com alteração não salva: confirmação na tela, não window.confirm */}

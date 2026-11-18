@@ -50,6 +50,8 @@ export interface LinkedInCampaign {
    *  publica um grupo por lançamento e um conjunto por empresa dentro dele;
    *  a lista agrupa por aqui. Ausente em respostas antigas. */
   campaignGroup?: string | null;
+  /** Status do grupo no LinkedIn. Conjunto ativo em grupo pausado vem como "Paused" em `status`. */
+  campaignGroupStatus?: string | null;
 }
 
 export interface CampaignAnalyticsSummary {
@@ -141,25 +143,45 @@ export interface CampaignCommentsResponse {
   error?: string;
 }
 
-export async function fetchLinkedInCampaigns(): Promise<{
+export interface LinkedInCampaignList {
   campaigns: LinkedInCampaign[];
   currency: string;
   /** Nome da conta de anúncios selecionada, para a lista não depender do status. */
   adAccountName?: string | null;
-}> {
+  /**
+   * Preenchido quando a lista NÃO carregou (HTTP de erro, rede, ou 200 com
+   * `error` do LinkedIn). A tela mostra o erro com "Tentar de novo", nunca
+   * "nenhuma campanha": lista vazia só quando a conta de fato não tem campanha.
+   */
+  error?: string;
+}
+
+const LIST_FALLBACK_ERROR = 'Não foi possível carregar as campanhas do LinkedIn.';
+
+/** Interpreta a resposta de /linkedin/campaigns-list. Puro para ser testado. */
+export function parseCampaignListResponse(httpOk: boolean, status: number, body: any): LinkedInCampaignList {
+  const currency = body?.currency || 'USD';
+  if (!httpOk) {
+    return { campaigns: [], currency, error: body?.error || `${LIST_FALLBACK_ERROR} (HTTP ${status})` };
+  }
+  if (!body || typeof body !== 'object' || body.error || !Array.isArray(body.campaigns)) {
+    return { campaigns: [], currency, error: body?.error || LIST_FALLBACK_ERROR };
+  }
+  return { campaigns: body.campaigns, currency, adAccountName: body.adAccountName ?? null };
+}
+
+export async function fetchLinkedInCampaigns(): Promise<LinkedInCampaignList> {
   try {
     const response = await fetch(`${SERVER_BASE}/linkedin/campaigns-list`, {
       headers: headers(),
     });
-    if (!response.ok) {
-      const data = await response.json();
-      console.warn('[LinkedIn Campaigns] Fetch failed:', data);
-      return { campaigns: [], currency: 'USD' };
-    }
-    return await response.json();
+    const body = await response.json().catch(() => null);
+    const result = parseCampaignListResponse(response.ok, response.status, body);
+    if (result.error) console.warn('[LinkedIn Campaigns] Fetch failed:', result.error);
+    return result;
   } catch (err: any) {
     console.error('[LinkedIn Campaigns] Fetch erro:', err);
-    return { campaigns: [], currency: 'USD' };
+    return { campaigns: [], currency: 'USD', error: 'Sem conexão com o servidor. Confira a internet e tente de novo.' };
   }
 }
 
@@ -222,13 +244,21 @@ const EMPTY_FULL: CampaignAnalyticsFull = {
   timeSeries: [], delta: {}, currency: 'USD',
 };
 
+/** Query do analytics: "all" = vida da campanha, a partir do início dela. */
+export function analyticsQuery(campaignId: string, dateRange: string, campaignStart?: number | null): string {
+  const q = new URLSearchParams({ campaignId, dateRange });
+  if (dateRange === 'all' && campaignStart) q.set('start', String(campaignStart));
+  return q.toString();
+}
+
 export async function fetchCampaignAnalyticsFull(
   campaignId: string,
-  dateRange: string = '30d',
+  dateRange: string = 'all',
+  campaignStart?: number | null,
 ): Promise<CampaignAnalyticsFull> {
   try {
     const response = await fetch(
-      `${SERVER_BASE}/linkedin/campaign-analytics-full?campaignId=${campaignId}&dateRange=${dateRange}`,
+      `${SERVER_BASE}/linkedin/campaign-analytics-full?${analyticsQuery(campaignId, dateRange, campaignStart)}`,
       { headers: headers() },
     );
     // Falha volta com `error`: sem ele, a tela confundiria "não carregou" com

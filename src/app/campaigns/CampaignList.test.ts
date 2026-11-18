@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { budgetUsage, groupCampaigns, summarizeGroup, aggregateStatus, splitAdSetName, periodLabel } from './CampaignList';
+import { budgetUsage, groupCampaigns, summarizeGroup, aggregateStatus, splitAdSetName, periodLabel, editGroupIdFor } from './CampaignList';
 import type { CampaignRow } from './CampaignList';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -144,5 +144,17 @@ describe('periodLabel', () => {
     expect(periodLabel(start, end)).toBe('05/11/2026 – 05/12/2026');
     expect(periodLabel(start, null)).toBe('Desde 05/11/2026 · contínua');
     expect(periodLabel(null, null)).toBe('Contínua');
+  });
+});
+
+describe('editGroupIdFor: quem abre a tela de editar campanha publicada', () => {
+  const child = (status: string) => ({ status } as any);
+  it('grupo do LinkedIn com empresa no ar: id do grupo (sem a URN)', () => {
+    expect(editGroupIdFor({ key: 'group:urn:li:sponsoredCampaignGroup:900', children: [child('Active')] })).toBe('900');
+    expect(editGroupIdFor({ key: 'group:urn:li:sponsoredCampaignGroup:mock-abm-001', children: [child('Paused')] })).toBe('mock-abm-001');
+  });
+  it('agrupado só pelo nome, ou todo encerrado: não edita', () => {
+    expect(editGroupIdFor({ key: 'name:ABM', children: [child('Active')] })).toBeNull();
+    expect(editGroupIdFor({ key: 'group:urn:li:sponsoredCampaignGroup:900', children: [child('Completed'), child('Canceled')] })).toBeNull();
   });
 });

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Calendar,
-  Linkedin,
   Target,
   Megaphone,
   DollarSign,
@@ -15,6 +14,9 @@ import { OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET, effectiveCostType } from './types
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 import { currencySymbol as symbolFor, fmtMoney, spendStatement, DAYS_PER_MONTH } from '../format';
 import { plural } from '../labels';
+import { monthlySpendEstimate, needsSpendConfirmation, isSpendConfirmed, HIGH_SPEND_MONTHLY_THRESHOLD } from './spendGuard';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
+import { budgetDateProblem } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
 
 interface ConfigStepProps {
   config: CampaignConfig;
@@ -27,13 +29,16 @@ interface ConfigStepProps {
 }
 
 /** Erros dos campos obrigatórios. Puro: o wizard e o teste usam a mesma regra. */
-export function configErrors(config: CampaignConfig): { campaignName?: string; budgetAmount?: string } {
-  const errors: { campaignName?: string; budgetAmount?: string } = {};
+export function configErrors(config: CampaignConfig): { campaignName?: string; budgetAmount?: string; endDate?: string } {
+  const errors: { campaignName?: string; budgetAmount?: string; endDate?: string } = {};
   if (!config.campaignName.trim()) errors.campaignName = 'Dê um nome à campanha';
   const budget = parseFloat(config.budgetAmount);
   const kind = config.budgetType === 'daily' ? 'diário' : 'total';
   if (!config.budgetAmount.trim() || Number.isNaN(budget)) errors.budgetAmount = `Informe o orçamento ${kind}`;
   else if (budget < MIN_BUDGET_PER_AD_SET) errors.budgetAmount = `O LinkedIn aceita no mínimo ${MIN_BUDGET_PER_AD_SET} por empresa`;
+  // Orçamento total exige data de fim (F037). Mesma regra do servidor.
+  const dateProblem = budgetDateProblem(config);
+  if (dateProblem) errors.endDate = dateProblem;
   return errors;
 }
 
@@ -44,9 +49,9 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
 
   // Erro só depois de interagir: ao sair do campo ou ao tentar avançar. Antes,
   // a tela abria com tudo em vermelho e o rodapé já dizia o que faltava.
-  const [touched, setTouched] = useState<{ campaignName?: boolean; budgetAmount?: boolean }>({});
+  const [touched, setTouched] = useState<{ campaignName?: boolean; budgetAmount?: boolean; endDate?: boolean }>({});
   const errors = configErrors(config);
-  const errorFor = (field: 'campaignName' | 'budgetAmount') =>
+  const errorFor = (field: 'campaignName' | 'budgetAmount' | 'endDate') =>
     (touched[field] || showErrors) ? errors[field] : undefined;
 
   const handleObjectiveChange = (val: string) => {
@@ -77,11 +82,19 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
   const objective = OBJECTIVE_MAP[config.objective];
   const perAdSet = parseFloat(config.budgetAmount) || 0;
   const per = config.budgetType === 'daily' ? 'por dia' : 'no total';
+  // Gasto alto: acima do teto mensal, só avança com a confirmação marcada.
+  const spendAdSets = Math.max(adSetCount, 1);
+  const highSpend = perAdSet > 0 && needsSpendConfirmation(config, adSetCount);
+  const spendConfirmed = isSpendConfirmed(config, adSetCount);
+  const spendSentence = highSpend
+    ? spendStatement({ perAdSet, adSets: spendAdSets, budgetType: config.budgetType, currency, startDate: config.startDate, endDate: config.endDate })
+    : null;
 
   return (
-    <div className="max-w-3xl mx-auto">
+    // Largura e margens vêm do assistente (stepLayout.ts), não daqui.
+    <div>
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-slate-900">Configurar Campanha</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Configurar campanha</h2>
         <p className="text-sm text-slate-500 mt-1">
           Defina os dados básicos da campanha antes de configurar a segmentação e criativo.
         </p>
@@ -90,7 +103,7 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
       {/* LinkedIn Status Banner */}
       {linkedinStatus?.status === 'connected' && linkedinStatus.selected_ad_account_id ? (
         <div className="mb-6 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-5 py-3">
-          <Linkedin className="w-5 h-5 text-[#0077b5] shrink-0" />
+          <LinkedInLogo size={20} />
           <div className="flex-1">
             <span className="text-sm font-medium text-green-800">
               Conta conectada: {linkedinStatus.selected_ad_account_name || 'LinkedIn Ads'}
@@ -255,6 +268,38 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
                     : `Por empresa. Com ${plural(adSetCount, 'empresa')}, você vai gastar até ${fmtMoney(perAdSet * adSetCount, currency)} no total.`
                   : `Por empresa. O valor é multiplicado pelo número de empresas que você escolher no passo 2.`}
               </p>
+              {highSpend && spendSentence && (
+                <div
+                  role="group"
+                  aria-label="Confirmação de gasto"
+                  className={`mt-3 rounded-lg border px-3 py-2.5 text-xs ${spendConfirmed ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-amber-50 border-amber-200 text-amber-900'}`}
+                >
+                  <p className="font-medium flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>
+                      {spendSentence.headline}
+                      {adSetCount === 0 && ' Com mais empresas no passo 2, o valor sobe.'}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-[11px] opacity-80">
+                    Acima de {fmtMoney(HIGH_SPEND_MONTHLY_THRESHOLD, currency)} por mês, confirme antes de seguir.
+                  </p>
+                  <label className="mt-2 flex items-center gap-2 font-semibold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={spendConfirmed}
+                      onChange={(e) => update({
+                        spendConfirmedMonthly: e.target.checked ? monthlySpendEstimate(config, adSetCount) : undefined,
+                      })}
+                      className="w-4 h-4 accent-[#FF5F39]"
+                    />
+                    Confirmo o gasto estimado
+                  </label>
+                  {showErrors && !spendConfirmed && (
+                    <p className="mt-1 text-red-600">Marque a confirmação para continuar.</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -280,13 +325,24 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
                   <Calendar className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
                   <input
                     type="date"
+                    aria-label="Encerramento"
                     value={config.endDate}
                     min={config.startDate}
                     onChange={(e) => update({ endDate: e.target.value })}
-                    className="w-full pl-9 p-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-[#FF5F39]"
+                    onBlur={() => setTouched((t) => ({ ...t, endDate: true }))}
+                    aria-invalid={!!errorFor('endDate')}
+                    className={`w-full pl-9 p-2 text-sm border rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-[#FF5F39] ${errorFor('endDate') ? 'border-red-300' : 'border-slate-200'}`}
                   />
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Opcional. Sem data, segue até você pausar.</p>
+                {errorFor('endDate') ? (
+                  <p className="text-xs text-red-600 mt-1">{errorFor('endDate')}</p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-1">
+                    {config.budgetType === 'total'
+                      ? 'Obrigatória com orçamento total: é o prazo em que o total é gasto.'
+                      : 'Opcional. Sem data, segue até você pausar.'}
+                  </p>
+                )}
               </div>
             </div>
           </div>

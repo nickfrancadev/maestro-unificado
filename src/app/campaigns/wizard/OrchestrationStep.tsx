@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
-  Linkedin,
   X,
   Loader2,
   Shield,
@@ -24,8 +23,12 @@ import {
   buildPipelineParams,
   buildReviewChecklist,
   canPublishChecklist,
+  defaultLocationLabel,
+  buildValidateLaunchParams,
 } from './launchPlan';
 import type { AdSetPlan, ChecklistItem } from './launchPlan';
+import { startOrResumeLaunch, withGroup, withAdSet, summarizeResume, resumeSentences } from './launchProgress';
+import type { LaunchRecord, ResumeSummary } from './launchProgress';
 import { resolveTargetingForAccount } from './SegmentationStep';
 import { audienceCheckFor, MIN_AUDIENCE } from './segmentation/useAudienceCount';
 import type { AudienceState } from './segmentation/useAudienceCount';
@@ -33,14 +36,17 @@ import { campaignTypeLabel, ctaLabel, adAccountStatusLabel, plural } from '../la
 import { fmtMoney, fmtDate, spendStatement } from '../format';
 import {
   runCampaignPipeline,
+  validateLaunch,
   saveCampaignToServer,
   checkAdAccountBilling,
 } from '@/lib/linkedin';
+import { fetchSignedImageUrls } from '@/lib/linkedin/creativeImages';
 import type {
   PipelineStep,
   LinkedInIntegrationStatus,
   BillingStatus,
 } from '@/lib/linkedin';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 interface OrchestrationStepProps {
   selectedAccounts: TargetAccount[];
@@ -54,6 +60,12 @@ interface OrchestrationStepProps {
   audience?: AudienceState;
   /** Leva ao passo que resolve uma pendência; companyId abre a empresa certa quando o passo sabe. */
   onGoToStep?: (step: number, companyId?: string) => void;
+  /** Rascunho sendo publicado: dá o id estável do lançamento. */
+  draftId?: string;
+  /** O que uma tentativa anterior deste rascunho já criou no LinkedIn. */
+  launchRecord?: LaunchRecord | null;
+  /** Chamado a cada passo criado, para o rascunho guardar e a próxima tentativa não duplicar. */
+  onLaunchRecord?: (record: LaunchRecord) => void;
 }
 
 // ---- Pipeline Progress Modal ----
@@ -105,7 +117,12 @@ function PipelineProgressModal({
                   {step.label}
                 </span>
                 {step.status === 'error' && step.result?.error && (
-                  <p className="text-xs text-red-500 mt-0.5 break-all">{step.result.error}</p>
+                  <p className="text-xs text-red-500 mt-0.5 break-words">
+                    {step.result.error}
+                    {step.result.error_kind === 'reconnect' && (
+                      <> <Link to="/integrations" className="font-semibold underline">Ir para Integrações</Link></>
+                    )}
+                  </p>
                 )}
               </div>
             </div>
@@ -159,6 +176,7 @@ function ConfirmLaunchModal({
   adSetPlan,
   billingStatus,
   currency,
+  resume,
   onConfirm,
   onCancel,
 }: {
@@ -166,6 +184,7 @@ function ConfirmLaunchModal({
   adSetPlan: AdSetPlan[];
   billingStatus?: BillingStatus | null;
   currency: string;
+  resume?: ResumeSummary;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -173,9 +192,11 @@ function ConfirmLaunchModal({
   const hasBillingIssue = billingStatus && !billingStatus.has_billing;
 
   // Os passos que o lançamento realmente executa, nesta ordem.
+  const resuming = !!resume?.resuming;
+  const pending = resuming ? resume!.partial.length + resume!.toCreate.length : adSetPlan.length;
   const pipelineSteps = [
-    'Criar o grupo de campanhas no LinkedIn',
-    `Criar ${plural(adSetPlan.length, 'conjunto')} de anúncio, um por empresa, cada um com a sua segmentação`,
+    resume?.groupCreated ? 'Reaproveitar o grupo de campanhas já criado' : 'Criar o grupo de campanhas no LinkedIn',
+    `Criar ${plural(pending, 'conjunto')} de anúncio, um por empresa, cada um com a sua segmentação`,
     'Enviar a imagem e criar o anúncio de cada empresa',
     config.autoActivate
       ? 'Ativar os conjuntos: o gasto começa em seguida'
@@ -229,6 +250,15 @@ function ConfirmLaunchModal({
                   ? ' A ativação pode falhar. Recomendamos publicar pausada.'
                   : ' Configure o pagamento antes de ativar.'}
               </div>
+            </div>
+          )}
+
+          {resuming && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-1.5" role="note" aria-label="Publicação anterior">
+              <p className="text-sm font-semibold text-blue-900">Continuando a publicação anterior</p>
+              {resumeSentences(resume!).map((t) => (
+                <p key={t} className="text-xs text-blue-800 leading-relaxed">{t}</p>
+              ))}
             </div>
           )}
 
@@ -291,6 +321,9 @@ export function OrchestrationStep({
   creativeData,
   audience,
   onGoToStep,
+  draftId,
+  launchRecord,
+  onLaunchRecord,
 }: OrchestrationStepProps) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -323,10 +356,15 @@ export function OrchestrationStep({
   const currency = linkedinStatus?.selected_ad_account_currency || 'BRL';
   const perAdSet = parseFloat(campaignConfig.budgetAmount) || 0;
 
-  // Um id por lançamento: o servidor deduplica por ele (ver buildLaunchPlan).
-  // Fica estável durante a revisão para que "tentar de novo" após uma falha
-  // retome os passos já feitos em vez de duplicar.
-  const runIdRef = React.useRef(Date.now().toString(36));
+  // Um id por lançamento, ESTÁVEL por rascunho (launchProgress): o servidor
+  // deduplica por ele (ver buildLaunchPlan). Voltar a um passo, corrigir e
+  // publicar de novo retoma o que a tentativa anterior criou em vez de
+  // duplicar grupo e conjuntos. Sem rascunho, vale enquanto a tela existir.
+  const fallbackDraftIdRef = React.useRef(`sem-rascunho-${Date.now().toString(36)}`);
+  const launchRef = React.useRef<LaunchRecord>(startOrResumeLaunch(launchRecord, draftId ?? fallbackDraftIdRef.current));
+  React.useEffect(() => {
+    if (launchRecord?.launchId) launchRef.current = launchRecord;
+  }, [launchRecord]);
 
   // O que vai ser publicado, já resolvido por empresa, e o que impede publicar.
   const adSetPlan = targetingData && creativeData ? buildLaunchPlan(campaignConfig, targetingData, creativeData) : [];
@@ -337,6 +375,30 @@ export function OrchestrationStep({
     ? audienceCheckFor(audience, adSetPlan.map((a) => a.companyId))
     : { small: [], pending: adSetPlan.length > 0 };
   const audienceById = new Map((audience?.perAdSet ?? []).map((a) => [a.id, a]));
+
+  // Imagens: a URL gravada no criativo é assinada e vence em 2 h. A Revisão
+  // pede uma nova pelo caminho no Storage e confere se cada imagem carrega de
+  // fato; a que não carrega trava a publicação.
+  const [freshUrls, setFreshUrls] = useState<Record<string, string>>({});
+  const [imageStatus, setImageStatus] = useState<Record<string, 'ok' | 'broken'>>({});
+  const imagePathsKey = adSetPlan.map((a) => a.creative.imagePath || '').join('|');
+  React.useEffect(() => {
+    const paths = adSetPlan.map((a) => a.creative.imagePath).filter((p): p is string => !!p);
+    if (!paths.length) return;
+    let alive = true;
+    fetchSignedImageUrls(paths).then((r) => { if (alive) setFreshUrls((prev) => ({ ...prev, ...r.urls })); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagePathsKey]);
+  const displayUrl = (a: AdSetPlan): string | null =>
+    (a.creative.imagePath && freshUrls[a.creative.imagePath]) || a.creative.imageUrl;
+  const markImage = (url: string, status: 'ok' | 'broken') =>
+    setImageStatus((prev) => (prev[url] === status ? prev : { ...prev, [url]: status }));
+  const imagesCheck = {
+    pending: adSetPlan.filter((a) => { const u = displayUrl(a); return !!u && !imageStatus[u]; }).map((a) => a.companyId),
+    broken: adSetPlan.filter((a) => { const u = displayUrl(a); return !!u && imageStatus[u] === 'broken'; }).map((a) => a.companyId),
+  };
+
   const checklist = buildReviewChecklist({
     config: campaignConfig,
     plan: adSetPlan,
@@ -344,6 +406,7 @@ export function OrchestrationStep({
     audience: audienceCheck,
     linkedInReady: isLinkedInReady,
     hasBilling: billingStatus ? billingStatus.has_billing : null,
+    images: imagesCheck,
   });
   const blocking = checklist.filter((i) => i.blocking);
   const canPublish = !isPipelineRunning && canPublishChecklist(checklist);
@@ -362,7 +425,14 @@ export function OrchestrationStep({
     // Um conjunto de anúncio por empresa-alvo (modelo ABM do LinkedIn), cada um
     // com a sua segmentação e o seu criativo. Ver buildLaunchPlan.
     if (!targetingData || !creativeData) return;
-    const plan = buildLaunchPlan(campaignConfig, targetingData, creativeData, { runId: runIdRef.current });
+    let rec = launchRef.current;
+    const save = (next: LaunchRecord) => {
+      rec = next;
+      launchRef.current = next;
+      onLaunchRecord?.(next);
+    };
+    save(rec);
+    const plan = buildLaunchPlan(campaignConfig, targetingData, creativeData, { runId: rec.launchId });
     if (plan.length === 0) return;
 
     setIsPipelineRunning(true);
@@ -370,23 +440,51 @@ export function OrchestrationStep({
 
     // 1x grupo de campanhas + Nx (conjunto com segmentação + imagem + anúncio + ativação)
     const allSteps: PipelineStep[] = [
-      { action: 'create-campaign-group', label: `Criar o grupo "${campaignConfig.campaignName}"`, status: 'pending' },
-      ...plan.map((a) => ({
-        action: 'create-campaign' as const,
-        label: `${a.companyName}: segmentação e anúncio`,
-        status: 'pending' as const,
-      })),
+      rec.groupId
+        ? { action: 'create-campaign-group', label: `Grupo "${campaignConfig.campaignName}" já criado, reaproveitado`, status: 'success' }
+        : { action: 'create-campaign-group', label: `Criar o grupo "${campaignConfig.campaignName}"`, status: 'pending' },
+      ...plan.map((a) => (rec.adSets[a.companyId]?.done
+        ? { action: 'create-campaign' as const, label: `${a.companyName}: já publicada na tentativa anterior`, status: 'success' as const }
+        : { action: 'create-campaign' as const, label: `${a.companyName}: segmentação e anúncio`, status: 'pending' as const })),
     ];
     setPipelineSteps(allSteps);
 
-    let campaignGroupId: string | null = null;
+    // O servidor confere todas as empresas que faltam ANTES de criar qualquer
+    // coisa no LinkedIn (público mínimo, datas, criativo). Recusou: nada é
+    // criado e cada empresa mostra o motivo.
+    const pendingPlan = plan.filter((a) => !rec.adSets[a.companyId]?.done);
+    if (pendingPlan.length > 0) {
+      const check = await validateLaunch(buildValidateLaunchParams(pendingPlan, campaignConfig));
+      if (!check.success) {
+        const byName = new Map((check.problems || []).map((p) => [p.company_name, p.messages]));
+        if (!rec.groupId) {
+          allSteps[0] = { ...allSteps[0], status: 'error', result: { success: false, error: 'Nada foi criado no LinkedIn. Corrija o que está abaixo e publique de novo.' } };
+        }
+        plan.forEach((a, i) => {
+          const msgs = byName.get(a.companyName);
+          if (msgs?.length) allSteps[i + 1] = { ...allSteps[i + 1], status: 'error', result: { success: false, error: msgs.join(' ') } };
+        });
+        if (!byName.size) {
+          allSteps[0] = { ...allSteps[0], status: 'error', result: { success: false, error: check.error || 'O servidor recusou a publicação.' } };
+        }
+        setPipelineSteps([...allSteps]);
+        setIsPipelineRunning(false);
+        return;
+      }
+    }
+
+    let campaignGroupId: string | null = rec.groupId || null;
+    let groupAttempted = !!campaignGroupId;
     let allSuccess = true;
 
     for (let i = 0; i < plan.length; i++) {
       const adSet = plan[i];
       const stepIdx = i + 1; // allSteps[0] é o grupo
 
-      if (i > 0 && !campaignGroupId) {
+      // Já publicada por inteiro numa tentativa anterior: não toca de novo.
+      if (rec.adSets[adSet.companyId]?.done) continue;
+
+      if (groupAttempted && !campaignGroupId) {
         allSteps[stepIdx] = {
           ...allSteps[stepIdx],
           status: 'error',
@@ -404,9 +502,13 @@ export function OrchestrationStep({
       const params = buildPipelineParams(adSet, plan, campaignConfig, {
         adAccountId, currency, campaignGroupId,
       });
+      // URL recém-assinada (a do criativo pode ter vencido); o servidor usa o caminho.
+      const fresh = displayUrl(adSet);
+      if (fresh) params.image_url = fresh;
 
+      const createsGroup = !campaignGroupId;
       const result = await runCampaignPipeline(params, (steps) => {
-        if (i === 0) {
+        if (createsGroup) {
           const cgStep = steps.find((s) => s.action === 'create-campaign-group');
           if (cgStep) allSteps[0] = { ...allSteps[0], status: cgStep.status, result: cgStep.result };
         }
@@ -415,14 +517,25 @@ export function OrchestrationStep({
         setPipelineSteps([...allSteps]);
       });
 
-      if (i === 0) {
+      if (createsGroup) {
+        groupAttempted = true;
         const cgResult = result.steps.find((s) => s.action === 'create-campaign-group');
         campaignGroupId = cgResult?.result?.campaign_group_id || null;
+        save(withGroup(rec, campaignGroupId));
       }
+
+      const campStep = result.steps.find((s) => s.action === 'create-campaign');
+      const linkedinCampaignId = campStep?.result?.linkedin_campaign_id || null;
+      // Grava o que foi criado, inclusive numa falha no meio: a próxima
+      // tentativa retoma este conjunto em vez de criar outro.
+      save(withAdSet(rec, adSet.companyId, {
+        companyName: adSet.companyName,
+        linkedinCampaignId: linkedinCampaignId ?? rec.adSets[adSet.companyId]?.linkedinCampaignId ?? null,
+        done: result.success,
+      }));
 
       if (result.success) {
         allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'success' };
-        const campStep = result.steps.find((s) => s.action === 'create-campaign');
         await saveCampaignToServer({
           id: adSet.id,
           name: adSet.name,
@@ -439,7 +552,7 @@ export function OrchestrationStep({
           start_date: campaignConfig.startDate || null,
           end_date: campaignConfig.endDate || null,
           linkedin_campaign_group_id: campaignGroupId,
-          linkedin_campaign_id: campStep?.result?.linkedin_campaign_id || null,
+          linkedin_campaign_id: linkedinCampaignId,
           bidding_strategy: params.bidding_strategy,
           auto_activate: params.auto_activate,
         });
@@ -457,7 +570,7 @@ export function OrchestrationStep({
 
     setIsPipelineRunning(false);
     if (!allSuccess) console.error('[Launch] Some ad sets failed');
-  }, [linkedinStatus, targetingData, campaignConfig, creativeData, currency]);
+  }, [linkedinStatus, targetingData, campaignConfig, creativeData, currency, freshUrls, onLaunchRecord]);
 
   const handlePipelineClose = () => {
     setShowPipelineModal(false);
@@ -505,6 +618,13 @@ export function OrchestrationStep({
                       items: sel.included!.map((i) => i.label),
                     }))
                 : [];
+              // Sem localização no que vai ao LinkedIn, o servidor usa Brasil.
+              const defaultLoc = defaultLocationLabel(adSet);
+              if (defaultLoc) {
+                const i = facets.findIndex((f) => f.label === FACET_LABELS.locations);
+                const entry = { label: FACET_LABELS.locations, items: [defaultLoc] };
+                if (i >= 0) facets[i] = entry; else facets.unshift(entry);
+              }
               let host = '';
               try { host = new URL(adSet.creative.landingPageUrl).hostname.replace(/^www\./, ''); } catch { host = ''; }
               const blocked = issues.length > 0 || isSmall;
@@ -515,10 +635,17 @@ export function OrchestrationStep({
                   className={`bg-white rounded-xl border shadow-sm p-4 flex flex-col sm:flex-row gap-4 ${blocked ? 'border-red-200' : 'border-slate-200'}`}
                 >
                   <div className="w-full sm:w-48 shrink-0">
-                    {adSet.creative.imageUrl ? (
+                    {displayUrl(adSet) && imageStatus[displayUrl(adSet)!] === 'broken' ? (
+                      <div className="w-full aspect-[1.91/1] rounded-md border border-dashed border-red-300 bg-red-50/50 flex flex-col items-center justify-center gap-1 text-xs text-red-600 text-center px-2">
+                        <ImageIcon className="w-4 h-4" />
+                        A imagem não carrega
+                      </div>
+                    ) : displayUrl(adSet) ? (
                       <img
-                        src={adSet.creative.imageUrl}
+                        src={displayUrl(adSet)!}
                         alt={`Anúncio para ${adSet.companyName}`}
+                        onLoad={() => markImage(displayUrl(adSet)!, 'ok')}
+                        onError={() => markImage(displayUrl(adSet)!, 'broken')}
                         className="w-full aspect-[1.91/1] object-cover rounded-md border border-slate-200 bg-white"
                       />
                     ) : (
@@ -549,7 +676,7 @@ export function OrchestrationStep({
                       <span className={`inline-flex items-center gap-1 font-medium px-2 py-0.5 rounded-full ${isSmall ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
                         <Users className="w-3 h-3" />
                         {aud
-                          ? aud.isPrivacyFloor ? `menos de ${MIN_AUDIENCE} pessoas` : `${aud.count.toLocaleString('pt-BR')} pessoas`
+                          ? aud.isPrivacyFloor ? `menos de ${MIN_AUDIENCE} pessoas` : aud.isFromApi ? `${aud.count.toLocaleString('pt-BR')} pessoas` : 'público não confirmado'
                           : 'calculando público…'}
                       </span>
                       <span className="text-slate-600">
@@ -635,7 +762,7 @@ export function OrchestrationStep({
             </div>
             {isLinkedInReady ? (
               <p className="text-sm text-slate-700 flex items-center gap-2">
-                <Linkedin className="w-4 h-4 text-[#0077b5]" />
+                <LinkedInLogo size={16} />
                 {linkedinStatus?.selected_ad_account_name || 'LinkedIn Ads'} · cobra em {currency}
               </p>
             ) : (
@@ -750,6 +877,7 @@ export function OrchestrationStep({
           adSetPlan={adSetPlan}
           billingStatus={billingStatus}
           currency={currency}
+          resume={summarizeResume(launchRef.current, adSetPlan)}
           onConfirm={handleConfirmLaunch}
           onCancel={() => setShowConfirmModal(false)}
         />

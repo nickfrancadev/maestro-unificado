@@ -29,6 +29,8 @@ import {
 import type { LinkedInAdAccount } from '@/lib/linkedin';
 import type { IntegrationData } from './types';
 import { adAccountStatusLabel } from '../campaigns/labels';
+import { accountSwitchWarning } from './accountSwitch';
+import { LINKEDIN_LOGO_URL } from '@/app/components/LinkedInLogo';
 
 type ModalState = 'idle' | 'authorizing' | 'selecting_account' | 'connected';
 
@@ -57,6 +59,8 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
     currentStatus?.selected_ad_account_id || null,
   );
   const [loadingAccounts, setLoadingAccounts] = useState(false);
+  // Troca de conta: o aviso precisa ser lido e marcado antes de confirmar (F125).
+  const [switchAcknowledged, setSwitchAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,7 +80,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
       const accounts = await fetchLinkedInAdAccounts();
       setAdAccounts(accounts);
     } catch (err: any) {
-      setError('Erro ao carregar Ad Accounts: ' + err.message);
+      setError('Erro ao carregar as contas de anúncios: ' + err.message);
     } finally {
       setLoadingAccounts(false);
     }
@@ -153,8 +157,18 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
     }
   };
 
+  const switchWarning = accountSwitchWarning(
+    linkedAccountId
+      ? { id: linkedAccountId, name: currentStatus?.selected_ad_account_name, currency: currentStatus?.selected_ad_account_currency }
+      : null,
+    adAccounts.find((a) => a.id === selectedAccountId) ?? (selectedAccountId ? { id: selectedAccountId } : null),
+  );
+  // Trocou de novo a conta escolhida: o "entendi" vale para a troca que foi lida.
+  useEffect(() => { setSwitchAcknowledged(false); }, [selectedAccountId]);
+
   const handleSelectAccount = async () => {
     if (!selectedAccountId) return;
+    if (switchWarning && !switchAcknowledged) return;
     const account = adAccounts.find((a) => a.id === selectedAccountId);
     if (!account) return;
 
@@ -165,12 +179,12 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
       if (ok) {
         await onStatusRefresh();
         setState('connected');
-        toast.success(`Ad Account "${account.name}" selecionada com sucesso!`);
+        toast.success(`Conta de anúncios "${account.name}" selecionada com sucesso!`);
       } else {
         setError('Falha ao salvar a seleção. Tente novamente.');
       }
     } catch (err: any) {
-      setError('Erro ao selecionar Ad Account: ' + err.message);
+      setError('Erro ao selecionar a conta de anúncios: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -197,7 +211,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
               <img
-                src="https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png"
+                src={LINKEDIN_LOGO_URL}
                 alt="LinkedIn"
                 className="w-6 h-6"
               />
@@ -235,7 +249,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                   {[
                     { text: 'App criado no LinkedIn Developer Portal', done: true },
                     { text: 'Aprovação Marketing Developer Platform', done: true },
-                    { text: 'Você precisará de uma Ad Account ativa no LinkedIn', done: false },
+                    { text: 'Você precisará de uma conta de anúncios ativa no LinkedIn', done: false },
                   ].map((item, idx) => (
                     <div key={idx} className="flex items-center gap-2.5">
                       <div
@@ -321,7 +335,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                       LinkedIn autorizado com sucesso!
                     </h4>
                     <p className="text-xs text-green-600">
-                      Agora selecione qual Ad Account usar nas campanhas da Maestro.
+                      Agora selecione qual conta de anúncios usar nas campanhas da Maestro.
                     </p>
                   </div>
                 </div>
@@ -333,9 +347,9 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                     <Wallet className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <h4 className="font-semibold text-blue-800 text-sm">Gerenciar Ad Account</h4>
+                    <h4 className="font-semibold text-blue-800 text-sm">Gerenciar conta de anúncios</h4>
                     <p className="text-xs text-blue-600">
-                      Selecione ou troque a Ad Account vinculada às suas campanhas.
+                      Selecione ou troque a conta de anúncios vinculada às suas campanhas.
                     </p>
                   </div>
                 </div>
@@ -346,16 +360,16 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                   {loadingAccounts ? (
                     <div className="flex flex-col items-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-blue-500 mb-2" />
-                      <p className="text-sm text-slate-500">Carregando Ad Accounts...</p>
+                      <p className="text-sm text-slate-500">Carregando contas de anúncios...</p>
                     </div>
                   ) : adAccounts.length === 0 ? (
                     <div className="text-center py-8 bg-amber-50 rounded-xl border border-amber-200">
                       <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-3" />
                       <h4 className="font-semibold text-amber-800">
-                        Nenhuma Ad Account ativa encontrada
+                        Nenhuma conta de anúncios ativa encontrada
                       </h4>
                       <p className="text-xs text-amber-600 mt-1 max-w-xs mx-auto">
-                        Crie uma Ad Account no{' '}
+                        Crie uma conta de anúncios no{' '}
                         <a
                           href="https://www.linkedin.com/campaignmanager/"
                           target="_blank"
@@ -376,7 +390,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                   ) : (
                     <div
                       role="radiogroup"
-                      aria-label="Ad Accounts disponíveis"
+                      aria-label="Contas de anúncios disponíveis"
                       className="space-y-2 max-h-[280px] overflow-y-auto pr-1"
                     >
                       {adAccounts.map((account, idx) => {
@@ -457,6 +471,29 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                     </div>
                   )}
 
+                  {switchWarning && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4" role="alert" aria-label="Aviso de troca de conta">
+                      <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        {switchWarning.title}
+                      </p>
+                      <ul className="mt-2 space-y-1.5 list-disc pl-5">
+                        {switchWarning.items.map((t) => (
+                          <li key={t} className="text-xs text-amber-900 leading-relaxed">{t}</li>
+                        ))}
+                      </ul>
+                      <label className="mt-3 flex items-start gap-2 text-xs font-medium text-amber-900 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={switchAcknowledged}
+                          onChange={(e) => setSwitchAcknowledged(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        {switchWarning.acknowledge}
+                      </label>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => {
                       setView('create');
@@ -466,7 +503,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                     className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm font-medium text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all"
                   >
                     <Plus className="w-4 h-4" />
-                    Criar nova Ad Account
+                    Criar nova conta de anúncios
                   </button>
                 </>
               )}
@@ -478,9 +515,9 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                       <Wallet className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-blue-800 text-sm">Criar Nova Ad Account</h4>
+                      <h4 className="font-semibold text-blue-800 text-sm">Criar nova conta de anúncios</h4>
                       <p className="text-xs text-blue-600">
-                        Preencha os campos abaixo para criar uma nova Ad Account.
+                        Preencha os campos abaixo para criar uma nova conta de anúncios.
                       </p>
                     </div>
                   </div>
@@ -491,7 +528,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                         <Wallet className="w-3.5 h-3.5" />
                       </div>
                       <div>
-                        <p className="text-[11px] font-mono text-blue-600">Nome da Ad Account</p>
+                        <p className="text-[11px] font-mono text-blue-600">Nome da conta de anúncios</p>
                         <input
                           type="text"
                           value={newAccountName}
@@ -568,7 +605,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                   {createSuccess && (
                     <div className="flex items-start gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
                       <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-green-700">Ad Account criada com sucesso!</p>
+                      <p className="text-xs text-green-700">Conta de anúncios criada com sucesso!</p>
                     </div>
                   )}
 
@@ -596,11 +633,11 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                           });
 
                           if (!result.success) {
-                            throw new Error(result.error || 'Erro ao criar Ad Account no LinkedIn');
+                            throw new Error(result.error || 'Erro ao criar a conta de anúncios no LinkedIn');
                           }
 
                           setCreateSuccess(true);
-                          toast.success(`Ad Account "${newAccountName}" criada com sucesso!`);
+                          toast.success(`Conta de anúncios "${newAccountName}" criada com sucesso!`);
 
                           setTimeout(async () => {
                             await loadAdAccounts();
@@ -612,7 +649,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                           }, 2000);
                         } catch (err: any) {
                           setCreateError(
-                            err.message || 'Não foi possível criar a Ad Account. Tente novamente.',
+                            err.message || 'Não foi possível criar a conta de anúncios. Tente novamente.',
                           );
                         } finally {
                           setIsCreating(false);
@@ -626,7 +663,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                       }`}
                     >
                       {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                      {isCreating ? 'Criando no LinkedIn...' : 'Criar Ad Account'}
+                      {isCreating ? 'Criando no LinkedIn...' : 'Criar conta de anúncios'}
                     </button>
                   </div>
                 </div>
@@ -728,15 +765,15 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
               </button>
               <button
                 onClick={handleSelectAccount}
-                disabled={!selectedAccountId || submitting}
+                disabled={!selectedAccountId || submitting || (!!switchWarning && !switchAcknowledged)}
                 className={`py-2.5 px-6 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition-all ${
-                  !selectedAccountId || submitting
+                  !selectedAccountId || submitting || (!!switchWarning && !switchAcknowledged)
                     ? 'bg-blue-300 text-white cursor-not-allowed'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                Confirmar Seleção
+                {switchWarning ? 'Trocar conta' : 'Confirmar seleção'}
               </button>
             </div>
           )}

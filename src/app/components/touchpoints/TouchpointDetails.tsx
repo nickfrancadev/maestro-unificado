@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Archive, Copy, Edit3, Plus, FileText, ClipboardCheck, MessageCircle, CheckSquare, Users, Target, Heart, Sparkles, TrendingUp, Mail, Search, Activity, BarChart2, BookOpen, ChevronDown, X, UserCircle2, Calendar, Linkedin, AlertCircle, ExternalLink } from 'lucide-react';
+import { Archive, Copy, Edit3, Plus, FileText, ClipboardCheck, MessageCircle, CheckSquare, Users, Target, Heart, Sparkles, TrendingUp, Mail, Search, Activity, BarChart2, BookOpen, ChevronDown, X, UserCircle2, Calendar, AlertCircle, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getLinkedInStatus } from '@/lib/linkedin';
 import type { Touchpoint, LinkedInAdData } from './TouchpointTimeline';
 import { LinkedInAdDrawer } from './LinkedInAdDrawer';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 const TOUCHPOINT_CATEGORIES = [
   { name: 'Relacionamento', icon: Users, color: '#FF9B83' },
@@ -355,9 +356,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
           <div className="bg-white rounded-lg p-4 mb-3 border border-[#0a66c2]/30">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-lg bg-[#0a66c2] flex items-center justify-center">
-                  <Linkedin className="w-4.5 h-4.5 text-white" />
-                </div>
+                <LinkedInLogo size={36} />
                 <div>
                   <h3 className="text-sm font-bold text-[#212a46]">LinkedIn Ads</h3>
                   <p className="text-[11px] text-gray-500">Crie um anúncio sem sair da play</p>
@@ -459,7 +458,7 @@ export function TouchpointDetails({ touchpoint, onUpdate, layoutOrientation, onC
                   onClick={() => setAdDrawerOpen(true)}
                   className="px-5 py-2.5 bg-[#0a66c2] text-white text-xs font-bold rounded-lg hover:bg-[#084d92] flex items-center gap-1.5"
                 >
-                  <Linkedin className="w-3.5 h-3.5" />
+                  <LinkedInLogo size={14} onBrand />
                   Criar anúncio
                 </button>
               </div>

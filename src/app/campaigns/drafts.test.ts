@@ -104,3 +104,15 @@ describe('rascunhos', () => {
     expect(isDraftId(undefined)).toBe(false);
   });
 });
+
+describe('rascunho guarda o logo próprio enviado ao Storage', () => {
+  it('reabrir devolve a URL e o caminho do logo no kit da marca e no rascunho da marca', () => {
+    const s = fullState();
+    s.creativeData = { ...s.creativeData, brandKit: { ...s.creativeData.brandKit, logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' } };
+    s.briefDraft = { ...s.briefDraft, logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' };
+    saveDraft('draft-logo', s);
+    const back = getDraft('draft-logo')!.state;
+    expect(back.creativeData.brandKit).toMatchObject({ logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' });
+    expect(back.briefDraft).toMatchObject({ logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' });
+  });
+});

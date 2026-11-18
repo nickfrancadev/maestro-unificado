@@ -141,7 +141,7 @@ describe('CreativeStep — resumos dos cards colapsados', () => {
   it('Imagem resume formato, origem e ausência de imagem-base', () => {
     renderStep();
     goTo(/Template global/);
-    expect(screen.getByText(/Banner 1\.91:1 · Upload · sem imagem-base/)).toBeInTheDocument();
+    expect(screen.getByText(/Banner 1\.91:1 · Imagem enviada · sem imagem-base/)).toBeInTheDocument();
   });
 
   it('Destino resume CTA e URL', () => {
