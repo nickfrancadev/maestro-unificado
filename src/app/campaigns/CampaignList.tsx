@@ -32,6 +32,8 @@ import { listDrafts, deleteDraft, draftDailyTotal } from './drafts';
 import type { CampaignDraft } from './drafts';
 import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 import { groupRoutePath } from './groupAnalytics';
+import { sortGroups, nextSort, paginate, PAGE_SIZE } from './listSorting';
+import type { SortKey, SortDir } from './listSorting';
 
 /**
  * Uma linha = um conjunto de anúncios no LinkedIn (no produto, uma empresa-alvo).
@@ -416,6 +418,9 @@ export function CampaignList() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['drafts']));
   const [confirmAction, setConfirmAction] = useState<ConfirmState | null>(null);
   const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
+  /** Ordenação por coluna (vale para a lista inteira) e página atual (30 por página). */
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+  const [page, setPage] = useState(1);
   /** A lista do LinkedIn não carregou: mostra o erro com "Tentar de novo", não "nenhuma campanha". */
   const [listError, setListError] = useState<string | null>(null);
 
@@ -597,6 +602,10 @@ export function CampaignList() {
     const matchesSearch = !q || g.name.toLowerCase().includes(q) || g.children.some(c => c.company.toLowerCase().includes(q));
     return matchesFilter && matchesSearch;
   });
+  // Ordena a lista inteira e só depois corta a página (F013).
+  const pageOfGroups = paginate(sortGroups(filteredGroups, sort), page);
+  useEffect(() => { setPage(1); }, [filter, q, sort]);
+
   const filteredDrafts = (filter === 'all' || filter === 'draft')
     ? drafts.filter(d => !q || d.name.toLowerCase().includes(q))
     : [];
@@ -711,14 +720,34 @@ export function CampaignList() {
           <table className="w-full min-w-[1080px] text-left border-collapse text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-xs font-semibold text-slate-500 uppercase">
-                <th className="px-4 py-3 min-w-[240px]">Campanha</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3 text-right">Empresas</th>
-                <th className="px-3 py-3 text-right">Orçamento</th>
-                <th className="px-3 py-3 text-right" title="Últimos 90 dias">Gasto</th>
-                <th className="px-3 py-3 text-right">Impressões</th>
-                <th className="px-3 py-3 text-right">CTR</th>
-                <th className="px-3 py-3">Período</th>
+                {([
+                  { key: 'name', label: 'Campanha', className: 'px-4 py-3 min-w-[240px]' },
+                  { key: 'status', label: 'Status', className: 'px-3 py-3' },
+                  { key: 'companies', label: 'Empresas', className: 'px-3 py-3 text-right' },
+                  { key: 'budget', label: 'Orçamento', className: 'px-3 py-3 text-right' },
+                  { key: 'spend', label: 'Gasto', className: 'px-3 py-3 text-right', title: 'Últimos 90 dias' },
+                  { key: 'impressions', label: 'Impressões', className: 'px-3 py-3 text-right' },
+                  { key: 'ctr', label: 'CTR', className: 'px-3 py-3 text-right' },
+                  { key: 'period', label: 'Período', className: 'px-3 py-3' },
+                ] as { key: SortKey; label: string; className: string; title?: string }[]).map((col) => {
+                  const active = sort?.key === col.key;
+                  return (
+                    <th
+                      key={col.key}
+                      className={col.className}
+                      title={col.title}
+                      aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
+                      <button
+                        onClick={() => setSort(nextSort(sort, col.key))}
+                        className={`inline-flex items-center gap-1 uppercase hover:text-slate-800 ${active ? 'text-slate-800' : ''}`}
+                      >
+                        {col.label}
+                        <span aria-hidden="true" className="text-[10px]">{active ? (sort!.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="px-4 py-3 text-right">Ações</th>
               </tr>
             </thead>
@@ -805,7 +834,7 @@ export function CampaignList() {
                 </>
               )}
 
-              {!loading && filteredGroups.map((group) => {
+              {!loading && pageOfGroups.items.map((group) => {
                 const s = group.summary;
                 const isOpen = expanded.has(group.key);
                 const isMockGroup = !!group.children[0]?.isMock;
@@ -1002,6 +1031,30 @@ export function CampaignList() {
             )}
           </table>
         </div>
+        {!loading && pageOfGroups.total > PAGE_SIZE && (
+          <nav className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm" aria-label="Paginação">
+            <span className="text-slate-500">
+              {pageOfGroups.from}–{pageOfGroups.to} de {plural(pageOfGroups.total, 'campanha')}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(pageOfGroups.page - 1)}
+                disabled={pageOfGroups.page <= 1}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <span className="text-slate-600">Página {pageOfGroups.page} de {pageOfGroups.pageCount}</span>
+              <button
+                onClick={() => setPage(pageOfGroups.page + 1)}
+                disabled={pageOfGroups.page >= pageOfGroups.pageCount}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Próxima
+              </button>
+            </div>
+          </nav>
+        )}
         {!loading && groups.some(g => g.summary.partial) && (
           <p className="px-4 py-2 text-xs text-slate-400 border-t border-slate-100">
             * Soma só das empresas com dados. As outras não carregaram; atualize para tentar de novo.
