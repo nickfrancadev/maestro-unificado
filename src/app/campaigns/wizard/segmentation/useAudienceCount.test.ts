@@ -23,7 +23,7 @@ describe('audienceCheckFor', () => {
   const adSet = (id: string, count: number) => ({ id, label: id, count, isFromApi: true, isPrivacyFloor: false });
   it('aponta toda empresa abaixo de 300, personalizada ou não', () => {
     const check = audienceCheckFor({ perAdSet: [adSet('nubank', 5000), adSet('inter', 120)], isLoading: false }, ['nubank', 'inter']);
-    expect(check).toEqual({ small: ['inter'], pending: false });
+    expect(check).toEqual({ small: ['inter'], pending: false, unconfirmed: [] });
   });
 
   it('empresa ainda sem número conta como pendente (trava a publicação)', () => {

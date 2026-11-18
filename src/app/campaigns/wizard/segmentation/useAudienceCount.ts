@@ -10,8 +10,9 @@ import type { PersonTargeting, TargetingData } from './types';
 // Fast local approximation. Used during the 800ms debounce window so the
 // audience number doesn't flicker to nothing every keystroke; the value is
 // overwritten by the LinkedIn response as soon as it arrives. Not a stand-in
-// for the API — if the API call fails, the stale local estimate stays on
-// screen instead of resetting.
+// for the API: se a consulta falhar, o conjunto fica NÃO CONFIRMADO
+// (`isFromApi` false) e a estimativa nunca decide o mínimo de 300 — nem para
+// travar, nem para liberar. O avanço e a publicação exigem número confirmado.
 //
 // Each account is its own ad set, so the estimate sums a per-account
 // approximation. The person facets used per account are the effective ones
@@ -45,9 +46,22 @@ export interface AdSetAudience {
   isPrivacyFloor: boolean;
 }
 
-/** Conjuntos que o LinkedIn recusaria por público pequeno. */
+/** O LinkedIn respondeu por este conjunto (número real ou "menos de 300"). */
+export function isConfirmed(a: AdSetAudience): boolean {
+  return a.isFromApi || a.isPrivacyFloor;
+}
+
+/**
+ * Conjuntos que o LinkedIn recusaria por público pequeno. Só conta número
+ * confirmado: a estimativa local não trava nem libera ninguém.
+ */
 export function smallAdSets(perAdSet: AdSetAudience[]): AdSetAudience[] {
-  return perAdSet.filter((a) => a.isPrivacyFloor || a.count < MIN_AUDIENCE);
+  return perAdSet.filter((a) => a.isPrivacyFloor || (a.isFromApi && a.count < MIN_AUDIENCE));
+}
+
+/** Conjuntos cujo público a consulta ao LinkedIn não conseguiu confirmar. */
+export function unconfirmedAdSets(perAdSet: AdSetAudience[]): AdSetAudience[] {
+  return perAdSet.filter((a) => !isConfirmed(a));
 }
 
 function localAccountEstimate(pt: PersonTargeting): number {
@@ -65,6 +79,8 @@ export function useAudienceCount(data: TargetingData) {
   const [isLoading, setIsLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCriteriaRef = useRef<string>('');
+  // "Tentar de novo": muda a chave e refaz a consulta com a mesma segmentação.
+  const [attempt, setAttempt] = useState(0);
 
   const hasAnySelection = totalIncludes(data) > 0;
 
@@ -82,7 +98,7 @@ export function useAudienceCount(data: TargetingData) {
     const allCriteria = accounts.map((acc) =>
       buildTargetingCriteria(acc, data.overrides[acc.id] ?? data.defaultTargeting),
     );
-    const criteriaStr = JSON.stringify([allCriteria, data.defaultTargeting]);
+    const criteriaStr = JSON.stringify([allCriteria, data.defaultTargeting, attempt]);
 
     if (criteriaStr === lastCriteriaRef.current) return;
     lastCriteriaRef.current = criteriaStr;
@@ -119,7 +135,8 @@ export function useAudienceCount(data: TargetingData) {
               return { ...local[i], count: result.count, isFromApi: true };
             })
             .catch((err) => {
-              console.warn('[AudienceCount] API error, keeping local estimate:', err);
+              // Sem número real: o conjunto fica não confirmado.
+              console.warn('[AudienceCount] API error, público não confirmado:', err);
               return local[i];
             }),
         ),
@@ -132,13 +149,15 @@ export function useAudienceCount(data: TargetingData) {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [data, hasAnySelection]);
+  }, [data, hasAnySelection, attempt]);
 
   const count = perAdSet.length > 0 ? perAdSet.reduce((s, a) => s + a.count, 0) : defaultCount;
   const isFromApi = perAdSet.length > 0 && perAdSet.every((a) => a.isFromApi);
   const isPrivacyFloor = perAdSet.some((a) => a.isPrivacyFloor);
 
-  return { count, perAdSet, isLoading, isFromApi, isPrivacyFloor, hasAnySelection };
+  const retry = () => setAttempt((n) => n + 1);
+
+  return { count, perAdSet, isLoading, isFromApi, isPrivacyFloor, hasAnySelection, retry };
 }
 
 export type AudienceState = ReturnType<typeof useAudienceCount>;
@@ -152,11 +171,23 @@ export type AudienceState = ReturnType<typeof useAudienceCount>;
 export function audienceCheckFor(
   audience: Pick<AudienceState, 'perAdSet' | 'isLoading'>,
   accountIds: string[],
-): { small: string[]; pending: boolean } {
+): { small: string[]; pending: boolean; unconfirmed: string[] } {
   const known = new Set(audience.perAdSet.map((a) => a.id));
   const pending = audience.isLoading || accountIds.some((id) => !known.has(id));
   const small = smallAdSets(audience.perAdSet).map((a) => a.id).filter((id) => accountIds.includes(id));
-  return { small, pending };
+  // Durante o cálculo tudo ainda é estimativa: isso é "pendente", não falha.
+  const unconfirmed = pending
+    ? []
+    : unconfirmedAdSets(audience.perAdSet).map((a) => a.id).filter((id) => accountIds.includes(id));
+  return { small, pending, unconfirmed };
+}
+
+/** "Não conseguimos confirmar o público de Inter e Nubank". */
+export function unconfirmedAudienceSentence(names: string[]): string {
+  if (names.length === 0) return '';
+  if (names.length > 3) return `Não conseguimos confirmar o público de ${names.length} empresas`;
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+  return `Não conseguimos confirmar o público de ${list}`;
 }
 
 /**

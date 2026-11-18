@@ -196,7 +196,8 @@ export interface ChecklistInput {
   plan: AdSetPlan[];
   /** Saída de validateLaunchPlan. */
   creativeIssues: Record<string, string[]>;
-  audience: { pending: boolean; small: string[] };
+  /** `unconfirmed`: empresas cujo público o LinkedIn não confirmou. */
+  audience: { pending: boolean; small: string[]; unconfirmed?: string[] };
   linkedInReady: boolean;
   /** null = ainda não verificado. */
   hasBilling: boolean | null;
@@ -235,7 +236,17 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
       items.push({ id: 'audience', status: 'attention', label: 'Calculando o público de cada empresa…', blocking: true });
     } else {
       const small = plan.filter((a) => audience.small.includes(a.companyId));
-      if (small.length === 0) {
+      const unconfirmed = plan.filter((a) => audience.unconfirmed?.includes(a.companyId));
+      // Sem número confirmado não há como saber se passa de 300: trava.
+      for (const a of unconfirmed) {
+        items.push({
+          id: `audience-unconfirmed-${a.companyId}`, status: 'blocked', blocking: true,
+          label: `Não conseguimos confirmar o público de ${a.companyName}`,
+          detail: 'A consulta ao LinkedIn falhou. Use "Tentar de novo" na Segmentação.',
+          fix: fixLink(2, a.companyName, a.companyId),
+        });
+      }
+      if (small.length === 0 && unconfirmed.length === 0) {
         items.push({ id: 'audience', status: 'ok', label: `Público acima de 300 pessoas em ${plan.length === 1 ? 'a empresa' : `todas as ${plan.length} empresas`}`, blocking: false });
       }
       for (const a of small) {

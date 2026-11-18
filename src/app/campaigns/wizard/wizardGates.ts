@@ -52,7 +52,13 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
     const accounts = targetingData.companies.included;
     if (accounts.length === 0) return false;
     // Cada conjunto precisa de >=300 pessoas; o LinkedIn recusa abaixo disso.
-    if (state.audienceCheck && (state.audienceCheck.pending || state.audienceCheck.small.length > 0)) return false;
+    // E o número precisa ser confirmado pelo LinkedIn: a estimativa local não
+    // decide o mínimo, nem para travar nem para liberar.
+    if (state.audienceCheck && (
+      state.audienceCheck.pending
+      || state.audienceCheck.small.length > 0
+      || (state.audienceCheck.unconfirmed?.length ?? 0) > 0
+    )) return false;
     return accounts.every((acc) => {
       const person = resolveTargetingForAccount(targetingData, acc.id);
       return person.locations.included.length > 0;

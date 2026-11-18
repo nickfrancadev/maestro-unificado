@@ -549,7 +549,7 @@ export function OrchestrationStep({
                       <span className={`inline-flex items-center gap-1 font-medium px-2 py-0.5 rounded-full ${isSmall ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
                         <Users className="w-3 h-3" />
                         {aud
-                          ? aud.isPrivacyFloor ? `menos de ${MIN_AUDIENCE} pessoas` : `${aud.count.toLocaleString('pt-BR')} pessoas`
+                          ? aud.isPrivacyFloor ? `menos de ${MIN_AUDIENCE} pessoas` : aud.isFromApi ? `${aud.count.toLocaleString('pt-BR')} pessoas` : 'público não confirmado'
                           : 'calculando público…'}
                       </span>
                       <span className="text-slate-600">

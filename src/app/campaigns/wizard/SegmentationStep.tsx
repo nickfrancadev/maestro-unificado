@@ -53,7 +53,7 @@ import {
   FACET_URN_MAP,
   setAccountFacet,
 } from "./segmentation/targeting";
-import { smallAdSets, audienceScale, MIN_AUDIENCE } from "./segmentation/useAudienceCount";
+import { smallAdSets, unconfirmedAdSets, unconfirmedAudienceSentence, audienceScale, MIN_AUDIENCE } from "./segmentation/useAudienceCount";
 import type { AudienceState, AdSetAudience } from "./segmentation/useAudienceCount";
 import { plural } from "../labels";
 import { useLinkedInTypeahead } from "./segmentation/useLinkedInTypeahead";
@@ -84,6 +84,8 @@ export interface AudienceCheck {
   small: string[];
   /** A estimativa ainda está sendo calculada. */
   pending: boolean;
+  /** Ids das empresas cujo público o LinkedIn não confirmou (consulta falhou). */
+  unconfirmed?: string[];
 }
 
 interface SegmentationStepProps {
@@ -112,9 +114,15 @@ export function smallAudienceSentence(names: string[]): string {
   return `${joinNames(names)} ${names.length === 1 ? "está" : "estão"} abaixo de ${MIN_AUDIENCE} pessoas`;
 }
 
-/** Número curto do público de um conjunto, para a lista e o badge. */
-function audienceLabel(a: AdSetAudience): string {
-  return a.isPrivacyFloor ? `< ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR");
+/**
+ * Número curto do público de um conjunto, para a lista e o badge. Só número
+ * confirmado pelo LinkedIn vira número na tela; a estimativa local aparece
+ * como "…" enquanto calcula e como "não confirmado" se a consulta falhou.
+ */
+function audienceLabel(a: AdSetAudience, isLoading: boolean): string {
+  if (a.isPrivacyFloor) return `< ${MIN_AUDIENCE}`;
+  if (a.isFromApi) return a.count.toLocaleString("pt-BR");
+  return isLoading ? "…" : "não confirmado";
 }
 
 // ===============================
@@ -1296,7 +1304,7 @@ function FacetCard({
 // Audience Summary Panel
 // ===============================
 
-function AudienceSummary({
+export function AudienceSummary({
   data,
   audience,
 }: {
@@ -1317,9 +1325,19 @@ function AudienceSummary({
   // por conjunto, com o override da empresa ou o padrão.
   const small = smallAdSets(perAdSet);
   const smallNames = small.map((a) => a.label);
+  // Consulta que falhou: o número na tela seria só estimativa, e estimativa
+  // não decide o mínimo de 300. Pede para tentar de novo.
+  const unconfirmed = isLoading ? [] : unconfirmedAdSets(perAdSet);
 
   const getStatus = () => {
     if (!hasAnySelection || estimatedSize === null) return null;
+    if (unconfirmed.length > 0)
+      return {
+        color: "red",
+        icon: <AlertTriangle className="w-4 h-4" />,
+        label: `${unconfirmedAudienceSentence(unconfirmed.map((a) => a.label))}. Sem o número do LinkedIn não dá para saber se passa de ${MIN_AUDIENCE} pessoas.`,
+        retry: true,
+      };
     // Nunca sugerir "adicione empresas": cada empresa é um conjunto novo e não
     // aumenta o público das que já estão abaixo do mínimo.
     if (small.length > 0)
@@ -1334,7 +1352,7 @@ function AudienceSummary({
         icon: <AlertTriangle className="w-4 h-4" />,
         label: `Público abaixo de ${MIN_AUDIENCE} pessoas: o LinkedIn não aceita. Amplie a localização ou tire filtros de senioridade e função.`,
       };
-    if (perAdSet.length > 0 && perAdSet.every((a) => a.count >= 1000))
+    if (perAdSet.length > 0 && perAdSet.every((a) => a.isFromApi && a.count >= 1000))
       return {
         color: "green",
         icon: <CheckCircle2 className="w-4 h-4" />,
@@ -1408,7 +1426,18 @@ function AudienceSummary({
                 }`}
               >
                 {status.icon}
-                {status.label}
+                <span className="flex-1">
+                  {status.label}
+                  {"retry" in status && status.retry && (
+                    <button
+                      type="button"
+                      onClick={audience.retry}
+                      className="block mt-2 px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-700 font-semibold hover:bg-red-100"
+                    >
+                      Tentar de novo
+                    </button>
+                  )}
+                </span>
               </div>
             )}
             {perAdSet.length > 0 && (
@@ -1424,7 +1453,7 @@ function AudienceSummary({
                           {data.overrides[a.id] ? <span className="text-slate-400 font-normal"> · personalizada</span> : null}
                         </span>
                         <span className={`shrink-0 tabular-nums ${isSmall ? "text-red-700 font-semibold" : "text-slate-500"}`}>
-                          {a.isPrivacyFloor ? `menos de ${MIN_AUDIENCE}` : a.count.toLocaleString("pt-BR")}
+                          {a.isPrivacyFloor ? `menos de ${MIN_AUDIENCE}` : audienceLabel(a, isLoading)}
                         </span>
                       </div>
                       <div className="relative h-1.5 rounded-full bg-gradient-to-r from-red-100 via-amber-100 to-green-100" aria-hidden>
@@ -1771,7 +1800,7 @@ export function SegmentationStep({
                             : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {aud ? audienceLabel(aud) : "…"}
+                        {aud ? audienceLabel(aud, audience.isLoading) : "…"}
                       </span>
                     </button>
                     );

@@ -18,7 +18,7 @@ import { OrchestrationStep } from './wizard/OrchestrationStep';
 import { SegmentationStep, createEmptyTargeting, smallAudienceSentence } from './wizard/SegmentationStep';
 import { canProceedFromStep, creativeIssues } from './wizard/wizardGates';
 import type { TargetingData } from './wizard/SegmentationStep';
-import { useAudienceCount, audienceCheckFor } from './wizard/segmentation/useAudienceCount';
+import { useAudienceCount, audienceCheckFor, unconfirmedAudienceSentence } from './wizard/segmentation/useAudienceCount';
 import { TargetAccount, CampaignConfig, createDefaultCampaignConfig, MIN_BUDGET_PER_AD_SET } from './wizard/types';
 import { CreativeData, createDefaultCreativeData } from './wizard/types';
 import type { BriefDraft } from './wizard/BriefPane';
@@ -291,6 +291,10 @@ export function CampaignWizard() {
       const custom = Object.keys(targetingData.overrides).length;
       if (n === 0) return 'Escolha ao menos 1 empresa-alvo';
       if (audienceCheck.pending) return 'Calculando o público de cada empresa…';
+      if (audienceCheck.unconfirmed.length > 0) {
+        const names = companies.filter((c) => audienceCheck.unconfirmed.includes(c.id)).map((c) => c.label);
+        return `${unconfirmedAudienceSentence(names)}: tente de novo`;
+      }
       if (audienceCheck.small.length > 0) {
         const names = companies.filter((c) => audienceCheck.small.includes(c.id)).map((c) => c.label);
         return `${smallAudienceSentence(names)}: amplie a localização ou tire filtros`;
