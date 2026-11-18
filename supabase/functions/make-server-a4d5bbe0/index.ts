@@ -47,6 +47,7 @@ import {
   creativeMessage,
 } from "./publishRules.ts";
 import { objectiveFor, resolveCostType } from "./objectives.ts";
+import { fetchWithRetry as fetchWithRetryPure, translateLinkedInError, RECONNECT_MESSAGE } from "./linkedinHttp.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -888,34 +889,10 @@ app.post("/make-server-a4d5bbe0/linkedin/audience-count", async (c) => {
 // exponential backoff, and persists audit trail in KV.
 // ================================================
 
-// Retry helper (1 retry for 5xx, exponential backoff)
-async function fetchWithRetry(
-  url: string,
-  opts: RequestInit,
-  label: string,
-  maxRetries = 1
-): Promise<Response> {
-  let lastErr: Error | null = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const res = await fetch(url, opts);
-      if (res.status >= 500 && attempt < maxRetries) {
-        const wait = Math.pow(2, attempt) * 500;
-        console.log(`[${label}] 5xx (${res.status}), retry #${attempt + 1} in ${wait}ms`);
-        await new Promise((r) => setTimeout(r, wait));
-        continue;
-      }
-      return res;
-    } catch (err: any) {
-      lastErr = err;
-      if (attempt < maxRetries) {
-        const wait = Math.pow(2, attempt) * 500;
-        console.log(`[${label}] Network error, retry #${attempt + 1} in ${wait}ms: ${err.message}`);
-        await new Promise((r) => setTimeout(r, wait));
-      }
-    }
-  }
-  throw lastErr || new Error(`[${label}] All retries exhausted`);
+// Nova tentativa com espera (500 ms, 1 s) em 5xx e erro de rede, em TODAS as
+// chamadas da publicação (F140). Lógica pura em `linkedinHttp.ts`, testada.
+function fetchWithRetry(url: string, opts: RequestInit, label: string): Promise<Response> {
+  return fetchWithRetryPure(url, opts, label);
 }
 
 // LinkedIn REST API headers (consistent v202602)
@@ -929,9 +906,12 @@ function linkedInHeaders(accessToken: string, extra?: Record<string, string>): R
   };
 }
 
-// Resposta de erro de uma chamada ao LinkedIn durante a publicação.
-function linkedInErrorResponse(c: any, status: number, errText: string, _action: string) {
-  return c.json({ success: false, error: `LinkedIn API ${status}: ${errText}` }, status >= 500 ? 502 : 400);
+// Resposta de erro de uma chamada ao LinkedIn: frase em português que diz o
+// que fazer (F140). O texto cru da API fica só no log e na auditoria.
+function linkedInErrorResponse(c: any, status: number, errText: string, action: string) {
+  const t = translateLinkedInError(status, errText, action);
+  console.log(`[LinkedIn] ${action}: ${status} → ${t.kind}`);
+  return c.json({ success: false, error: t.message, error_kind: t.kind }, t.status);
 }
 
 // Validate integration, return access token or throw
@@ -981,10 +961,11 @@ app.post("/make-server-a4d5bbe0/linkedin/campaigns", async (c) => {
     }
   } catch (err: any) {
     if (err.message === "UNAUTHORIZED") {
-      return c.json({ error: "LinkedIn não conectado" }, 401);
+      return c.json({ success: false, error: RECONNECT_MESSAGE, error_kind: "reconnect" }, 424);
     }
     console.log("[LinkedIn Campaigns] Erro não tratado:", err.message);
-    return c.json({ success: false, error: `Erro interno: ${err.message}` }, 500);
+    // Rede caiu em todas as tentativas, ou falha nossa: nunca o texto cru.
+    return c.json({ success: false, error: "Não foi possível falar com o LinkedIn agora. Tente de novo em instantes; o que já foi criado não será duplicado." }, 502);
   }
 });
 
@@ -1075,7 +1056,7 @@ async function handleCreateCampaignGroup(c: any, body: any) {
     const errText = await response.text();
     console.log(`[Create CG] Error ${response.status}: ${errText}`);
     await auditLog(campaign_id, "create-campaign-group", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "criar o grupo da campanha");
   }
 
   const campaignGroupId = response.headers.get("x-restli-id") || null;
@@ -1233,7 +1214,7 @@ async function handleCreateCampaign(c: any, body: any) {
     const errText = await response.text();
     console.log(`[Create Campaign] Error ${response.status}: ${errText}`);
     await auditLog(campaign_id, "create-campaign", { status: "error", http: response.status, error: errText, payload_sent: campaignBody });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "criar o conjunto de anúncio");
   }
 
   const linkedInCampaignId = response.headers.get("x-restli-id") || response.headers.get("x-linkedin-id") || null;
@@ -1300,7 +1281,7 @@ async function handleUploadImage(c: any, body: any) {
   if (!initResponse.ok) {
     const errText = await initResponse.text();
     await auditLog(campaign_id, "upload-image", { status: "error", step: "initialize", error: errText });
-    return c.json({ success: false, error: `initializeUpload failed: ${errText}` }, 400);
+    return linkedInErrorResponse(c, initResponse.status, errText, "enviar a imagem do anúncio");
   }
   const initData = await initResponse.json();
   const uploadUrl = initData.value?.uploadUrl;
@@ -1342,7 +1323,7 @@ async function handleUploadImage(c: any, body: any) {
   if (!uploadResponse.ok && uploadResponse.status !== 201) {
     const errText = await uploadResponse.text();
     await auditLog(campaign_id, "upload-image", { status: "error", step: "upload", error: errText });
-    return c.json({ success: false, error: `Upload failed: ${errText}` }, 400);
+    return linkedInErrorResponse(c, uploadResponse.status, errText, "enviar a imagem do anúncio");
   }
 
   console.log(`[Upload Image] Success: ${imageUrn}`);
@@ -1401,7 +1382,7 @@ async function handleCreateCreative(c: any, body: any) {
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "create-creative", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "criar o anúncio");
   }
 
   const creativeId = response.headers.get("x-restli-id") || response.headers.get("x-linkedin-id") || null;
@@ -1527,7 +1508,7 @@ async function handlePause(c: any, body: any) {
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "pause", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "pausar a campanha");
   }
 
   console.log(`[Pause] Campaign ${linkedin_campaign_id} paused`);
@@ -1566,7 +1547,7 @@ async function handleArchive(c: any, body: any) {
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "archive", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "excluir a campanha");
   }
 
   console.log(`[Archive] Campaign ${linkedin_campaign_id} archived`);
@@ -1781,7 +1762,7 @@ app.get("/make-server-a4d5bbe0/linkedin/ad-account-billing", async (c) => {
         has_billing: false,
         account_status: "UNKNOWN",
         serving_statuses: [],
-        error: `LinkedIn API ${response.status}: ${errText}`,
+        error: translateLinkedInError(response.status, errText, "conferir o pagamento da conta de anúncios").message,
       });
     }
 
@@ -1856,7 +1837,7 @@ app.post("/make-server-a4d5bbe0/linkedin/create-ad-account", async (c) => {
     if (!response.ok) {
       const errText = await response.text();
       console.log(`[Create Ad Account] Error ${response.status}: ${errText}`);
-      return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+      return linkedInErrorResponse(c, response.status, errText, "criar a conta de anúncios");
     }
 
     const newAccountId = response.headers.get("x-restli-id") || response.headers.get("x-linkedin-id") || null;
@@ -2001,13 +1982,13 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
     const endpoint = `https://api.linkedin.com/rest/adAccounts/${accountIdPath}/adCampaigns?q=search&search=${searchExpr}&fields=id,name,status,type,totalBudget,dailyBudget,runSchedule,costType,campaignGroup&count=100`;
 
     console.log(`[LinkedIn Campaigns List] GET ${endpoint}`);
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(endpoint, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "LinkedIn-Version": "202602",
         "X-Restli-Protocol-Version": "2.0.0",
       },
-    });
+    }, "List Campaigns");
 
     if (!response.ok) {
       const errText = await response.text();

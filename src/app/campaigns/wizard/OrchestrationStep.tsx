@@ -117,7 +117,12 @@ function PipelineProgressModal({
                   {step.label}
                 </span>
                 {step.status === 'error' && step.result?.error && (
-                  <p className="text-xs text-red-500 mt-0.5 break-all">{step.result.error}</p>
+                  <p className="text-xs text-red-500 mt-0.5 break-words">
+                    {step.result.error}
+                    {step.result.error_kind === 'reconnect' && (
+                      <> <Link to="/integrations" className="font-semibold underline">Ir para Integrações</Link></>
+                    )}
+                  </p>
                 )}
               </div>
             </div>

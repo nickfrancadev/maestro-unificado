@@ -33,6 +33,8 @@ export interface CampaignStepResult {
   problems?: { company_name: string; messages: string[] }[];
   /** Empresas que vão com a localização padrão (Brasil). */
   default_location?: string[];
+  /** Categoria do erro traduzido pelo servidor ("reconnect" = reconectar em Integrações). */
+  error_kind?: string;
 }
 
 // Generic dispatcher — every action posts to the same endpoint.
@@ -57,7 +59,8 @@ async function campaignAction(
     return { success: true, ...data };
   } catch (err: any) {
     console.error(`[LinkedIn] ${action} network error:`, err);
-    return { success: false, error: err.message };
+    // Nunca o texto técnico do navegador ("Failed to fetch").
+    return { success: false, error: 'Sem conexão com o servidor. Confira a internet e tente de novo.' };
   }
 }
 
