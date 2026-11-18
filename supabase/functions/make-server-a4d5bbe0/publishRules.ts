@@ -48,3 +48,55 @@ export function effectiveCampaignStatus(campaignStatus: string, groupStatus?: st
   if (campaignStatus === "ACTIVE" && groupStatus && groupStatus !== "ACTIVE") return "PAUSED";
   return campaignStatus;
 }
+
+// ---------- Localização padrão (F052) ----------
+
+export const LOCATIONS_FACET = "urn:li:adTargetingFacet:locations";
+export const PROFILE_LOCATIONS_FACET = "urn:li:adTargetingFacet:profileLocations";
+export const BRAZIL_GEO_URN = "urn:li:geo:106057199";
+export const DEFAULT_LOCATION_LABEL = "Brasil";
+
+/** O critério já diz onde a pessoa está? */
+export function hasLocation(criteria: any): boolean {
+  const and = criteria?.include?.and;
+  if (!Array.isArray(and)) return false;
+  return and.some((clause: any) => {
+    const or = clause?.or || {};
+    return [LOCATIONS_FACET, PROFILE_LOCATIONS_FACET].some((f) => Array.isArray(or[f]) && or[f].length > 0);
+  });
+}
+
+/**
+ * Critério que chega sem localização ganha Brasil, na estimativa de público e
+ * na criação do conjunto. Sem isso o LinkedIn recusa (localização é
+ * obrigatória) ou, na estimativa, conta o mundo inteiro.
+ */
+export function withDefaultLocation(criteria: any): { criteria: any; defaulted: boolean } {
+  if (hasLocation(criteria)) return { criteria, defaulted: false };
+  const base = criteria && typeof criteria === "object" ? criteria : {};
+  const and = Array.isArray(base.include?.and) ? base.include.and : [];
+  return {
+    criteria: { ...base, include: { ...(base.include || {}), and: [...and, { or: { [LOCATIONS_FACET]: [BRAZIL_GEO_URN] } }] } },
+    defaulted: true,
+  };
+}
+
+// ---------- Público mínimo (F055) ----------
+
+export const MIN_AUDIENCE = 300;
+
+/**
+ * Por que o público desta empresa não pode ir ao ar. `null` = pode. O LinkedIn
+ * devolve 0 quando o público fica abaixo de 300 (piso de privacidade), e
+ * `null` quando a estimativa não veio: sem o número, não publica no escuro.
+ */
+export function audienceProblem(companyName: string, count: number | null | undefined): string | null {
+  const who = companyName || "esta empresa";
+  if (count == null || Number.isNaN(count)) {
+    return `Não foi possível conferir o público de ${who} no LinkedIn. Tente publicar de novo em instantes.`;
+  }
+  if (count < MIN_AUDIENCE) {
+    return `O público de ${who} tem menos de ${MIN_AUDIENCE} pessoas. O mínimo do LinkedIn é ${MIN_AUDIENCE}: amplie a localização ou tire filtros de senioridade e função.`;
+  }
+  return null;
+}

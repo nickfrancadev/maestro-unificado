@@ -23,6 +23,8 @@ import {
   buildPipelineParams,
   buildReviewChecklist,
   canPublishChecklist,
+  defaultLocationLabel,
+  buildValidateLaunchParams,
 } from './launchPlan';
 import type { AdSetPlan, ChecklistItem } from './launchPlan';
 import { startOrResumeLaunch, withGroup, withAdSet, summarizeResume, resumeSentences } from './launchProgress';
@@ -34,6 +36,7 @@ import { campaignTypeLabel, ctaLabel, adAccountStatusLabel, plural } from '../la
 import { fmtMoney, fmtDate, spendStatement } from '../format';
 import {
   runCampaignPipeline,
+  validateLaunch,
   saveCampaignToServer,
   checkAdAccountBilling,
 } from '@/lib/linkedin';
@@ -441,6 +444,30 @@ export function OrchestrationStep({
     ];
     setPipelineSteps(allSteps);
 
+    // O servidor confere todas as empresas que faltam ANTES de criar qualquer
+    // coisa no LinkedIn (público mínimo, datas, criativo). Recusou: nada é
+    // criado e cada empresa mostra o motivo.
+    const pendingPlan = plan.filter((a) => !rec.adSets[a.companyId]?.done);
+    if (pendingPlan.length > 0) {
+      const check = await validateLaunch(buildValidateLaunchParams(pendingPlan, campaignConfig));
+      if (!check.success) {
+        const byName = new Map((check.problems || []).map((p) => [p.company_name, p.messages]));
+        if (!rec.groupId) {
+          allSteps[0] = { ...allSteps[0], status: 'error', result: { success: false, error: 'Nada foi criado no LinkedIn. Corrija o que está abaixo e publique de novo.' } };
+        }
+        plan.forEach((a, i) => {
+          const msgs = byName.get(a.companyName);
+          if (msgs?.length) allSteps[i + 1] = { ...allSteps[i + 1], status: 'error', result: { success: false, error: msgs.join(' ') } };
+        });
+        if (!byName.size) {
+          allSteps[0] = { ...allSteps[0], status: 'error', result: { success: false, error: check.error || 'O servidor recusou a publicação.' } };
+        }
+        setPipelineSteps([...allSteps]);
+        setIsPipelineRunning(false);
+        return;
+      }
+    }
+
     let campaignGroupId: string | null = rec.groupId || null;
     let groupAttempted = !!campaignGroupId;
     let allSuccess = true;
@@ -586,6 +613,13 @@ export function OrchestrationStep({
                       items: sel.included!.map((i) => i.label),
                     }))
                 : [];
+              // Sem localização no que vai ao LinkedIn, o servidor usa Brasil.
+              const defaultLoc = defaultLocationLabel(adSet);
+              if (defaultLoc) {
+                const i = facets.findIndex((f) => f.label === FACET_LABELS.locations);
+                const entry = { label: FACET_LABELS.locations, items: [defaultLoc] };
+                if (i >= 0) facets[i] = entry; else facets.unshift(entry);
+              }
               let host = '';
               try { host = new URL(adSet.creative.landingPageUrl).hostname.replace(/^www\./, ''); } catch { host = ''; }
               const blocked = issues.length > 0 || isSmall;

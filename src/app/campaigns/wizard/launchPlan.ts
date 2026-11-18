@@ -2,8 +2,9 @@ import { buildTargetingCriteria, resolveTargetingForAccount } from './Segmentati
 import type { TargetingData } from './SegmentationStep';
 import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET } from './types';
 import type { CampaignConfig, CreativeData } from './types';
-import type { CampaignPipelineParams } from '@/lib/linkedin';
+import type { CampaignPipelineParams, ValidateLaunchParams } from '@/lib/linkedin';
 import { storagePathFromUrl } from '../../../../supabase/functions/make-server-a4d5bbe0/creativeStorage';
+import { hasLocation, DEFAULT_LOCATION_LABEL } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
 
 export interface AdSetCreative {
   headline: string;
@@ -83,6 +84,14 @@ export function buildLaunchPlan(
       },
     };
   });
+}
+
+/**
+ * O conjunto vai sem localização e o servidor completa com Brasil (F052, a
+ * mesma função do servidor). A Revisão mostra isso em vez de esconder.
+ */
+export function defaultLocationLabel(adSet: Pick<AdSetPlan, 'criteria'>): string | null {
+  return hasLocation(adSet.criteria) ? null : `${DEFAULT_LOCATION_LABEL} (padrão: nenhuma localização escolhida)`;
 }
 
 /** Fallback que a IA do produto grava quando não consegue gerar o texto. */
@@ -166,8 +175,31 @@ export function buildPipelineParams(
     description: adSet.creative.bodyText || undefined,
     cta: adSet.creative.cta || undefined,
     landing_page_url: adSet.creative.landingPageUrl || undefined,
+    // Nome da empresa nas mensagens do servidor ("O público de Nubank…").
+    company_name: adSet.companyName,
     // O primeiro conjunto cria o grupo; os demais reaproveitam o mesmo.
     existing_campaign_group_id: ctx.campaignGroupId || undefined,
+  };
+}
+
+/**
+ * O que a Revisão manda ao servidor para conferir ANTES de criar qualquer
+ * coisa: só as empresas que ainda vão ser criadas agora.
+ */
+export function buildValidateLaunchParams(plan: AdSetPlan[], config: CampaignConfig): ValidateLaunchParams {
+  return {
+    budget_type: config.budgetType,
+    start_date: config.startDate || undefined,
+    end_date: config.endDate || undefined,
+    ad_sets: plan.map((a) => ({
+      company_name: a.companyName,
+      targeting_criteria: a.criteria,
+      headline: a.creative.headline,
+      description: a.creative.bodyText,
+      image_url: a.creative.imageUrl || undefined,
+      image_path: a.creative.imagePath || undefined,
+      landing_page_url: a.creative.landingPageUrl,
+    })),
   };
 }
 

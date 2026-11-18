@@ -6,6 +6,7 @@
 import { SERVER_BASE, headers } from './client';
 
 export type CampaignAction =
+  | 'validate-launch'
   | 'create-campaign-group'
   | 'create-campaign'
   | 'upload-image'
@@ -28,6 +29,10 @@ export interface CampaignStepResult {
   /** Ativar: status real depois da mudança (ACTIVE, PAUSED…), já considerando o grupo. */
   status?: string;
   group_status?: string;
+  /** validate-launch: o que impede, por empresa. */
+  problems?: { company_name: string; messages: string[] }[];
+  /** Empresas que vão com a localização padrão (Brasil). */
+  default_location?: string[];
 }
 
 // Generic dispatcher — every action posts to the same endpoint.
@@ -46,7 +51,7 @@ async function campaignAction(
 
     if (!response.ok) {
       console.error(`[LinkedIn] ${action} failed (${response.status}):`, data);
-      return { success: false, error: data.error || `HTTP ${response.status}` };
+      return { ...data, success: false, error: data.error || `HTTP ${response.status}` };
     }
 
     return { success: true, ...data };
@@ -54,6 +59,30 @@ async function campaignAction(
     console.error(`[LinkedIn] ${action} network error:`, err);
     return { success: false, error: err.message };
   }
+}
+
+// --- Action 0: Validate Launch ---
+// Confere todas as empresas no servidor ANTES de criar qualquer coisa no
+// LinkedIn (público mínimo, datas, criativo). 422 = `problems` por empresa.
+export interface ValidateLaunchAdSet {
+  company_name: string;
+  targeting_criteria: any;
+  headline?: string;
+  description?: string;
+  image_url?: string;
+  image_path?: string;
+  landing_page_url?: string;
+}
+
+export interface ValidateLaunchParams {
+  ad_sets: ValidateLaunchAdSet[];
+  budget_type?: 'daily' | 'total';
+  start_date?: string;
+  end_date?: string;
+}
+
+export async function validateLaunch(params: ValidateLaunchParams): Promise<CampaignStepResult> {
+  return campaignAction('validate-launch', params);
 }
 
 // --- Action 1: Create Campaign Group ---
@@ -92,6 +121,8 @@ export interface CreateCampaignParams {
   end_date?: string;
   auto_activate?: boolean;
   bidding_strategy?: string;
+  /** Nome da empresa, para a mensagem do servidor (ex.: público abaixo de 300). */
+  company_name?: string;
 }
 
 export async function createCampaign(params: CreateCampaignParams): Promise<CampaignStepResult> {
@@ -194,6 +225,7 @@ export interface CampaignPipelineParams {
   cta?: string;
   landing_page_url?: string;
   auto_activate?: boolean;
+  company_name?: string;
   // If provided, skip Campaign Group creation and reuse this ID.
   existing_campaign_group_id?: string;
 }
@@ -274,6 +306,7 @@ export async function runCampaignPipeline(
     end_date: params.end_date,
     auto_activate: params.auto_activate,
     bidding_strategy: params.bidding_strategy,
+    company_name: params.company_name,
   });
   steps[1].result = campResult;
   steps[1].status = campResult.success ? 'success' : 'error';

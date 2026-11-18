@@ -271,3 +271,35 @@ describe('imagens na Revisão — não aprova imagem que não carrega', () => {
     expect(canPublishChecklist(buildReviewChecklist({ ...base(), images: { pending: [], broken: [] } }))).toBe(true);
   });
 });
+
+describe('Revisão mostra a localização padrão e o servidor confere antes de criar', () => {
+  it('sem localização, a Revisão diz que vai Brasil (padrão)', async () => {
+    const { defaultLocationLabel } = await import('./launchPlan');
+    const t = createEmptyTargeting();
+    const semLocal = { ...t, companies: { ...t.companies, included: [nubank] } } as TargetingData;
+    const plan = buildLaunchPlan({ ...createDefaultCampaignConfig(), campaignName: 'Q4' }, semLocal, creative());
+    expect(defaultLocationLabel(plan[0])).toMatch(/^Brasil \(padrão/);
+    const tl = targeting([nubank]);
+    tl.defaultTargeting.locations.included = [{ id: 'urn:li:geo:106057199', urn: 'urn:li:geo:106057199', label: 'Brasil' }] as never;
+    const comLocal = buildLaunchPlan({ ...createDefaultCampaignConfig(), campaignName: 'Q4' }, tl, creative());
+    expect(defaultLocationLabel(comLocal[0])).toBeNull();
+  });
+
+  it('a conferência leva cada empresa com segmentação, criativo e datas', async () => {
+    const { buildValidateLaunchParams } = await import('./launchPlan');
+    const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetType: 'total' as const, endDate: '2026-12-31' };
+    const plan = buildLaunchPlan(config, targeting([nubank, itau]), creative());
+    const p = buildValidateLaunchParams(plan, config);
+    expect(p.budget_type).toBe('total');
+    expect(p.end_date).toBe('2026-12-31');
+    expect(p.ad_sets.map((a) => a.company_name)).toEqual(['Nubank', 'Itaú']);
+    expect(p.ad_sets[0].headline).toBe('ABM para Nubank');
+    expect(JSON.stringify(p.ad_sets[0].targeting_criteria)).toContain('urn:li:organization:1');
+  });
+
+  it('cada conjunto leva o nome da empresa para a mensagem do servidor', () => {
+    const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50' };
+    const plan = buildLaunchPlan(config, targeting([nubank]), creative());
+    expect(buildPipelineParams(plan[0], plan, config, { adAccountId: '1', currency: 'BRL' }).company_name).toBe('Nubank');
+  });
+});

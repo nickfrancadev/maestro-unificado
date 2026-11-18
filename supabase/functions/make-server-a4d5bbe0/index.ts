@@ -40,6 +40,8 @@ import {
   urnId,
   resolveCampaignGroupUrn,
   effectiveCampaignStatus,
+  withDefaultLocation,
+  audienceProblem,
 } from "./publishRules.ts";
 import { objectiveFor, resolveCostType } from "./objectives.ts";
 
@@ -825,6 +827,33 @@ function serializeTargetingCriteriaV2(criteria: any): string {
   return `(${parts.join(",")})`;
 }
 
+// Estimativa de público do LinkedIn. `total` é 0 abaixo de 300 (piso de
+// privacidade) e null quando a API não respondeu.
+async function fetchAudienceCount(accessToken: string, criteria: any): Promise<{ total: number | null; active: number | null; error?: string }> {
+  // LinkedIn audienceCounts is a Rest.li 2.0.0 FINDER: GET with the criteria
+  // serialized into the query string (not a POST body). Finder name is
+  // targetingCriteriaV2 for the current include/exclude schema.
+  const serialized = serializeTargetingCriteriaV2(criteria);
+  const url = `https://api.linkedin.com/rest/audienceCounts?q=targetingCriteriaV2&targetingCriteria=${serialized}`;
+  console.log(`[LinkedIn Audience Count] GET ${url}`);
+  try {
+    const response = await fetchWithRetry(url, { method: "GET", headers: linkedInHeaders(accessToken) }, "Audience Count");
+    if (!response.ok) {
+      const errText = await response.text();
+      console.log(`[LinkedIn Audience Count] API error ${response.status}: ${errText}`);
+      return { total: null, active: null, error: "Não foi possível estimar o público no LinkedIn agora." };
+    }
+    // Response shape: { elements: [{ active: N, total: M }], paging: {...} }
+    const data = await response.json();
+    const element = data.elements?.[0] || {};
+    console.log(`[LinkedIn Audience Count] Response: total=${element.total} active=${element.active}`);
+    return { total: element.total ?? null, active: element.active ?? null };
+  } catch (err: any) {
+    console.log(`[LinkedIn Audience Count] Erro: ${err.message}`);
+    return { total: null, active: null, error: "Não foi possível estimar o público no LinkedIn agora." };
+  }
+}
+
 app.post("/make-server-a4d5bbe0/linkedin/audience-count", async (c) => {
   try {
     const integration = await getLinkedInIntegration();
@@ -837,37 +866,12 @@ app.post("/make-server-a4d5bbe0/linkedin/audience-count", async (c) => {
       return c.json({ count: null, error: "targeting_criteria é obrigatório" }, 400);
     }
 
-    // LinkedIn audienceCounts is a Rest.li 2.0.0 FINDER: GET with the criteria
-    // serialized into the query string (not a POST body). Finder name is
-    // targetingCriteriaV2 for the current include/exclude schema.
-    const serialized = serializeTargetingCriteriaV2(targeting_criteria);
-    const url = `https://api.linkedin.com/rest/audienceCounts?q=targetingCriteriaV2&targetingCriteria=${serialized}`;
-
-    console.log(`[LinkedIn Audience Count] GET ${url}`);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${integration.access_token}`,
-        "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": "202602",
-      },
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.log(`[LinkedIn Audience Count] API error ${response.status}: ${errText}`);
-      return c.json({ count: null, error: `LinkedIn API ${response.status}: ${errText}` });
-    }
-
-    // Response shape: { elements: [{ active: N, total: M }], paging: {...} }
-    // total is 0 when audience size < 300 (LinkedIn privacy floor).
-    const data = await response.json();
-    const element = data.elements?.[0] || {};
-    console.log(`[LinkedIn Audience Count] Response: total=${element.total} active=${element.active} raw=${JSON.stringify(data).slice(0, 500)}`);
-    return c.json({
-      count: element.total ?? null,
-      active_count: element.active ?? null,
-    });
+    // Sem localização, o servidor completa com Brasil (F052) — a mesma regra
+    // da criação do conjunto, para a estimativa contar o que vai ao ar.
+    const { criteria, defaulted } = withDefaultLocation(targeting_criteria);
+    const result = await fetchAudienceCount(integration.access_token, criteria);
+    if (result.error) return c.json({ count: null, error: result.error, default_location: defaulted });
+    return c.json({ count: result.total, active_count: result.active, default_location: defaulted });
   } catch (err: any) {
     console.log("[LinkedIn Audience Count] Erro:", err.message);
     return c.json({ count: null, error: err.message });
@@ -953,6 +957,8 @@ app.post("/make-server-a4d5bbe0/linkedin/campaigns", async (c) => {
     }
 
     switch (action) {
+      case "validate-launch":
+        return await handleValidateLaunch(c, body);
       case "create-campaign-group":
         return await handleCreateCampaignGroup(c, body);
       case "create-campaign":
@@ -978,6 +984,35 @@ app.post("/make-server-a4d5bbe0/linkedin/campaigns", async (c) => {
     return c.json({ success: false, error: `Erro interno: ${err.message}` }, 500);
   }
 });
+
+// ACTION 0: Validate Launch — confere TODAS as empresas antes de criar
+// qualquer coisa no LinkedIn. Recusa com 422 e a lista do que impede, por
+// empresa, em português. A tela chama antes do primeiro passo da publicação.
+async function handleValidateLaunch(c: any, body: any) {
+  const adSets: any[] = Array.isArray(body.ad_sets) ? body.ad_sets : [];
+  if (!adSets.length) return c.json({ success: false, error: "Nenhuma empresa para publicar." }, 400);
+  const { accessToken } = await requireLinkedIn();
+
+  const problems: { company_name: string; messages: string[] }[] = [];
+  const defaultedLocation: string[] = [];
+  for (const a of adSets) {
+    const company = String(a.company_name || "Empresa");
+    const messages: string[] = [];
+    const { criteria, defaulted } = withDefaultLocation(a.targeting_criteria);
+    if (defaulted) defaultedLocation.push(company);
+    const audience = await fetchAudienceCount(accessToken, criteria);
+    const tooSmall = audienceProblem(company, audience.total);
+    if (tooSmall) messages.push(tooSmall);
+    if (messages.length) problems.push({ company_name: company, messages });
+  }
+
+  if (problems.length) {
+    const first = problems[0];
+    const more = problems.length > 1 ? ` (e mais ${problems.length - 1} empresa${problems.length > 2 ? "s" : ""})` : "";
+    return c.json({ success: false, error: `${first.messages[0]}${more}`, problems, default_location: defaultedLocation }, 422);
+  }
+  return c.json({ success: true, default_location: defaultedLocation });
+}
 
 // ACTION 1: Create Campaign Group
 async function handleCreateCampaignGroup(c: any, body: any) {
@@ -1047,10 +1082,12 @@ async function handleCreateCampaignGroup(c: any, body: any) {
 async function handleCreateCampaign(c: any, body: any) {
   const {
     campaign_id, campaign_group_id, ad_account_id, name, objective,
-    targeting_criteria, budget_type, budget_amount, currency,
+    budget_type, budget_amount, currency,
     cost_type, bid_amount, unit_cost, start_date, end_date,
-    auto_activate, bidding_strategy,
+    auto_activate, bidding_strategy, company_name,
   } = body;
+  // Sem localização, vai Brasil (F052) — o mesmo critério que a estimativa usou.
+  const targeting_criteria = body.targeting_criteria ? withDefaultLocation(body.targeting_criteria).criteria : null;
 
   if (!campaign_id || !campaign_group_id || !ad_account_id || !name || !targeting_criteria) {
     return c.json({ error: "campaign_id, campaign_group_id, ad_account_id, name e targeting_criteria são obrigatórios" }, 400);
@@ -1064,6 +1101,16 @@ async function handleCreateCampaign(c: any, body: any) {
   }
 
   const { accessToken } = await requireLinkedIn();
+
+  // Público mínimo de 300 conferido no servidor antes de criar o conjunto
+  // (F055). A tela já trava, mas o servidor não confia nela.
+  const audience = await fetchAudienceCount(accessToken, targeting_criteria);
+  const tooSmall = audienceProblem(company_name || name, audience.total);
+  if (tooSmall) {
+    await auditLog(campaign_id, "create-campaign", { status: "refused", reason: "audience", count: audience.total });
+    return c.json({ success: false, error: tooSmall }, 422);
+  }
+
   const adAccStr2 = String(ad_account_id);
   const accountUrn = adAccStr2.startsWith("urn:") ? adAccStr2 : `urn:li:sponsoredAccount:${adAccStr2}`;
   const cgStr = String(campaign_group_id);
