@@ -87,7 +87,8 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
     : null;
 
   return (
-    <div className="max-w-3xl mx-auto">
+    // Largura e margens vêm do assistente (stepLayout.ts), não daqui.
+    <div>
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-slate-900">Configurar campanha</h2>
         <p className="text-sm text-slate-500 mt-1">

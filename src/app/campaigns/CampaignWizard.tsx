@@ -18,6 +18,7 @@ import { OrchestrationStep } from './wizard/OrchestrationStep';
 import { SegmentationStep, createEmptyTargeting, smallAudienceSentence } from './wizard/SegmentationStep';
 import { canProceedFromStep, creativeIssues } from './wizard/wizardGates';
 import { isSpendConfirmed } from './wizard/spendGuard';
+import { stepFrame, showAllStepLabels, STEP_GUTTER, STEP_CONTENT_PADDING, STEP_SCROLLBAR_GUTTER } from './wizard/stepLayout';
 import { hasTitleConflict, TITLE_CONFLICT_REASON, resolveTargetingForAccount } from './wizard/segmentation/targeting';
 import type { TargetingData } from './wizard/SegmentationStep';
 import { useAudienceCount, audienceCheckFor, unconfirmedAudienceSentence } from './wizard/segmentation/useAudienceCount';
@@ -338,11 +339,15 @@ export function CampaignWizard() {
     : isDirty ? 'Ainda não salvo' : '';
   const stepSummary = getStepSummary();
   const nextEnabled = canProceed();
+  // Uma moldura por passo, a MESMA no topo, no conteúdo e no rodapé (ver stepLayout.ts).
+  const { frameClass, width } = stepFrame(currentStep);
+  const allLabels = showAllStepLabels(currentStep);
 
   return (
     <div ref={wizardRootRef} className="flex flex-col h-full bg-slate-50">
       {/* Wizard Header */}
-      <div className="bg-white border-b border-slate-200 px-8 py-4 flex items-center gap-6 shadow-sm">
+      <div className={`bg-white border-b border-slate-200 shadow-sm overflow-hidden ${STEP_SCROLLBAR_GUTTER} ${STEP_GUTTER} py-4`}>
+      <div data-frame="header" className={`${frameClass} flex items-center gap-6`}>
         {/* O título encolhe com reticências (nome inteiro no title) e nunca
             invade o stepper. */}
         <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -393,7 +398,7 @@ export function CampaignWizard() {
                   >
                     {isDone ? <Check className="w-3.5 h-3.5" /> : step.id}
                   </div>
-                  <span className={`hidden xl:block text-xs ${isCurrent ? 'font-semibold' : 'font-medium'}`}>{step.label}</span>
+                  <span className={`${allLabels ? 'hidden xl:block' : isCurrent ? 'hidden sm:block' : 'sr-only'} text-xs ${isCurrent ? 'font-semibold' : 'font-medium'}`}>{step.label}</span>
                 </button>
                 {idx < STEPS.length - 1 && (
                   <div className={`w-6 h-0.5 ${currentStep > idx + 1 ? 'bg-[#FF5F39]' : 'bg-slate-200'}`} />
@@ -415,13 +420,13 @@ export function CampaignWizard() {
           </button>
         </div>
       </div>
+      </div>
 
       {/* Step Content */}
-      <div className="flex-1 overflow-y-auto p-8">
-        {/* Criativos (4) é um workspace de 3 colunas e ocupa a largura toda; a
-            Revisão (5) tem uma coluna fixa à direita e precisa de mais espaço
-            que os formulários dos outros passos. */}
-        <div className={currentStep === 4 ? 'h-full' : currentStep === 5 ? 'max-w-7xl mx-auto' : 'max-w-6xl mx-auto h-full'}>
+      <div className={`flex-1 overflow-y-auto ${STEP_SCROLLBAR_GUTTER} ${STEP_CONTENT_PADDING}`}>
+        {/* Largura por passo em stepLayout.ts: 768 px nos formulários, 1152 na
+            Segmentação, 1280 na Revisão e largura total no Criativo. */}
+        <div data-frame="content" className={`${frameClass} ${width === 'review' ? '' : 'h-full'}`}>
           {currentStep === 1 && (
             <ConfigStep
               config={campaignConfig}
@@ -474,7 +479,8 @@ export function CampaignWizard() {
       </div>
 
       {/* Footer Actions */}
-      <div className="bg-white border-t border-slate-200 px-8 py-4 flex justify-between items-center">
+      <div className={`bg-white border-t border-slate-200 overflow-hidden ${STEP_SCROLLBAR_GUTTER} ${STEP_GUTTER} py-4`}>
+      <div data-frame="footer" className={`${frameClass} flex justify-between items-center gap-3`}>
         <button
           onClick={handleBack}
           disabled={currentStep === 1}
@@ -489,7 +495,7 @@ export function CampaignWizard() {
 
         <div className="flex items-center gap-3">
           {stepSummary && (
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-slate-500 text-right min-w-0">
               {stepSummary}
             </span>
           )}
@@ -509,6 +515,7 @@ export function CampaignWizard() {
             <span className="text-xs text-slate-400">Publique pela coluna da direita, depois de conferir o checklist.</span>
           )}
         </div>
+      </div>
       </div>
 
       {/* Sair com alteração não salva: confirmação na tela, não window.confirm */}

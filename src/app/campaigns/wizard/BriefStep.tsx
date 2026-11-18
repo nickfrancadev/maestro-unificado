@@ -324,7 +324,8 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
   };
 
   return (
-    <div className="max-w-3xl mx-auto pb-8">
+    // Largura e margens vêm do assistente (stepLayout.ts), não daqui.
+    <div className="pb-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <PaintBucket className="w-6 h-6 text-[#FF5F39]" />
