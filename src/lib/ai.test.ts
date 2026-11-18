@@ -41,3 +41,13 @@ describe('sanitizeBrandBrief / sanitizeBrandExtraction — nada de lixo vai para
     expect(e?.brand_colors).toEqual({ primary: '', secondary: '', accent: '#AABBCC' });
   });
 });
+
+describe('erro de limite de uso da IA aparece como veio do servidor', () => {
+  it('429 e 422 são mensagens para a tela; 500 não', async () => {
+    const { AiRequestError, isUserFacingAiError } = await import('./ai');
+    expect(isUserFacingAiError(new AiRequestError('Tente de novo em 7 minutos', 429))).toBe(true);
+    expect(isUserFacingAiError(new AiRequestError('x', 422))).toBe(true);
+    expect(isUserFacingAiError(new AiRequestError('boom', 500))).toBe(false);
+    expect(isUserFacingAiError(new Error('x'))).toBe(false);
+  });
+});

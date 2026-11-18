@@ -47,6 +47,7 @@ import {
   creativeMessage,
 } from "./publishRules.ts";
 import { objectiveFor, resolveCostType } from "./objectives.ts";
+import { checkRateLimit, rateLimitConfigFrom, rateLimitKey, rateLimitMessage } from "./aiRateLimit.ts";
 import { fetchWithRetry as fetchWithRetryPure, translateLinkedInError, RECONNECT_MESSAGE } from "./linkedinHttp.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
@@ -68,12 +69,47 @@ app.use(
   "/*",
   cors({
     origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-maestro-company-id", "x-maestro-user-id"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    exposeHeaders: ["Content-Length"],
+    exposeHeaders: ["Content-Length", "Retry-After", "X-RateLimit-Remaining"],
     maxAge: 600,
   }),
 );
+
+// Limite de uso da IA por empresa e usuário (F085) nas rotas que custam.
+// A identificação vem dos cabeçalhos que o app manda; autenticação de verdade
+// é decisão à parte e não muda esta regra.
+const AI_LIMITED_ROUTES = new Set([
+  "/make-server-a4d5bbe0/ai/brand-brief",
+  "/make-server-a4d5bbe0/ai/extract-brand-voice",
+  "/make-server-a4d5bbe0/ai/generate-copy",
+  "/make-server-a4d5bbe0/ai/generate-base-image",
+]);
+const AI_RATE_LIMIT = rateLimitConfigFrom({
+  max: Deno.env.get("AI_RATE_LIMIT_MAX"),
+  windowMin: Deno.env.get("AI_RATE_LIMIT_WINDOW_MIN"),
+});
+app.use("/make-server-a4d5bbe0/ai/*", async (c, next) => {
+  if (c.req.method !== "POST" || !AI_LIMITED_ROUTES.has(c.req.path)) return next();
+  const key = rateLimitKey(c.req.header("x-maestro-company-id"), c.req.header("x-maestro-user-id"));
+  const now = Date.now();
+  try {
+    const decision = checkRateLimit(await kv.get(key), now, AI_RATE_LIMIT);
+    if (!decision.allowed) {
+      c.header("Retry-After", String(decision.retryAfterSeconds));
+      return c.json({
+        error: rateLimitMessage(decision.retryAfterSeconds, now, AI_RATE_LIMIT),
+        retry_after_seconds: decision.retryAfterSeconds,
+      }, 429);
+    }
+    await kv.set(key, decision.timestamps);
+    c.header("X-RateLimit-Remaining", String(decision.remaining));
+  } catch (err: any) {
+    // Contador indisponível não derruba a IA.
+    console.log(`[AI Rate Limit] contador indisponível: ${err.message}`);
+  }
+  return next();
+});
 
 // Health check endpoint
 app.get("/make-server-a4d5bbe0/health", (c) => {

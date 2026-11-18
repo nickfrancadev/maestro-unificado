@@ -61,6 +61,7 @@ import {
   generateBaseImage,
   composeLogoOverlay,
   AiRequestError,
+  isUserFacingAiError,
   copyProblems,
   impliesPartnership,
   sanitizeBrandBrief,
@@ -116,8 +117,9 @@ type FailureKind = 'brief' | 'copy' | 'templateCopy' | 'baseImage' | 'compose' |
 function friendlyError(kind: FailureKind, err: unknown, label?: string): string {
   console.error(`[CreativeStep] falha em ${kind}${label ? ` (${label})` : ''}:`, err);
   // 422 = o servidor recusou o resultado da IA e já explicou em português o
-  // que fazer. Repetir uma frase genérica por cima esconderia o motivo.
-  if (err instanceof AiRequestError && err.status === 422) return err.message;
+  // que fazer; 429 = limite de uso da IA, com quando tentar de novo. Repetir
+  // uma frase genérica por cima esconderia o motivo.
+  if (isUserFacingAiError(err)) return err.message;
   switch (kind) {
     case 'brief':
       return `Não conseguimos analisar a marca de ${label} agora. Tente de novo em instantes; os textos ainda podem ser gerados sem essa análise.`;

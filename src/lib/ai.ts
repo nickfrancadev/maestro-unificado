@@ -5,10 +5,39 @@ import { projectId, publicAnonKey } from '../utils/supabase/info';
 import type { OverlayLayout } from '@/app/campaigns/wizard/overlayLayout';
 
 const SERVER_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-a4d5bbe0`;
+// Quem está usando a IA: o servidor limita por empresa e usuário (F085). O
+// protótipo não tem login; o id do navegador faz o papel do usuário.
+const AI_USER_KEY = 'maestro.aiUserId';
+const AI_COMPANY_ID = 'maestro-demo';
+function aiUserId(): string {
+  try {
+    let id = localStorage.getItem(AI_USER_KEY);
+    if (!id) {
+      id = `u-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(AI_USER_KEY, id);
+    }
+    return id;
+  } catch {
+    return 'anon';
+  }
+}
+
 const headers = () => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${publicAnonKey}`,
+  'x-maestro-company-id': AI_COMPANY_ID,
+  'x-maestro-user-id': aiUserId(),
 });
+
+/**
+ * Erro que a tela mostra como veio do servidor, em português: 422 (o
+ * servidor recusou o resultado da IA e diz o que fazer) e 429 (limite de uso,
+ * diz quando tentar de novo). Os outros são falha técnica e a tela usa a
+ * própria frase amigável.
+ */
+export function isUserFacingAiError(err: unknown): err is AiRequestError {
+  return err instanceof AiRequestError && (err.status === 422 || err.status === 429);
+}
 
 // Erro de uma rota /ai/*. `status` 422 = o servidor recusou o que a IA
 // devolveu e a mensagem já vem em português, pronta para a tela; os outros
