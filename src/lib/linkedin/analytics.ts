@@ -244,13 +244,21 @@ const EMPTY_FULL: CampaignAnalyticsFull = {
   timeSeries: [], delta: {}, currency: 'USD',
 };
 
+/** Query do analytics: "all" = vida da campanha, a partir do início dela. */
+export function analyticsQuery(campaignId: string, dateRange: string, campaignStart?: number | null): string {
+  const q = new URLSearchParams({ campaignId, dateRange });
+  if (dateRange === 'all' && campaignStart) q.set('start', String(campaignStart));
+  return q.toString();
+}
+
 export async function fetchCampaignAnalyticsFull(
   campaignId: string,
-  dateRange: string = '30d',
+  dateRange: string = 'all',
+  campaignStart?: number | null,
 ): Promise<CampaignAnalyticsFull> {
   try {
     const response = await fetch(
-      `${SERVER_BASE}/linkedin/campaign-analytics-full?campaignId=${campaignId}&dateRange=${dateRange}`,
+      `${SERVER_BASE}/linkedin/campaign-analytics-full?${analyticsQuery(campaignId, dateRange, campaignStart)}`,
       { headers: headers() },
     );
     // Falha volta com `error`: sem ele, a tela confundiria "não carregou" com

@@ -45,12 +45,15 @@ import { periodLabel } from './CampaignList';
 import { groupIdFromRoute, groupChildren, groupCampaignMeta, buildGroupBreakdown } from './groupAnalytics';
 
 
-const DATE_RANGES = [
+// "all" = vida da campanha, do início dela até hoje. É o padrão: 30 dias
+// fixos cortavam campanhas longas e enchiam de dias vazios as curtas.
+export const DATE_RANGES = [
+  { key: 'all', label: 'Vida da campanha' },
   { key: '7d', label: '7 dias' },
   { key: '30d', label: '30 dias' },
   { key: '90d', label: '90 dias' },
-  { key: 'all', label: 'Tudo' },
 ];
+export const DEFAULT_DATE_RANGE = 'all';
 
 function fmtTs(ts: number): string {
   const d = new Date(ts);
@@ -155,7 +158,9 @@ export function CampaignAnalytics() {
   const navigate = useNavigate();
   const { id: campaignId = '' } = useParams<{ id: string }>();
   const onBack = () => navigate('/campaigns');
-  const [dateRange, setDateRange] = useState('30d');
+  const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE);
+  /** Lista do LinkedIn consultada (achou ou não a campanha): libera a "vida da campanha". */
+  const [metaLoaded, setMetaLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CampaignAnalyticsFull | null>(null);
   const [campaign, setCampaign] = useState<LinkedInCampaign | null>(null);
@@ -190,9 +195,11 @@ export function CampaignAnalytics() {
   useEffect(() => {
     if (isMockCampaign(campaignId)) {
       setCampaign(MOCK_CAMPAIGN);
+      setMetaLoaded(true);
       return;
     }
     fetchLinkedInCampaigns().then(({ campaigns, error }) => {
+      setMetaLoaded(true);
       if (groupId) {
         const children = groupChildren(campaigns, groupId);
         setGroupAdSets(error ? [] : children);
@@ -208,6 +215,9 @@ export function CampaignAnalytics() {
   const loadAnalytics = useCallback(async () => {
     // Grupo: espera a lista dizer quais conjuntos são dele (segue carregando).
     if (groupId && groupAdSets === null) return;
+    // Vida da campanha precisa da data de início: espera a lista responder.
+    if (dateRange === 'all' && !metaLoaded) return;
+    const since = campaign?.runSchedule?.start ?? null;
     setLoading(true);
     setLoadError(null);
     try {
@@ -234,7 +244,7 @@ export function CampaignAnalytics() {
           return;
         }
         const results = await Promise.all(groupAdSets.map(c =>
-          fetchCampaignAnalyticsFull(c.id, dateRange).catch(() => null)));
+          fetchCampaignAnalyticsFull(c.id, dateRange, c.runSchedule?.start ?? since).catch(() => null)));
         const breakdown = buildGroupBreakdown(groupId, groupAdSets, results, 'BRL');
         if (!breakdown) {
           setByAccount(null);
@@ -250,7 +260,7 @@ export function CampaignAnalytics() {
         // Um conjunto avulso já é uma empresa: não há divisão a buscar.
         setByAccount(null);
         setBreakdownFailed(false);
-        const result = await fetchCampaignAnalyticsFull(campaignId, dateRange);
+        const result = await fetchCampaignAnalyticsFull(campaignId, dateRange, since);
         setData(result);
       }
     } catch (err: any) {
@@ -259,7 +269,7 @@ export function CampaignAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [campaignId, dateRange, groupId, groupAdSets]);
+  }, [campaignId, dateRange, groupId, groupAdSets, metaLoaded, campaign?.runSchedule?.start]);
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
 
@@ -305,7 +315,7 @@ export function CampaignAnalytics() {
     : campaign?.totalBudget
     ? `${fmtCurrency(parseFloat(campaign.totalBudget.amount), campaign.totalBudget.currency)} total`
     : null;
-  const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || '30 dias';
+  const selectedRangeLabel = DATE_RANGES.find(r => r.key === dateRange)?.label || 'Vida da campanha';
 
   const accounts = byAccount?.accounts ?? [];
   // Sem filtro de seleção: o agregado considera sempre TODAS as empresas.
@@ -418,7 +428,7 @@ export function CampaignAnalytics() {
               {selectedRangeLabel}
             </button>
             {dateDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1 w-36">
+              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1 w-44">
                 {DATE_RANGES.map(r => (
                   <button
                     key={r.key}

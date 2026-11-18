@@ -29,7 +29,7 @@ function renderManage() {
   );
 }
 
-describe('LinkedInConnectionModal — lista de Ad Accounts', () => {
+describe('LinkedInConnectionModal — lista de contas de anúncios', () => {
   it('expõe radiogroup/radio com aria-checked e marca a conta vinculada', async () => {
     renderManage();
     const group = await screen.findByRole('radiogroup');
@@ -61,5 +61,28 @@ describe('LinkedInConnectionModal — lista de Ad Accounts', () => {
       <LinkedInConnectionModal mode="connect" currentStatus={status} onClose={() => {}} onStatusRefresh={async () => {}} />,
     );
     expect(screen.getByText('Gerenciar LinkedIn Ads')).toBeInTheDocument();
+  });
+});
+
+describe('termos: "Conta de anúncios", nunca "Ad Account"', () => {
+  it('nenhuma tela de LinkedIn Ads escreve "Ad Account" para o usuário', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const files = [
+      'src/app/integrations/Integrations.tsx',
+      'src/app/integrations/LinkedInConnectionModal.tsx',
+      'src/app/integrations/statusBadge.tsx',
+      'src/app/campaigns/CampaignList.tsx',
+      'src/app/campaigns/CampaignAnalytics.tsx',
+      'src/app/campaigns/wizard/ConfigStep.tsx',
+      'src/app/campaigns/wizard/OrchestrationStep.tsx',
+    ];
+    for (const f of files) {
+      const text = fs.readFileSync(path.resolve(process.cwd(), f), 'utf8')
+        .split('\n')
+        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join('\n');
+      expect(text, f).not.toMatch(/Ad Accounts?\b/);
+    }
   });
 });

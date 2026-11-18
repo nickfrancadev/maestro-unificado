@@ -47,6 +47,7 @@ import {
   creativeMessage,
 } from "./publishRules.ts";
 import { objectiveFor, resolveCostType, copyObjectiveBlock } from "./objectives.ts";
+import { analyticsWindowStart } from "./analyticsRange.ts";
 import { checkRateLimit, rateLimitConfigFrom, rateLimitKey, rateLimitMessage } from "./aiRateLimit.ts";
 import { fetchWithRetry as fetchWithRetryPure, translateLinkedInError, RECONNECT_MESSAGE } from "./linkedinHttp.ts";
 
@@ -412,7 +413,7 @@ app.post("/make-server-a4d5bbe0/linkedin/select-ad-account", async (c) => {
     return c.json({ success: true });
   } catch (err: any) {
     console.log("[LinkedIn Select Ad Account] Erro:", err.message);
-    return c.json({ error: `Erro ao selecionar ad account: ${err.message}` }, 500);
+    return c.json({ error: "Não foi possível selecionar a conta de anúncios. Tente de novo." }, 500);
   }
 });
 
@@ -465,7 +466,7 @@ app.get("/make-server-a4d5bbe0/linkedin/ad-accounts", async (c) => {
     return c.json({ accounts });
   } catch (err: any) {
     console.log("[LinkedIn Ad Accounts] Erro:", err.message);
-    return c.json({ error: `Erro ao buscar ad accounts: ${err.message}` }, 500);
+    return c.json({ error: "Não foi possível buscar as contas de anúncios. Tente de novo." }, 500);
   }
 });
 
@@ -1768,7 +1769,7 @@ app.get("/make-server-a4d5bbe0/linkedin/ad-account-billing", async (c) => {
 
     const adAccountId = integration.selected_ad_account_id;
     if (!adAccountId) {
-      return c.json({ error: "Nenhuma Ad Account selecionada", has_billing: false }, 400);
+      return c.json({ error: "Nenhuma conta de anúncios selecionada. Escolha uma em Integrações.", has_billing: false }, 400);
     }
 
     // Always fetch from LinkedIn API: only servingStatuses tells us whether a
@@ -1840,7 +1841,7 @@ app.post("/make-server-a4d5bbe0/linkedin/create-ad-account", async (c) => {
     const { name, currency, reference } = await c.req.json();
 
     if (!name) {
-      return c.json({ error: "Nome da Ad Account é obrigatório" }, 400);
+      return c.json({ error: "Nome da conta de anúncios é obrigatório" }, 400);
     }
 
     const payload: Record<string, any> = {
@@ -1893,7 +1894,7 @@ app.post("/make-server-a4d5bbe0/linkedin/create-ad-account", async (c) => {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
     console.log("[Create Ad Account] Erro:", err.message);
-    return c.json({ error: `Erro ao criar Ad Account: ${err.message}` }, 500);
+    return c.json({ error: "Não foi possível criar a conta de anúncios. Tente de novo." }, 500);
   }
 });
 
@@ -2002,7 +2003,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
 
     const adAccountId = integration.selected_ad_account_id;
     if (!adAccountId) {
-      return c.json({ error: "Nenhuma Ad Account selecionada", campaigns: [] }, 400);
+      return c.json({ error: "Nenhuma conta de anúncios selecionada. Escolha uma em Integrações.", campaigns: [] }, 400);
     }
 
     const accessToken = integration.access_token;
@@ -2166,7 +2167,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics", async (c) => {
     }
 
     const campaignId = c.req.query("campaignId");
-    const dateRange = c.req.query("dateRange") || "30d";
+    const dateRange = c.req.query("dateRange") || "all";
     if (!campaignId) {
       return c.json({ error: "campaignId é obrigatório" }, 400);
     }
@@ -2176,11 +2177,9 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics", async (c) => {
     const currency = integration.selected_ad_account_currency || "USD";
 
     const now = new Date();
-    let daysBack = 30;
-    if (dateRange === "7d") daysBack = 7;
-    else if (dateRange === "90d") daysBack = 90;
-    else if (dateRange === "all") daysBack = 365;
-    const start = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    // Padrão: vida da campanha (do início dela até hoje), não 30 dias fixos.
+    const start = analyticsWindowStart(dateRange, c.req.query("start"), now);
+    const daysBack = Math.max(1, Math.ceil((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
     const dateRangeParam = `(start:(year:${start.getFullYear()},month:${start.getMonth() + 1},day:${start.getDate()}),end:(year:${now.getFullYear()},month:${now.getMonth() + 1},day:${now.getDate()}))`;
 
     const liHeaders = {
@@ -2286,7 +2285,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-full", async (c) => {
     }
 
     const campaignId = c.req.query("campaignId");
-    const dateRange = c.req.query("dateRange") || "30d";
+    const dateRange = c.req.query("dateRange") || "all";
     if (!campaignId) {
       return c.json({ error: "campaignId é obrigatório" }, 400);
     }
@@ -2296,11 +2295,9 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-full", async (c) => {
     const currency = integration.selected_ad_account_currency || "USD";
 
     const now = new Date();
-    let daysBack = 30;
-    if (dateRange === "7d") daysBack = 7;
-    else if (dateRange === "90d") daysBack = 90;
-    else if (dateRange === "all") daysBack = 365;
-    const start = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    // Padrão: vida da campanha (do início dela até hoje), não 30 dias fixos.
+    const start = analyticsWindowStart(dateRange, c.req.query("start"), now);
+    const daysBack = Math.max(1, Math.ceil((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
     const drParam = `(start:(year:${start.getFullYear()},month:${start.getMonth() + 1},day:${start.getDate()}),end:(year:${now.getFullYear()},month:${now.getMonth() + 1},day:${now.getDate()}))`;
 
     const liHeaders = {

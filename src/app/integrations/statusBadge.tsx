@@ -17,7 +17,7 @@ export function getStatusBadge(status: IntegrationStatus, hasAdAccount?: boolean
   }
   if (status === 'connected' && !hasAdAccount) {
     return {
-      label: 'Sem Ad Account',
+      label: 'Sem conta de anúncios',
       icon: <AlertTriangle className="w-3.5 h-3.5" />,
       classes: 'bg-amber-50 text-amber-700 border-amber-200',
     };
