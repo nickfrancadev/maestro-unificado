@@ -89,7 +89,7 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-slate-900">Configurar Campanha</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Configurar campanha</h2>
         <p className="text-sm text-slate-500 mt-1">
           Defina os dados básicos da campanha antes de configurar a segmentação e criativo.
         </p>

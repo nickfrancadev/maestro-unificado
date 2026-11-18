@@ -113,13 +113,13 @@ describe('BriefStep', () => {
       const pdf = new File(['%PDF-'], 'manual-da-marca.pdf', { type: 'application/pdf' });
       fireEvent.drop(dropzone, { dataTransfer: { files: [pdf] } });
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-      expect(screen.getByText('Brand Book lido')).toBeTruthy();
+      expect(screen.getByText('Lido do manual da marca')).toBeTruthy();
       expect(screen.getByText('manual-da-marca.pdf')).toBeTruthy();
 
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: /salvar marca/i }));
       });
-      expect(screen.getByText('Brand Book lido')).toBeTruthy();
+      expect(screen.getByText('Lido do manual da marca')).toBeTruthy();
       expect(screen.getByText('manual-da-marca.pdf')).toBeTruthy();
     } finally {
       vi.useRealTimers();
@@ -136,7 +136,7 @@ describe('BriefStep — candidatas de cor sobrevivem ao save', () => {
     try {
       renderStep();
 
-      const url = screen.getByLabelText(/website da sua empresa/i);
+      const url = screen.getByLabelText(/site da sua empresa/i);
       fireEvent.change(url, { target: { value: 'https://exemplo.com' } });
       fireEvent.click(screen.getByRole('button', { name: /extrair com ia/i }));
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
@@ -180,7 +180,7 @@ describe('BriefStep — rascunho vive no pai', () => {
 // deixar lixo do modelo nos campos.
 describe('BriefStep — extração do site', () => {
   const extract = () => {
-    fireEvent.change(screen.getByLabelText(/website da sua empresa/i), { target: { value: 'https://exemplo.com' } });
+    fireEvent.change(screen.getByLabelText(/site da sua empresa/i), { target: { value: 'https://exemplo.com' } });
     fireEvent.click(screen.getByRole('button', { name: /extrair com ia/i }));
   };
 

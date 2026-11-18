@@ -1633,7 +1633,7 @@ const PERSON_FACET_CONFIG: Array<{
   {
     key: "yearsOfExperience",
     icon: <Clock className="w-4 h-4" />,
-    label: "Anos de Experiência",
+    label: "Anos de experiência",
     description: "Tempo de experiência profissional",
     type: "fixed",
     options: EXPERIENCE_OPTIONS,

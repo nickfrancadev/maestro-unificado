@@ -193,7 +193,7 @@ function statusOf(override: CompanyCreativeOverride | undefined): CompanyStatus 
 
 const STATUS_META: Record<CompanyStatus, { label: string; color: string; dot: string }> = {
   template: { label: 'Segue o template', color: 'text-slate-500 bg-slate-100', dot: 'bg-slate-300' },
-  brief_only: { label: 'Brief gerado', color: 'text-blue-700 bg-blue-50', dot: 'bg-blue-500' },
+  brief_only: { label: 'Perfil gerado', color: 'text-blue-700 bg-blue-50', dot: 'bg-blue-500' },
   fully_personalized: { label: 'Personalizado', color: 'text-emerald-700 bg-emerald-50', dot: 'bg-emerald-500' },
 };
 
@@ -509,8 +509,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       if (!brief) {
         const hadBrief = !!creativeDataRef.current?.overrides?.[company.id]?.brief;
         reportError(key, hadBrief
-          ? `Não conseguimos analisar a marca de ${company.label}. O brief anterior foi mantido; se quiser, ajuste setor, proposta de valor e temas no Brand Brief.`
-          : `Não conseguimos analisar a marca de ${company.label}. Os textos podem ser gerados sem essa análise; se quiser, preencha setor, proposta de valor e temas no Brand Brief.`, retry);
+          ? `Não conseguimos analisar a marca de ${company.label}. O brief anterior foi mantido; se quiser, ajuste setor, proposta de valor e temas no perfil da empresa.`
+          : `Não conseguimos analisar a marca de ${company.label}. Os textos podem ser gerados sem essa análise; se quiser, preencha setor, proposta de valor e temas no perfil da empresa.`, retry);
         return null;
       }
       updateOverride(company.id, { brief });
@@ -1091,7 +1091,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
       : (effHeadline || effBody);
   const imageSummary = [
     imageCfg.format === 'square' ? 'Quadrado 1:1' : 'Banner 1.91:1',
-    imageCfg.imageMode === 'ai' ? 'Gerada com IA' : 'Upload',
+    imageCfg.imageMode === 'ai' ? 'Gerada com IA' : 'Imagem enviada',
     ...(aiTextsOn ? ['textos pela IA'] : []),
     ...(imageCfg.baseImageUrl ? [] : ['sem imagem-base']),
   ].join(' · ');
@@ -1154,7 +1154,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               <div className={`text-sm truncate ${isTemplate ? 'font-bold text-[#212A46]' : 'font-semibold text-slate-700'}`}>
                 Template global
               </div>
-              <div className="text-[10px] text-slate-500">Aplicado a todas sem override</div>
+              <div className="text-[10px] text-slate-500">Vale para as empresas não personalizadas</div>
             </div>
           </button>
 
@@ -1162,7 +1162,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
           {companies.length === 0 && (
             <div className="px-4 py-8 text-center">
               <div className="text-xs text-slate-400">
-                Nenhuma empresa selecionada na Segmentação. Volte ao Step 2 para adicionar empresas-alvo.
+                Nenhuma empresa selecionada na Segmentação. Volte ao passo 2 (Segmentação) para adicionar empresas-alvo.
               </div>
             </div>
           )}
@@ -1470,7 +1470,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
               )}
 
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1">
-                Headline
+                Título
               </label>
               <div className="relative">
                 <input
@@ -1482,7 +1482,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   maxLength={200}
                   placeholder={isTemplate
                     ? 'Ex: Acelere seu ABM com {{company.name}}'
-                    : 'Headline específico (vazio = usa o template)'}
+                    : 'Título só desta empresa (vazio = usa o template)'}
                   className="w-full p-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none font-medium"
                 />
                 <span className="absolute top-2.5 right-2.5 text-[10px] text-slate-400">
@@ -1502,7 +1502,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                   className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 hover:text-[#E54A26]"
                 >
                   <Info className="w-3 h-3" />
-                  Brand Brief de {editingCompany.label}
+                  Perfil da empresa: {editingCompany.label}
                   {briefForEditing && <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />}
                 </button>
               )}
@@ -1903,7 +1903,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                     });
                   }}
                   disabled={!advertiserLogoUrl}
-                  title={advertiserLogoUrl ? undefined : 'Defina o logo no Brand Kit primeiro'}
+                  title={advertiserLogoUrl ? undefined : 'Defina o logo no passo Marca primeiro'}
                   className="flex items-center gap-1 text-[10px] font-semibold text-[#FF5F39] hover:text-[#E54A26] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Copy className="w-3 h-3" />
@@ -1938,7 +1938,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                 label="Meu logo"
                 layer={imageCfg.layout.advertiserLogo}
                 disabled={!advertiserLogoUrl}
-                disabledHint="Defina o logo no Brand Kit primeiro"
+                disabledHint="Defina o logo no passo Marca primeiro"
                 selected={selectedLayer === 'advertiserLogo'}
                 onSelect={() => setSelectedLayer('advertiserLogo')}
                 onChange={(next) => setLayout({ ...imageCfg.layout, advertiserLogo: next })}
@@ -2041,7 +2041,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between z-10">
               <div className="flex items-center gap-2 text-xs text-slate-600">
                 <Layout className="w-3.5 h-3.5" />
-                <span className="font-medium">Preview LinkedIn</span>
+                <span className="font-medium">Prévia no LinkedIn</span>
                 {previewCompany && (
                   <span className="text-slate-400">— como aparece para <span className="font-semibold text-slate-700">{previewCompany.label}</span></span>
                 )}
@@ -2150,7 +2150,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       <p className="text-xs uppercase font-semibold text-slate-500 mb-0.5">{previewDomain}</p>
                     )}
                     <p className="text-sm font-semibold text-slate-900 truncate">
-                      {resolved.headline || 'Headline aparecerá aqui'}
+                      {resolved.headline || 'O título aparecerá aqui'}
                     </p>
                   </div>
                   <button className="ml-3 shrink-0 px-4 py-1.5 border border-slate-400 rounded-full text-sm font-semibold text-slate-700">
@@ -2214,7 +2214,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
         <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Info className="w-4 h-4 text-[#FF5F39]" /> Brand Brief
+              <Info className="w-4 h-4 text-[#FF5F39]" /> Perfil da empresa
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">Sinais da marca <span className="font-semibold text-slate-700">{company.label}</span> usados pela IA na personalização.</p>
           </div>
@@ -2232,7 +2232,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
                 onClick={onGenerate}
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#FF5F39] hover:bg-[#E54A26] text-white text-sm font-bold rounded-lg shadow-sm"
               >
-                <Wand2 className="w-4 h-4" /> Gerar Brand Brief
+                <Wand2 className="w-4 h-4" /> Gerar perfil da empresa
               </button>
             </div>
           )}
@@ -2250,7 +2250,7 @@ function BrandBriefDrawer({ company, brief, loading, onClose, onGenerate, onSave
               {draft.scrape_status === 'limited' && (
                 <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>Site bloqueou acesso — brief inferido apenas a partir do nome. Edite os campos abaixo para corrigir.</span>
+                  <span>O site bloqueou o acesso: o perfil foi inferido só a partir do nome. Edite os campos abaixo para corrigir.</span>
                 </div>
               )}
 

@@ -245,9 +245,9 @@ describe('CreativeStep — botões de geração por bloco', () => {
     openCard('Texto');
 
     // Nada de botão "Brand Brief" no header da página — o acesso é pelo card 1.
-    expect(screen.queryByRole('button', { name: /^Brand Brief$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Perfil da empresa$/ })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Brand Brief de Nubank/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Perfil da empresa: Nubank/ }));
     expect(screen.getByText(/Vamos analisar o site da Nubank/)).toBeInTheDocument();
   });
 });

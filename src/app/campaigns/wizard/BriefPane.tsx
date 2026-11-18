@@ -188,7 +188,7 @@ function SecondaryExtraction({ draft, setDraft, extracting, onUploadBrandBook, o
     <div className="mt-2 space-y-3">
       <div>
         <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-          Website da sua empresa
+          Site da sua empresa
         </label>
         <input
           id="brief-website" type="url" value={draft.websiteUrl}
@@ -233,7 +233,7 @@ function PrimaryExtraction({ draft, setDraft, extracting, onUploadBrandBook, onE
         <span className="flex-1 h-px bg-slate-200" /> ou <span className="flex-1 h-px bg-slate-200" />
       </div>
       <div>
-        <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Website da sua empresa</label>
+        <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Site da sua empresa</label>
         <div className="flex gap-2">
           <input id="brief-website" type="url" value={draft.websiteUrl}
             onChange={(e) => setDraft((d) => ({ ...d, websiteUrl: e.target.value }))}
@@ -285,7 +285,7 @@ function ProvenanceChip({ source, reference, onReset }: {
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[11px] font-bold text-emerald-800">
-          {source === 'website' ? 'Extraído do site' : 'Brand Book lido'}
+          {source === 'website' ? 'Extraído do site' : 'Lido do manual da marca'}
         </div>
         <div className="text-[10px] text-emerald-700 truncate">{reference}</div>
       </div>
@@ -465,7 +465,7 @@ function BrandBookDropzone({ disabled, onFile }: { disabled: boolean; onFile: (f
   };
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Upload do Brand Book (PDF)</label>
+      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Manual da marca (PDF)</label>
       <div
         onClick={() => !disabled && pick()}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}

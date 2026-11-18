@@ -84,7 +84,7 @@ describe('BriefPane — marca já definida', () => {
   // da marca (vai pro servidor como `website_url`).
   it('deixa o website da empresa editável também com a marca definida', () => {
     const { draftAtual } = setup({ voice: 'Técnico', websiteUrl: 'https://antigo.com' }, 'defined');
-    const campo = screen.getByLabelText(/website da sua empresa/i) as HTMLInputElement;
+    const campo = screen.getByLabelText(/site da sua empresa/i) as HTMLInputElement;
     expect(campo.value).toBe('https://antigo.com');
     fireEvent.change(campo, { target: { value: 'https://novo.com' } });
     expect(draftAtual()).toMatchObject({ websiteUrl: 'https://novo.com', voice: 'Técnico' });
@@ -136,7 +136,7 @@ describe('BriefPane — marca vazia', () => {
 
   it('oferece os dois caminhos de extração', () => {
     setup({}, 'empty');
-    expect(screen.getByText(/brand book/i)).toBeTruthy();
+    expect(screen.getByText(/manual da marca \(PDF\)/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /extrair com ia/i })).toBeTruthy();
   });
 });
