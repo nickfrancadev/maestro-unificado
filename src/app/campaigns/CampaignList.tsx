@@ -411,9 +411,12 @@ export function CampaignList() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['drafts']));
   const [confirmAction, setConfirmAction] = useState<ConfirmState | null>(null);
   const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
+  /** A lista do LinkedIn não carregou: mostra o erro com "Tentar de novo", não "nenhuma campanha". */
+  const [listError, setListError] = useState<string | null>(null);
 
   const loadCampaigns = useCallback(async () => {
     setLoading(true);
+    setListError(null);
     setDrafts(listDrafts());
     try {
       const status = await getLinkedInStatus();
@@ -430,7 +433,16 @@ export function CampaignList() {
         return;
       }
 
-      const { campaigns: liCampaigns, currency, adAccountName } = await fetchLinkedInCampaigns();
+      const { campaigns: liCampaigns, currency, adAccountName, error: listFailure } = await fetchLinkedInCampaigns();
+      if (listFailure) {
+        setAccount({
+          name: status?.selected_ad_account_name || `Conta ${status?.selected_ad_account_id}`,
+          currency: status?.selected_ad_account_currency || 'USD',
+        });
+        setCampaigns([]);
+        setListError(listFailure);
+        return;
+      }
       // Nome da conta: o da lista, senão o do status; o id só em último caso.
       // Nunca "Conta não definida" quando há uma conta selecionada.
       setAccount({
@@ -465,7 +477,8 @@ export function CampaignList() {
       setSyncedAt(new Date());
     } catch (err) {
       console.error('[CampaignList] Erro ao carregar campanhas:', err);
-      toast.error('Não foi possível carregar as campanhas do LinkedIn. Tente atualizar.');
+      setCampaigns([]);
+      setListError('Não foi possível carregar as campanhas do LinkedIn.');
     } finally {
       setLoading(false);
       setSyncing(false);
@@ -934,7 +947,22 @@ export function CampaignList() {
                 );
               })}
 
-              {!loading && filteredGroups.length === 0 && filteredDrafts.length === 0 && (
+              {!loading && listError && (
+                <tr>
+                  <td colSpan={COLS} className="px-6 py-10 text-center" role="alert">
+                    <p className="text-sm font-semibold text-red-700">Não foi possível carregar as campanhas do LinkedIn</p>
+                    <p className="text-sm text-slate-600 mt-1">{listError}</p>
+                    <button
+                      onClick={loadCampaigns}
+                      className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Tentar de novo
+                    </button>
+                  </td>
+                </tr>
+              )}
+
+              {!loading && !listError && filteredGroups.length === 0 && filteredDrafts.length === 0 && (
                 <tr>
                   <td colSpan={COLS} className="px-6 py-12 text-center text-slate-500">
                     Nenhuma campanha encontrada com os filtros atuais.

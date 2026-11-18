@@ -1976,7 +1976,9 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
     if (!response.ok) {
       const errText = await response.text();
       console.log(`[LinkedIn Campaigns List] API error ${response.status}: ${errText}`);
-      return c.json({ campaigns: [], error: `LinkedIn API ${response.status}: ${errText}` });
+      // Erro é erro: status HTTP de erro, nunca 200 com lista vazia (a tela
+      // mostraria "nenhuma campanha" para uma conta que tem campanhas).
+      return linkedInErrorResponse(c, response.status, errText, "listar as campanhas");
     }
 
     const data = await response.json();
@@ -2039,7 +2041,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
     });
   } catch (err: any) {
     console.log("[LinkedIn Campaigns List] Erro:", err.message);
-    return c.json({ campaigns: [], error: err.message });
+    return c.json({ campaigns: [], error: "Não foi possível falar com o LinkedIn agora. Tente de novo em instantes." }, 502);
   }
 });
 
