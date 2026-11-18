@@ -50,6 +50,7 @@ import {
   createEmptyTargeting,
   resolveTargetingForAccount,
   PERSON_FACET_KEYS,
+  facetBlockedReason,
   FACET_URN_MAP,
   setAccountFacet,
 } from "./segmentation/targeting";
@@ -980,9 +981,11 @@ interface FacetCardProps {
   selection: FacetSelection;
   onSelectionChange: (sel: FacetSelection) => void;
   defaultOpen?: boolean;
+  /** Motivo para não aceitar novos itens (regra do LinkedIn). Itens já escolhidos ainda podem sair. */
+  blockedReason?: string | null;
 }
 
-function FacetCard({
+export function FacetCard({
   id,
   icon,
   label,
@@ -993,6 +996,7 @@ function FacetCard({
   selection,
   onSelectionChange,
   defaultOpen = false,
+  blockedReason = null,
 }: FacetCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultOpen);
   const [filterText, setFilterText] = useState("");
@@ -1017,6 +1021,7 @@ function FacetCard({
   // funcionando para o que já estiver lá), só não se alimenta mais daqui.
   const addItem = useCallback(
     (item: FacetItem) => {
+      if (blockedReason) return;
       const newSel = { ...selection };
       newSel.excluded = newSel.excluded.filter((i) => i.id !== item.id);
       if (!newSel.included.find((i) => i.id === item.id)) {
@@ -1024,7 +1029,7 @@ function FacetCard({
       }
       onSelectionChange(newSel);
     },
-    [selection, onSelectionChange],
+    [selection, onSelectionChange, blockedReason],
   );
 
   const removeItem = useCallback(
@@ -1116,6 +1121,12 @@ function FacetCard({
             <p className="text-xs text-slate-400 mt-0.5">
               {description}
             </p>
+            {blockedReason && (
+              <p className="text-xs text-amber-700 mt-0.5 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                {blockedReason}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1160,6 +1171,8 @@ function FacetCard({
                     typeahead.setIsOpen(true)
                   }
                   placeholder={`Buscar ${label.replace(/\s*\*$/, "").toLowerCase()}...`}
+                  disabled={!!blockedReason}
+                  aria-label={`Buscar ${label.replace(/\s*\*$/, "").toLowerCase()}`}
                   className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF5F39] focus:border-transparent bg-white"
                 />
               </div>
@@ -1235,13 +1248,16 @@ function FacetCard({
                     <button
                       key={opt.id}
                       onClick={() => toggleFixedItem(opt)}
+                      // Desabilitada só para ENTRAR: o que já está escolhido sai.
+                      disabled={!!blockedReason && !status}
+                      title={blockedReason && !status ? blockedReason : undefined}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
                         isInc
                           ? "bg-[#FF5F39] text-white border-[#FF5F39] shadow-sm"
                           : isExc
                             ? "bg-red-600 text-white border-red-600 shadow-sm"
                             : "bg-white text-slate-600 border-slate-200 hover:border-slate-400 hover:bg-slate-50"
-                      }`}
+                      } disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200`}
                     >
                       {opt.label}
                     </button>
@@ -1883,6 +1899,7 @@ export function SegmentationStep({
                         updateActiveFacet(f.key, sel)
                       }
                       defaultOpen={f.key === "locations"}
+                      blockedReason={facetBlockedReason(activePerson, f.key)}
                     />
                   ))}
                 </div>

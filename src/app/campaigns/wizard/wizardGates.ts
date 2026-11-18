@@ -4,6 +4,7 @@ import { buildLaunchPlan, validateLaunchPlan } from './launchPlan';
 import type { CampaignConfig, CreativeData } from './types';
 import { MIN_BUDGET_PER_AD_SET } from './types';
 import { isSpendConfirmed } from './spendGuard';
+import { hasTitleConflict } from './segmentation/targeting';
 
 export const WIZARD_STEPS = {
   config: 1,
@@ -62,9 +63,10 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
       || state.audienceCheck.small.length > 0
       || (state.audienceCheck.unconfirmed?.length ?? 0) > 0
     )) return false;
+    // E nenhum conjunto pode combinar Cargo com Função/Senioridade (F045).
     return accounts.every((acc) => {
       const person = resolveTargetingForAccount(targetingData, acc.id);
-      return person.locations.included.length > 0;
+      return person.locations.included.length > 0 && !hasTitleConflict(person);
     });
   }
 

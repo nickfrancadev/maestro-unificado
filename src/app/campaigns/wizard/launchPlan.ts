@@ -1,4 +1,5 @@
 import { buildTargetingCriteria, resolveTargetingForAccount } from './SegmentationStep';
+import { hasTitleConflict, TITLE_CONFLICT_REASON } from './segmentation/targeting';
 import type { TargetingData } from './SegmentationStep';
 import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET } from './types';
 import type { CampaignConfig, CreativeData } from './types';
@@ -27,6 +28,8 @@ export interface AdSetPlan {
   name: string;
   criteria: any;
   creative: AdSetCreative;
+  /** Combina Cargo com Função ou Senioridade: o LinkedIn recusa. */
+  targetingConflict?: boolean;
 }
 
 /** "Itaú Unibanco" → "itau-unibanco": o slug que {{account.slug}} vira na URL. */
@@ -73,6 +76,7 @@ export function buildLaunchPlan(
         ? config.campaignName.replace(/\{\{company\.name\}\}/g, acc.label)
         : `${config.campaignName} — ${acc.label}`,
       criteria: buildTargetingCriteria(acc, resolveTargetingForAccount(targeting, acc.id)),
+      targetingConflict: hasTitleConflict(resolveTargetingForAccount(targeting, acc.id)),
       creative: {
         headline: fill(resolved.headline),
         bodyText: fill(resolved.bodyText),
@@ -269,6 +273,15 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
           fix: fixLink(2, a.companyName, a.companyId),
         });
       }
+    }
+
+    for (const a of plan.filter((p) => p.targetingConflict)) {
+      items.push({
+        id: `targeting-${a.companyId}`, status: 'blocked', blocking: true,
+        label: `${a.companyName}: ${TITLE_CONFLICT_REASON}`,
+        detail: 'Tire o Cargo ou tire Função e Senioridade desta empresa.',
+        fix: fixLink(2, a.companyName, a.companyId),
+      });
     }
 
     const withIssues = plan.filter((a) => creativeIssues[a.companyId]?.length);

@@ -18,6 +18,7 @@ import { OrchestrationStep } from './wizard/OrchestrationStep';
 import { SegmentationStep, createEmptyTargeting, smallAudienceSentence } from './wizard/SegmentationStep';
 import { canProceedFromStep, creativeIssues } from './wizard/wizardGates';
 import { isSpendConfirmed } from './wizard/spendGuard';
+import { hasTitleConflict, TITLE_CONFLICT_REASON, resolveTargetingForAccount } from './wizard/segmentation/targeting';
 import type { TargetingData } from './wizard/SegmentationStep';
 import { useAudienceCount, audienceCheckFor, unconfirmedAudienceSentence } from './wizard/segmentation/useAudienceCount';
 import { TargetAccount, CampaignConfig, createDefaultCampaignConfig, MIN_BUDGET_PER_AD_SET } from './wizard/types';
@@ -303,6 +304,8 @@ export function CampaignWizard() {
         const names = companies.filter((c) => audienceCheck.small.includes(c.id)).map((c) => c.label);
         return `${smallAudienceSentence(names)}: amplie a localização ou tire filtros`;
       }
+      const conflict = companies.find((c) => hasTitleConflict(resolveTargetingForAccount(targetingData, c.id)));
+      if (conflict) return `${conflict.label}: ${TITLE_CONFLICT_REASON}`;
       if (!canProceed()) return 'Defina a localização de cada empresa';
       return `${n} conjunto${n !== 1 ? 's' : ''} de anúncio${custom > 0 ? ` · ${custom} personalizado${custom !== 1 ? 's' : ''}` : ''}`;
     }
