@@ -375,14 +375,14 @@ export function CampaignWizard() {
   const stepSummary = getStepSummary();
   const nextEnabled = canProceed();
   // Uma moldura por passo, a MESMA no topo, no conteúdo e no rodapé (ver stepLayout.ts).
-  const { frameClass, width } = stepFrame(currentStep);
+  const { frameClass, chromeClass, width } = stepFrame(currentStep);
   const allLabels = showAllStepLabels(currentStep);
 
   return (
     <div ref={wizardRootRef} className="flex flex-col h-full bg-slate-50">
       {/* Wizard Header */}
       <div className={`bg-white border-b border-slate-200 shadow-sm overflow-hidden ${STEP_SCROLLBAR_GUTTER} ${STEP_GUTTER} py-4`}>
-      <div data-frame="header" className={`${frameClass} flex items-center gap-6`}>
+      <div data-frame="header" className={`${chromeClass} flex items-center gap-6`}>
         {/* O título encolhe com reticências (nome inteiro no title) e nunca
             invade o stepper. */}
         <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -519,7 +519,7 @@ export function CampaignWizard() {
 
       {/* Footer Actions */}
       <div className={`bg-white border-t border-slate-200 overflow-hidden ${STEP_SCROLLBAR_GUTTER} ${STEP_GUTTER} py-4`}>
-      <div data-frame="footer" className={`${frameClass} flex justify-between items-center gap-3`}>
+      <div data-frame="footer" className={`${chromeClass} flex justify-between items-center gap-3`}>
         <button
           onClick={handleBack}
           disabled={currentStep === 1}

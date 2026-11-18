@@ -13,6 +13,8 @@ import {
   X,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   FileText,
   Pencil,
 } from 'lucide-react';
@@ -758,7 +760,9 @@ export function CampaignList() {
                         className={`inline-flex items-center gap-1 uppercase hover:text-slate-800 ${active ? 'text-slate-800' : ''}`}
                       >
                         {col.label}
-                        <span aria-hidden="true" className="text-[10px]">{active ? (sort!.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                        {active
+                          ? (sort!.dir === 'asc' ? <ChevronUp aria-hidden="true" className="w-3.5 h-3.5" /> : <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" />)
+                          : <ChevronsUpDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-300" />}
                       </button>
                     </th>
                   );
@@ -891,34 +895,39 @@ export function CampaignList() {
                       </td>
                       <td className="px-3 py-3 text-right text-slate-700">{s.loading && s.impressions == null ? '' : fmtOptional(s.impressions)}</td>
                       <td className="px-3 py-3 text-right text-slate-700">{s.loading && s.ctr == null ? '' : fmtOptional(s.ctr, n => fmtPct(n))}</td>
-                      <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{periodLabel(s.start, s.end, s.continuous)}</td>
+                      <td className="px-3 py-3 text-slate-600 min-w-[150px]">{periodLabel(s.start, s.end, s.continuous)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1">
+                        <div className="inline-flex items-center gap-1.5">
                           {(isMockGroup || group.children[0]?.campaignGroup) && (
                             <button
                               onClick={() => onViewGroup(group.children[0])}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 bg-white hover:bg-[#FFF1ED] hover:border-[#FFD0C2] rounded-lg"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-[#FFF1ED] hover:border-[#FFD0C2] hover:text-[#E54A26]"
                               title="Analytics da campanha, com a tabela por empresa"
+                              aria-label={`Analytics de ${group.name}`}
                             >
-                              <BarChart3 className="w-3.5 h-3.5" /> Analytics
+                              <BarChart3 className="w-4 h-4" />
                             </button>
                           )}
                           {pausable.length > 0 && (
                             <button
                               onClick={() => setConfirmAction({ type: 'pause', targets: pausable, groupName: group.name, bulk: true })}
                               disabled={busy}
-                              className="px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 bg-white hover:bg-yellow-50 hover:border-yellow-200 rounded-lg disabled:opacity-40"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-yellow-50 hover:border-yellow-200 hover:text-yellow-700 disabled:opacity-40"
+                              title="Pausar todas as empresas"
+                              aria-label={`Pausar todas as empresas de ${group.name}`}
                             >
-                              Pausar todas
+                              <PauseCircle className="w-4 h-4" />
                             </button>
                           )}
                           {activatable.length > 0 && (
                             <button
                               onClick={() => setConfirmAction({ type: 'activate', targets: activatable, groupName: group.name, bulk: true })}
                               disabled={busy}
-                              className="px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 bg-white hover:bg-green-50 hover:border-green-200 rounded-lg disabled:opacity-40"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-green-50 hover:border-green-200 hover:text-green-700 disabled:opacity-40"
+                              title="Ativar todas as empresas"
+                              aria-label={`Ativar todas as empresas de ${group.name}`}
                             >
-                              Ativar todas
+                              <PlayCircle className="w-4 h-4" />
                             </button>
                           )}
                           {editId && (
@@ -969,50 +978,57 @@ export function CampaignList() {
                           </td>
                           <td className="px-3 py-2.5 text-right text-slate-600">{row.analyticsLoading ? '' : fmtOptional(a?.impressions)}</td>
                           <td className="px-3 py-2.5 text-right text-slate-600">{row.analyticsLoading ? '' : fmtOptional(ctr, n => fmtPct(n))}</td>
-                          <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{periodLabel(row.startDate, row.endDate)}</td>
+                          <td className="px-3 py-2.5 text-slate-500 min-w-[150px]">{periodLabel(row.startDate, row.endDate)}</td>
                           <td className="px-4 py-2.5 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1">
                               {row.status === 'Active' ? (
                                 <button
                                   onClick={() => setConfirmAction({ type: 'pause', targets: [row], groupName: group.name, bulk: false })}
                                   disabled={row.actionLoading}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:text-yellow-700 hover:bg-yellow-50 rounded disabled:opacity-40"
+                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-600 hover:text-yellow-700 hover:bg-yellow-50 disabled:opacity-40"
+                                  title={`Pausar ${row.company}`}
+                                  aria-label={`Pausar ${row.company}`}
                                 >
-                                  <PauseCircle className="w-3.5 h-3.5" /> Pausar
+                                  <PauseCircle className="w-4 h-4" />
                                 </button>
                               ) : row.status === 'Paused' ? (
                                 <button
                                   onClick={() => setConfirmAction({ type: 'activate', targets: [row], groupName: group.name, bulk: false })}
                                   disabled={row.actionLoading}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:text-green-700 hover:bg-green-50 rounded disabled:opacity-40"
+                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-600 hover:text-green-700 hover:bg-green-50 disabled:opacity-40"
+                                  title={`Ativar ${row.company}`}
+                                  aria-label={`Ativar ${row.company}`}
                                 >
-                                  <PlayCircle className="w-3.5 h-3.5" /> Ativar
+                                  <PlayCircle className="w-4 h-4" />
                                 </button>
                               ) : null}
                               {editId && ['Active', 'Paused', 'Draft'].includes(row.status) && (
                                 <button
                                   onClick={() => onEditGroup(editId, row.id)}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:text-[#E54A26] hover:bg-[#FFF1ED] rounded"
+                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-600 hover:text-[#E54A26] hover:bg-[#FFF1ED]"
                                   title={`Editar orçamento, período e público de ${row.company}`}
+                                  aria-label={`Editar ${row.company}`}
                                 >
-                                  <Pencil className="w-3.5 h-3.5" /> Editar
+                                  <Pencil className="w-4 h-4" />
                                 </button>
                               )}
                               <button
                                 onClick={() => onViewPerformance(row)}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 hover:text-[#E54A26] hover:bg-[#FFF1ED] rounded"
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-600 hover:text-[#E54A26] hover:bg-[#FFF1ED]"
+                                title={`Analytics de ${row.company}`}
+                                aria-label={`Analytics de ${row.company}`}
                               >
-                                <BarChart3 className="w-3.5 h-3.5" /> Analytics
+                                <BarChart3 className="w-4 h-4" />
                               </button>
                               {!row.isMock && (
                                 <button
                                   onClick={() => setConfirmAction({ type: 'delete', targets: [row], groupName: group.name, bulk: false })}
                                   disabled={row.actionLoading}
-                                  className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-40"
-                                  title="Excluir (arquivar no LinkedIn)"
-                                  aria-label="Excluir"
+                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
+                                  title={`Excluir ${row.company} (arquivar no LinkedIn)`}
+                                  aria-label={`Excluir ${row.company}`}
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
                             </div>

@@ -41,12 +41,15 @@ function openAtStep(step: number) {
   );
 }
 
-describe('barra de passos, conteúdo e rodapé alinhados', () => {
-  it.each([1, 2, 3])('no passo %i os três usam a mesma moldura', (step) => {
+describe('molduras do assistente', () => {
+  it.each([1, 2, 3, 5])('no passo %i, topo e rodapé ficam fixos em 1280 px e o conteúdo usa a largura do passo', (step) => {
     const { container } = openAtStep(step);
     const frames = ['header', 'content', 'footer'].map((f) => container.querySelector(`[data-frame="${f}"]`) as HTMLElement);
-    const expected = stepFrame(step).frameClass;
-    for (const el of frames) expect(el.className).toContain(expected);
+    const { frameClass, chromeClass } = stepFrame(step);
+    expect(chromeClass).toBe('w-full mx-auto max-w-7xl');
+    expect(frames[0].className).toContain(chromeClass);
+    expect(frames[2].className).toContain(chromeClass);
+    expect(frames[1].className).toContain(frameClass);
     // Nenhum passo define largura própria por dentro da moldura.
     const inner = frames[1].querySelectorAll('[class*="max-w-3xl"],[class*="max-w-6xl"],[class*="max-w-7xl"]');
     expect(inner.length).toBe(0);

@@ -14,9 +14,9 @@ describe('largura de cada passo, num lugar só', () => {
     expect(stepFrame(5).frameClass).toContain('max-w-7xl');
   });
 
-  it('na moldura de 768 px a barra de passos mostra só o rótulo do passo atual', () => {
-    expect(showAllStepLabels(1)).toBe(false);
-    expect(showAllStepLabels(2)).toBe(true);
-    expect(showAllStepLabels(4)).toBe(true);
+  it('o topo é fixo em 1280 px, então a barra de passos mostra os cinco rótulos em todos os passos', () => {
+    for (const step of [1, 2, 3, 4, 5]) expect(showAllStepLabels(step)).toBe(true);
+    expect(stepFrame(1).chromeClass).toBe(stepFrame(2).chromeClass);
+    expect(stepFrame(4).chromeClass).toBe('w-full');
   });
 });

@@ -1,9 +1,11 @@
 // Largura e margens do assistente de campanha, num lugar só.
 //
-// Cada passo tem UMA largura máxima, e a barra de passos (topo), o conteúdo e
-// o rodapé usam a MESMA moldura: mesma margem lateral (`STEP_GUTTER`) e mesma
-// largura centralizada (`frameClass`). Assim os três ficam alinhados entre si
-// em qualquer passo e em tela larga. Os passos não definem largura própria.
+// Duas molduras, as duas com a mesma margem lateral (`STEP_GUTTER`):
+// - Topo e rodapé (`chromeClass`): FIXOS em 1280 px centralizados, iguais em
+//   todos os passos, para o título, a barra de passos e os botões não pularem
+//   de lugar nem serem cortados ao trocar de passo. No Criativo, largura total.
+// - Conteúdo (`frameClass`): a largura de cada passo, centralizada (tabela).
+// Os passos não definem largura própria.
 //
 // | Passo                         | Largura máxima          |
 // |-------------------------------|-------------------------|
@@ -54,18 +56,17 @@ export function stepWidth(step: number): StepWidth {
   return 'form';
 }
 
-/** A moldura do passo: a mesma classe vai no topo, no conteúdo e no rodapé. */
-export function stepFrame(step: number): { width: StepWidth; maxWidthPx: number | null; frameClass: string } {
+/** Largura máxima do topo e do rodapé, fixa entre os passos (exceto Criativos). */
+export const CHROME_MAX_WIDTH_PX = 1280;
+
+/** Moldura do passo: `frameClass` vai no conteúdo; `chromeClass`, no topo e no rodapé. */
+export function stepFrame(step: number): { width: StepWidth; maxWidthPx: number | null; frameClass: string; chromeClass: string } {
   const width = stepWidth(step);
-  return { width, maxWidthPx: STEP_MAX_WIDTH_PX[width], frameClass: FRAME_CLASS[width] };
+  const chromeClass = width === 'creative' ? 'w-full' : 'w-full mx-auto max-w-7xl';
+  return { width, maxWidthPx: STEP_MAX_WIDTH_PX[width], frameClass: FRAME_CLASS[width], chromeClass };
 }
 
-/**
- * Na moldura de formulário (768 px) não cabem os cinco rótulos da barra de
- * passos ao lado do título e do "Salvar rascunho": ali só o passo atual mostra
- * o rótulo (os outros ficam para leitor de tela).
- */
-export function showAllStepLabels(step: number): boolean {
-  const max = stepFrame(step).maxWidthPx;
-  return max === null || max >= 1152;
+/** O topo tem sempre 1280 px ou mais, então os cinco rótulos da barra de passos cabem. */
+export function showAllStepLabels(_step: number): boolean {
+  return true;
 }
