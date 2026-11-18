@@ -190,7 +190,7 @@ interface CompanyHeroCardProps {
   onSelectionChange: (sel: FacetSelection) => void;
 }
 
-function CompanyHeroCard({
+export function CompanyHeroCard({
   selection,
   onSelectionChange,
 }: CompanyHeroCardProps) {
@@ -433,7 +433,15 @@ function CompanyHeroCard({
   }, [selection.included]);
 
   const addItem = useCallback(
-    (item: FacetItem) => {
+    (picked: FacetItem) => {
+      // O enriquecimento do hover pode já ter terminado: aí o site confirmado
+      // está no cache e entra na seleção junto com a empresa. Antes, o clique
+      // ia pelo cache e lia a seleção antiga (o ref só atualiza no render),
+      // então o domínio nunca chegava ao rascunho.
+      const cached = picked.urn ? enrichCache.current.get(picked.urn) : undefined;
+      const item: FacetItem = cached?.domain && !picked.domain
+        ? { ...picked, domain: cached.domain, logoUrl: `${LOGO_PROXY_BASE}?domain=${encodeURIComponent(cached.domain)}` }
+        : picked;
       const newSel = { ...selection };
       if (mode === "include") {
         newSel.excluded = newSel.excluded.filter(
@@ -451,6 +459,9 @@ function CompanyHeroCard({
         }
       }
       onSelectionChange(newSel);
+      // O enriquecimento roda antes do próximo render: ele precisa ver a
+      // seleção que acabou de ser enviada, não a do render anterior.
+      selectionRef.current = newSel;
       // Fire enrichment in background (non-blocking)
       triggerEnrichment(item);
     },
