@@ -391,6 +391,8 @@ export function CampaignAnalytics() {
   const hasNumbers = view.state === 'data';
 
   return (
+    // Mesma margem de 32 px do assistente e da lista.
+    <div className="px-8 py-6">
     <div className="max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4">
@@ -732,6 +734,7 @@ export function CampaignAnalytics() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
