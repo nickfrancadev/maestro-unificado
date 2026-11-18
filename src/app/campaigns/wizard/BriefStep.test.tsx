@@ -247,3 +247,20 @@ describe('BriefStep — brand book em PDF', () => {
     expect((screen.getByLabelText(/tom de voz/i) as HTMLTextAreaElement).value).toBe('Meu tom');
   });
 });
+
+describe('BriefStep — logo salvo no kit da marca', () => {
+  it('"Salvar marca" grava a URL e o caminho do logo no brandKit', async () => {
+    let saved: CreativeData | undefined;
+    function Host() {
+      const [data, setData] = useState<CreativeData>({ overrides: {} } as never);
+      const [draft, setDraft] = useState<BriefDraft>({
+        ...createEmptyBriefDraft(), voice: 'Direto', logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png',
+      });
+      saved = data;
+      return <BriefStep creativeData={data} onCreativeChange={setData} draft={draft} setDraft={setDraft} />;
+    }
+    render(<Host />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /salvar marca/i })); });
+    expect(saved?.brandKit).toMatchObject({ logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' });
+  });
+});

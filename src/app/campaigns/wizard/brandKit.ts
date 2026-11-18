@@ -13,7 +13,11 @@ export interface BrandKit {
   // ausência precisa ser um estado normal, não um vazio a tratar.
   colorOptions?: { primary: string[]; secondary: string[]; accent: string[] };
   fontFamily: string;                                            // Google Font (movida do step de ads)
-  logo: string | null;                                           // object URL | null
+  logo: string | null;                                           // URL do logo no Storage | null
+  logoPath?: string | null;                                      // caminho no bucket de criativos (para renovar a URL)
+  // Seguidores da página do anunciante no LinkedIn. Opcional: sem valor, o
+  // preview do anúncio não mostra número nenhum (nunca um número inventado).
+  followers?: number | null;
   source?: 'brandbook' | 'website';                              // como foi extraído (informativo)
 }
 

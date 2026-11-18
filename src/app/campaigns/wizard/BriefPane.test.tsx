@@ -245,3 +245,34 @@ describe('BriefPane — candidatas de cor', () => {
     expect(draftAtual().brandColors.primary).toBe('#123456');
   });
 });
+
+vi.mock('@/lib/linkedin/creativeUpload', () => ({
+  uploadCreativeImageToStorage: vi.fn(async (file: File) => ({
+    success: true, url: `https://storage/${file.name}?token=t`, path: `uuid-${file.name}`, filename: file.name,
+  })),
+}));
+
+describe('BriefPane — logo próprio vai ao Storage', () => {
+  it('envia o arquivo e guarda a URL e o caminho do Storage, nunca um blob:', async () => {
+    const { draftAtual } = setup();
+    const file = new File(['png'], 'logo.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Enviar logo'), { target: { files: [file] } });
+    await vi.waitFor(() => expect(draftAtual().logo).toBe('https://storage/logo.png?token=t'));
+    expect(draftAtual().logoPath).toBe('uuid-logo.png');
+    expect(draftAtual().logo?.startsWith('blob:')).toBe(false);
+  });
+
+  it('arquivo que não é imagem não sobe', async () => {
+    const { draftAtual } = setup();
+    fireEvent.change(screen.getByLabelText('Enviar logo'), { target: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] } });
+    expect(await screen.findByText('Use uma imagem (PNG, JPG ou SVG).')).toBeTruthy();
+    expect(draftAtual().logo).toBeNull();
+  });
+
+  it('remover limpa a URL e o caminho', () => {
+    const { draftAtual } = setup({ logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' });
+    fireEvent.click(screen.getByRole('button', { name: 'Remover logo' }));
+    expect(draftAtual().logo).toBeNull();
+    expect(draftAtual().logoPath).toBeNull();
+  });
+});

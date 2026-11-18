@@ -21,6 +21,7 @@ export function createEmptyBriefDraft(): BriefDraft {
     brandColors: { primary: '', secondary: '', accent: '' },
     fontFamily: 'Inter',
     logo: null,
+    logoPath: null,
     source: null,
     extractedRef: '',
   };
@@ -115,6 +116,7 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
     brandKit.colors.primary,
     brandKit.colors.secondary,
     brandKit.colors.accent,
+    brandKit.logo ?? '',
   ].join('\u0000');
   const seededSignatureRef = useRef<string | null>(null);
   if (seededSignatureRef.current === null) seededSignatureRef.current = brandSignature;
@@ -130,6 +132,7 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
       brandColors: brandKit.colors,
       fontFamily: brandKit.fontFamily,
       logo: brandKit.logo,
+      logoPath: brandKit.logoPath ?? null,
       colorOptions: brandKit.colorOptions,
       // `source`/`extractedRef` NÃO são tocados aqui de propósito: quem os
       // possui são os handlers de extração (`applyFixtureToDraft` grava,
@@ -181,6 +184,7 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
         colorOptions: draft.colorOptions,
         fontFamily: draft.fontFamily,
         logo: draft.logo,
+        logoPath: draft.logoPath ?? null,
       },
       clientProductService: draft.productService,
       clientAudienceMarket: draft.audienceMarket,
@@ -311,6 +315,7 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
       context: '',
       brandColors: { primary: '', secondary: '', accent: '' },
       logo: null,
+      logoPath: null,
     }));
   };
 

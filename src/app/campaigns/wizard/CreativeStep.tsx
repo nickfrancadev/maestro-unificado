@@ -240,15 +240,10 @@ function deriveWebsiteDomain(websiteUrl: string): string | null {
   }
 }
 
-// `brandKit.logo` pode ser um `blob:` — a única via de UI para logo próprio
-// (`LogoGallery.pick()` em `BriefPane.tsx`) usa `URL.createObjectURL(file)`,
-// e esse esquema só resolve dentro desta aba/sessão. O servidor busca a URL
-// com `fetch()` puro (`fetchAsBase64`), nunca alcança um `blob:`, cai no
-// catch e devolve `null` em silêncio — a composição degradaria pro fallback
-// por domínio sem avisar ninguém. Filtrar aqui torna esse fallback uma
-// escolha deliberada, não um acidente silencioso. Resolver de verdade (subir
-// o logo pro Storage, como já se faz com a imagem-base) fica fora do escopo
-// desta task.
+// O logo próprio sobe ao Storage no passo Marca (`LogoGallery` em BriefPane),
+// então `brandKit.logo` é uma URL que o servidor alcança. Só rascunho antigo,
+// de antes disso, ainda pode ter um `blob:` da aba: o servidor não o alcança,
+// e mandar só faria a composição cair em silêncio no fallback por domínio.
 function sendableAdvertiserLogoUrl(logo: string | null): string | null {
   return logo && logo.startsWith('blob:') ? null : logo;
 }
