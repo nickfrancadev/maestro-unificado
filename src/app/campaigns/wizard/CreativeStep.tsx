@@ -52,6 +52,7 @@ import { OverlayCanvas, type OverlayLayerId, measureTextWidthPx } from './Overla
 import { FontPicker } from './FontPicker';
 import { CompanyAvatar, resolveCompanyLogoUrl } from './CompanyAvatar';
 import { createDefaultBrandKit } from './brandKit';
+import { artStatus, artIssue, composedPatch } from './composition';
 import { ctaLabel } from '../labels';
 import type { TargetingData, FacetItem } from './SegmentationStep';
 import { uploadCreativeImageToStorage } from '@/lib/linkedin';
@@ -764,10 +765,10 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         destaque_width_px: destaqueWidthPx,
         complementar_width_px: complementarWidthPx,
       });
-      updateOverride(company.id, {
-        imageUrl: result.url,
-        imageFileName: result.filename,
-      });
+      // Grava a arte junto da assinatura do que foi composto: qualquer mudança
+      // depois disso (texto, base, formato, layout, logos) a marca como
+      // desatualizada. Ver composition.ts.
+      updateOverride(company.id, composedPatch(data, company, { url: result.url, filename: result.filename }));
       return true;
     } catch (err: unknown) {
       reportError(key, friendlyError('compose', err, company.label), () => requestImage(company));
@@ -1019,6 +1020,15 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
   // Sem domínio confirmado não há logo da conta: nem no preview, nem na arte.
   // Avisar antes de gerar é o que evita descobrir só no anúncio publicado.
   const targetWithoutDomain = !!previewCompany && !previewCompany.domain && !targetLogoUrl;
+  // Situação da arte composta de cada empresa: desatualizada quando o texto,
+  // a base, o formato, o layout ou os logos mudaram depois de gerar.
+  const companyArt = useMemo(() => {
+    const data = withImageDefaults(creativeData);
+    return Object.fromEntries(companies.map((c) => [c.id, artStatus(data, c)]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creativeData, companies]);
+  const editingArt = editingCompany ? companyArt[editingCompany.id] : undefined;
+  const staleCompanies = companies.filter((c) => companyArt[c.id] === 'stale');
   const composedImageUrl = editingCompany ? (editingOverride?.imageUrl ?? null) : null;
 
   // ----------------- Cabeçalho do anúncio (anunciante) -----------------
@@ -1180,6 +1190,16 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       {isLoading ? 'Gerando…' : meta.label}
                     </span>
                   </div>
+                  {!isLoading && companyArt[company.id] === 'stale' && (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                      <AlertTriangle className="w-3 h-3" /> Arte desatualizada
+                    </span>
+                  )}
+                  {!isLoading && companyArt[company.id] === 'missing' && (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                      <AlertTriangle className="w-3 h-3" /> Sem arte gerada
+                    </span>
+                  )}
                 </div>
                 {isLoading && <Loader2 className="w-3.5 h-3.5 text-[#FF5F39] animate-spin shrink-0 mt-1" />}
               </button>
@@ -1263,6 +1283,31 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
             <button onClick={() => setMissingInputs(null)} aria-label="Fechar aviso" className="text-amber-600 hover:text-amber-800">
               <X className="w-3.5 h-3.5" />
             </button>
+          </div>
+        )}
+
+        {/* Arte composta que não bate mais com o editor: diz qual empresa e
+            oferece refazer. A Revisão barra a publicação enquanto isso. */}
+        {editingCompany && (editingArt === 'stale' || editingArt === 'missing') && !aiImageLoading[editingCompany.id] && (
+          <div role="alert" className="px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="flex-1 min-w-[200px]">
+              {editingCompany.label}: {artIssue(editingArt)}.
+            </span>
+            <button
+              onClick={() => requestImage(editingCompany)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-amber-200 font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              {editingArt === 'stale' ? 'Gerar imagem de novo' : 'Aplicar textos e logos'}
+            </button>
+          </div>
+        )}
+        {isTemplate && staleCompanies.length > 0 && (
+          <div role="alert" className="px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-900 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+            <span className="flex-1">
+              Arte desatualizada em {joinPt(staleCompanies.map((c) => c.label))}: gere a imagem de novo antes de publicar.
+            </span>
           </div>
         )}
 
@@ -1993,7 +2038,8 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                       onClick={() => setPreviewMode('composed')}
                       className={`px-2 py-1 text-[10px] font-bold rounded ${previewMode === 'composed' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
                     >
-                      Composto
+                      {/* Arte antiga continua visível para comparar, mas dita como tal. */}
+                      {editingArt === 'stale' ? 'Composto (desatualizado)' : 'Composto'}
                     </button>
                   </div>
                 )}

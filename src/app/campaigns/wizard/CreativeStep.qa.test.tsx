@@ -295,3 +295,24 @@ describe('CreativeStep — initialTarget abre a empresa pedida', () => {
     expect(screen.getByText(/Editando: Template global/)).toBeTruthy();
   });
 });
+
+describe('CreativeStep — arte composta desatualizada', () => {
+  beforeEach(() => vi.mocked(composeLogoOverlay).mockClear());
+
+  it('mudar o texto sobre a imagem depois de gerar marca a arte da empresa como desatualizada', async () => {
+    renderStep();
+    fireEvent.click(screen.getByRole('button', { name: /Nubank/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Imagem$/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: /^Gerar imagem$/ })[0]);
+    await vi.waitFor(() => expect(latest.overrides.c1?.imageUrl).toBe('https://x/composta.png'));
+    expect(latest.overrides.c1?.composedSignature).toBeTruthy();
+    expect(screen.queryByText('Arte desatualizada')).toBeNull();
+
+    // O texto sobre a imagem muda: a arte gerada não é mais o que o editor mostra.
+    fireEvent.change(screen.getByPlaceholderText('Texto principal na imagem'), { target: { value: 'NOVO CONVITE' } });
+    expect(screen.getByText('Arte desatualizada')).toBeTruthy();
+    expect(screen.getByText(/Nubank: A arte está desatualizada/)).toBeTruthy();
+    // E oferece refazer ali mesmo.
+    expect(screen.getByRole('button', { name: 'Gerar imagem de novo' })).toBeTruthy();
+  });
+});

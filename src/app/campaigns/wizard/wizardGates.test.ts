@@ -3,6 +3,8 @@ import { canProceedFromStep, WIZARD_STEPS, type WizardState } from './wizardGate
 import { createEmptyTargeting } from './SegmentationStep';
 import { createDefaultCampaignConfig, createDefaultCreativeData } from './types';
 import { createDefaultBrandKit } from './brandKit';
+import { composedPatch } from './composition';
+import type { CreativeData } from './types';
 
 function state(patch: Partial<WizardState> = {}): WizardState {
   return {
@@ -83,9 +85,29 @@ describe('canProceedFromStep — 3 Marca', () => {
   });
 });
 
+/** Template sem texto nem logo sobre a imagem: a imagem já é o anúncio. */
+function plainTemplateLogo() {
+  const tpl = createDefaultCreativeData().templateLogo;
+  return {
+    ...tpl, textoDestaque: '', textoComplementar: '',
+    layout: {
+      ...tpl.layout,
+      advertiserLogo: { ...tpl.layout.advertiserLogo, enabled: false },
+      targetLogo: { ...tpl.layout.targetLogo, enabled: false },
+    },
+  };
+}
+
+/** Override com a arte composta em dia (o que a composição grava). */
+function composedOverride(data: CreativeData, patch: Record<string, unknown>, url = 'https://cdn/a.png') {
+  const draft = { ...data, overrides: { c1: { status: 'fully_personalized' as const, ...patch } } };
+  return { ...draft.overrides.c1, ...composedPatch(draft, nubank, { url }) };
+}
+
 describe('canProceedFromStep — 4 Criativos', () => {
   const withTemplate = (patch = {}) => ({
     ...createDefaultCreativeData(),
+    templateLogo: plainTemplateLogo(),
     landingPageUrl: 'https://acme.com/lp',
     cta: 'LEARN_MORE',
     headline: 'Título',
@@ -119,7 +141,7 @@ describe('canProceedFromStep — 4 Criativos', () => {
       creativeData: {
         ...incomplete,
         overrides: {
-          c1: { status: 'fully_personalized', headline: 'H', bodyText: 'B', imageUrl: 'https://cdn/a.png' },
+          c1: composedOverride(incomplete, { headline: 'H', bodyText: 'B' }),
         },
       },
       targetingData: targetingWith([nubank], ['Brasil']),
@@ -141,7 +163,7 @@ describe('canProceedFromStep — 4 Criativos, herança do template', () => {
     expect(canProceedFromStep(WIZARD_STEPS.creatives, state({
       creativeData: {
         ...base,
-        overrides: { c1: { status: 'fully_personalized', headline: '', bodyText: 'B', imageUrl: 'https://cdn/a.png' } },
+        overrides: { c1: composedOverride(base, { headline: '', bodyText: 'B' }) },
       },
       targetingData: targetingWith([nubank], ['Brasil']),
     }))).toBe(true);

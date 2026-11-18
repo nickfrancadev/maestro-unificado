@@ -121,6 +121,9 @@ export interface CompanyCreativeOverride {
   bodyText?: string;
   imageUrl?: string;            // the COMPOSED ad for this company
   imageFileName?: string;
+  // Assinatura do que foi composto em `imageUrl` (ver composition.ts). Se a
+  // configuração atual não bate com ela, a arte está desatualizada.
+  composedSignature?: string;
   // Image composition, overridden for this company only. Every field is
   // optional: `undefined` means "inherit whatever the template says". Read
   // them through resolveImageConfig, never directly.

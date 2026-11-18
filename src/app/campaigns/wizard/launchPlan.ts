@@ -3,6 +3,8 @@ import type { TargetingData } from './SegmentationStep';
 import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET } from './types';
 import type { CampaignConfig, CreativeData } from './types';
 import type { CampaignPipelineParams } from '@/lib/linkedin';
+import { artStatus, artIssue } from './composition';
+import type { ArtStatus } from './composition';
 
 export interface AdSetCreative {
   headline: string;
@@ -10,6 +12,8 @@ export interface AdSetCreative {
   imageUrl: string | null;
   landingPageUrl: string;
   cta: string;
+  /** A arte composta vale para o que o editor mostra? Ver composition.ts. */
+  artStatus?: ArtStatus;
 }
 
 export interface AdSetPlan {
@@ -76,6 +80,7 @@ export function buildLaunchPlan(
           .replace(/\{\{account\.slug\}\}/g, slug)
           .replace(/\{\{company\.name\}\}/g, encodeURIComponent(acc.label)),
         cta: resolved.cta,
+        artStatus: artStatus(creativeData, acc),
       },
     };
   });
@@ -97,6 +102,12 @@ export function validateLaunchPlan(plan: AdSetPlan[]): Record<string, string[]> 
     const { headline, bodyText, imageUrl, landingPageUrl } = adSet.creative;
 
     if (!imageUrl) issues.push('Sem imagem');
+    else {
+      // Nunca publicar a base crua (ou uma arte antiga) enquanto o editor
+      // mostra outros textos e logos por cima.
+      const art = artIssue(adSet.creative.artStatus ?? 'not_needed');
+      if (art) issues.push(art);
+    }
     if (!headline.trim()) issues.push('Sem título');
     else if (AI_ERROR_TEXT.test(headline)) issues.push('O título é uma mensagem de erro da IA, não um texto de anúncio');
     if (!bodyText.trim()) issues.push('Sem texto do anúncio');
