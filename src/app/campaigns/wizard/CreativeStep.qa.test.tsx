@@ -316,3 +316,16 @@ describe('CreativeStep — arte composta desatualizada', () => {
     expect(screen.getByRole('button', { name: 'Gerar imagem de novo' })).toBeTruthy();
   });
 });
+
+describe('CreativeStep — seguidores no preview', () => {
+  it('sem o número no kit da marca, o preview não inventa seguidores', () => {
+    renderStep();
+    expect(screen.queryByText(/seguidores/)).toBeNull();
+  });
+
+  it('com o número no kit, mostra o número do kit', () => {
+    const base = createDefaultCreativeData();
+    renderStep({ brandKit: { ...base.brandKit, voice: 'Direto', followers: 12840 } });
+    expect(screen.getByText('12.840 seguidores')).toBeTruthy();
+  });
+});

@@ -264,3 +264,27 @@ describe('BriefStep — logo salvo no kit da marca', () => {
     expect(saved?.brandKit).toMatchObject({ logo: 'https://storage/logo.png', logoPath: 'uuid-logo.png' });
   });
 });
+
+describe('BriefStep — seguidores opcionais', () => {
+  it('"Salvar marca" grava o número digitado; vazio grava null', async () => {
+    let saved: CreativeData | undefined;
+    function Host({ followers }: { followers: string }) {
+      const [data, setData] = useState<CreativeData>({ overrides: {} } as never);
+      const [draft, setDraft] = useState<BriefDraft>({ ...createEmptyBriefDraft(), voice: 'Direto', followers });
+      saved = data;
+      return <BriefStep creativeData={data} onCreativeChange={setData} draft={draft} setDraft={setDraft} />;
+    }
+    const { unmount } = render(<Host followers="3.550" />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /salvar marca/i })); });
+    expect(saved?.brandKit.followers).toBe(3550);
+    unmount();
+    render(<Host followers="" />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /salvar marca/i })); });
+    expect(saved?.brandKit.followers).toBeNull();
+  });
+
+  it('o campo aparece como opcional', () => {
+    renderStep();
+    expect(screen.getByLabelText(/Seguidores no LinkedIn/)).toBeTruthy();
+  });
+});

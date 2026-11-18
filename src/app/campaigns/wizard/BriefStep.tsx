@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PaintBucket } from 'lucide-react';
 import { BriefPane, type BriefDraft } from './BriefPane';
-import { createDefaultBrandKit } from './brandKit';
+import { createDefaultBrandKit, parseFollowers } from './brandKit';
 import type { CreativeData } from './types';
 import {
   fetchClientVoice,
@@ -22,6 +22,7 @@ export function createEmptyBriefDraft(): BriefDraft {
     fontFamily: 'Inter',
     logo: null,
     logoPath: null,
+    followers: '',
     source: null,
     extractedRef: '',
   };
@@ -117,6 +118,7 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
     brandKit.colors.secondary,
     brandKit.colors.accent,
     brandKit.logo ?? '',
+    brandKit.followers ?? '',
   ].join('\u0000');
   const seededSignatureRef = useRef<string | null>(null);
   if (seededSignatureRef.current === null) seededSignatureRef.current = brandSignature;
@@ -133,6 +135,7 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
       fontFamily: brandKit.fontFamily,
       logo: brandKit.logo,
       logoPath: brandKit.logoPath ?? null,
+      followers: typeof brandKit.followers === 'number' ? String(brandKit.followers) : '',
       colorOptions: brandKit.colorOptions,
       // `source`/`extractedRef` NÃO são tocados aqui de propósito: quem os
       // possui são os handlers de extração (`applyFixtureToDraft` grava,
@@ -185,6 +188,7 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
         fontFamily: draft.fontFamily,
         logo: draft.logo,
         logoPath: draft.logoPath ?? null,
+        followers: parseFollowers(draft.followers),
       },
       clientProductService: draft.productService,
       clientAudienceMarket: draft.audienceMarket,
