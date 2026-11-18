@@ -34,3 +34,23 @@ describe('objetivos — tela e servidor usam a mesma tabela', () => {
     expect(costTypeLabel({ objective: 'website_visits', biddingStrategy: 'automated' })).toMatch(/CPM/);
   });
 });
+
+import { copyObjectiveBlock } from './objectives';
+
+describe('o objetivo da campanha entra no prompt do texto', () => {
+  it('Visitas ao site pede o clique', () => {
+    const block = copyObjectiveBlock('website_visits', 'LEARN_MORE');
+    expect(block).toContain('Objetivo da campanha: Visitas ao site');
+    expect(block).toMatch(/clicar/);
+    expect(block).toContain('CTA: LEARN_MORE');
+  });
+
+  it('cada objetivo muda o prompt', () => {
+    const blocks = new Set(['brand_awareness', 'website_visits', 'engagement', 'lead_generation', 'video_views'].map((o) => copyObjectiveBlock(o)));
+    expect(blocks.size).toBe(5);
+  });
+
+  it('sem objetivo, vale Reconhecimento da marca', () => {
+    expect(copyObjectiveBlock(undefined)).toContain('Reconhecimento da marca');
+  });
+});

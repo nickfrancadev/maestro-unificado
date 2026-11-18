@@ -479,6 +479,7 @@ export function CampaignWizard() {
               onCreativeChange={setCreativeData}
               onEditBrand={() => goToStep(3)}
               initialTarget={creativeFocus}
+              objective={campaignConfig.objective}
             />
           )}
           {currentStep === 5 && (

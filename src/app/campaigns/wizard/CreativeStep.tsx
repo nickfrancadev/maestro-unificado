@@ -181,6 +181,11 @@ interface CreativeStepProps {
    * um atalho da Revisão ("Ir para Criativos · <empresa>") cair direto nela.
    */
   initialTarget?: string;
+  /**
+   * Objetivo da campanha (passo Configuração). Vai para a IA de texto: o
+   * texto de "Visitas ao site" pede o clique, o de "Reconhecimento" não.
+   */
+  objective?: string;
 }
 
 type CompanyStatus = 'template' | 'brief_only' | 'fully_personalized';
@@ -254,7 +259,7 @@ function sendableAdvertiserLogoUrl(logo: string | null): string | null {
   return logo && logo.startsWith('blob:') ? null : logo;
 }
 
-export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId, onEditBrand, initialTarget }: CreativeStepProps) {
+export function CreativeStep({ selectedAccounts, targetingData, creativeData, onCreativeChange, campaignId, onEditBrand, initialTarget, objective = 'brand_awareness' }: CreativeStepProps) {
   const navigate = useNavigate();
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   // Camada selecionada no editor — é ela que os controles do card 2 editam.
@@ -557,7 +562,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         client_brand_colors: data.brandKit.colors,
         ...advertiserContext(data),
         target_company_name: company.label,
-        objective: 'brand_awareness',
+        objective,
         cta: data.cta,
       });
       // A IA nunca apaga texto: resposta vazia, frase de falha, variável sem
@@ -668,7 +673,7 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
         client_brand_colors: data.brandKit.colors,
         ...advertiserContext(data),
         target_company_name: '{{company.name}}',
-        objective: 'brand_awareness',
+        objective,
         cta: data.cta,
       });
       // Guard against the model echoing a concrete name from the client voice

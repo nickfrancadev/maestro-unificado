@@ -89,3 +89,19 @@ export function resolveCostType(objectiveKey: string | null | undefined, bidding
   if (biddingStrategy === "manual_cpc" && obj.manualBidding.includes("manual_cpc")) return "CPC";
   return obj.costType;
 }
+
+/**
+ * Bloco <campaign> do prompt de texto: o objetivo em português e o que o
+ * texto precisa provocar. Antes o prompt recebia o enum cru, e a tela sempre
+ * mandava "brand_awareness" — o texto ignorava o objetivo escolhido.
+ */
+export function copyObjectiveBlock(objectiveKey: string | null | undefined, cta?: string | null): string {
+  const obj = objectiveFor(objectiveKey);
+  return [
+    "<campaign>",
+    `Objetivo da campanha: ${obj.label}`,
+    `O texto precisa: ${obj.copyGoal}`,
+    `CTA: ${cta || "LEARN_MORE"}`,
+    "</campaign>",
+  ].join("\n");
+}

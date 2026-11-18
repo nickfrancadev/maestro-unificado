@@ -46,7 +46,7 @@ import {
   creativeProblems,
   creativeMessage,
 } from "./publishRules.ts";
-import { objectiveFor, resolveCostType } from "./objectives.ts";
+import { objectiveFor, resolveCostType, copyObjectiveBlock } from "./objectives.ts";
 import { checkRateLimit, rateLimitConfigFrom, rateLimitKey, rateLimitMessage } from "./aiRateLimit.ts";
 import { fetchWithRetry as fetchWithRetryPure, translateLinkedInError, RECONNECT_MESSAGE } from "./linkedinHttp.ts";
 
@@ -2947,6 +2947,7 @@ app.post("/make-server-a4d5bbe0/ai/generate-copy", async (c) => {
 REGRAS CRÍTICAS:
 - O TOM DE VOZ é do cliente Maestro (o anunciante), descrito em <client_voice>. Mantenha esse tom rigorosamente.
 - O anunciante vende o que está em <advertiser>. A MENSAGEM é direcionada à empresa-alvo (target_company_name) e deve usar referências dos "key_messaging_themes" do brief para ressoar com ela.
+- O texto serve ao OBJETIVO da campanha descrito em <campaign>: escreva para provocar o que ele pede.
 - Headline: até 150 caracteres (nunca mais de ${LINKEDIN_HEADLINE_MAX}), alta conversão, mencione a empresa-alvo OU um problema específico do contexto dela.
 - BodyText: até 500 caracteres (nunca mais de ${LINKEDIN_INTRO_MAX}), 2-3 frases curtas, primeira frase puxa atenção (pode mencionar a empresa-alvo), última frase incentiva o CTA.
 - Idioma: português do Brasil, salvo se o tom de voz pedir explicitamente outro idioma.
@@ -2978,10 +2979,7 @@ Temas de mensagem que ressoam com ela: ${(brand_brief?.key_messaging_themes || [
 Persona típica: ${brand_brief?.target_persona_hint || "?"}
 </target_company>
 
-<campaign>
-Objetivo da campanha: ${objective || "brand_awareness"}
-CTA: ${cta || "LEARN_MORE"}
-</campaign>
+${copyObjectiveBlock(objective, cta)}
 
 Gere headline e bodyText para este anúncio.`;
 
