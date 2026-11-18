@@ -6,6 +6,7 @@ import type { CampaignConfig, CreativeData } from './types';
 import type { CampaignPipelineParams } from '@/lib/linkedin';
 import { artStatus, artIssue } from './composition';
 import { isSpendConfirmed, HIGH_SPEND_MONTHLY_THRESHOLD } from './spendGuard';
+import { crossCompanyMentions, creativeTextsFor, crossMentionIssue } from './crossMention';
 import type { ArtStatus } from './composition';
 
 export interface AdSetCreative {
@@ -16,6 +17,8 @@ export interface AdSetCreative {
   cta: string;
   /** A arte composta vale para o que o editor mostra? Ver composition.ts. */
   artStatus?: ArtStatus;
+  /** Textos sobre a imagem, já com a empresa trocada (para a regra F076). */
+  imageTexts?: string[];
 }
 
 export interface AdSetPlan {
@@ -86,6 +89,7 @@ export function buildLaunchPlan(
           .replace(/\{\{company\.name\}\}/g, encodeURIComponent(acc.label)),
         cta: resolved.cta,
         artStatus: artStatus(creativeData, acc),
+        imageTexts: creativeTextsFor(creativeData, acc).slice(2),
       },
     };
   });
@@ -102,8 +106,15 @@ const UNRESOLVED_VAR = /\{\{\s*[\w.]+\s*\}\}/;
  */
 export function validateLaunchPlan(plan: AdSetPlan[]): Record<string, string[]> {
   const result: Record<string, string[]> = {};
+  // F076: o criativo de uma empresa não pode citar outra empresa da campanha.
+  const mentions = crossCompanyMentions(plan.map((a) => ({
+    companyId: a.companyId,
+    companyName: a.companyName,
+    texts: [a.creative.headline, a.creative.bodyText, ...(a.creative.imageTexts ?? [])],
+  })));
   for (const adSet of plan) {
     const issues: string[] = [];
+    if (mentions[adSet.companyId]) issues.push(crossMentionIssue(mentions[adSet.companyId]));
     const { headline, bodyText, imageUrl, landingPageUrl } = adSet.creative;
 
     if (!imageUrl) issues.push('Sem imagem');

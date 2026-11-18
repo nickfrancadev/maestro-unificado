@@ -329,3 +329,12 @@ describe('CreativeStep — seguidores no preview', () => {
     expect(screen.getByText('12.840 seguidores')).toBeTruthy();
   });
 });
+
+describe('CreativeStep — anúncio que cita outra empresa (F076)', () => {
+  it('mostra qual empresa cita qual na lista e no editor', () => {
+    renderStep({ overrides: { c1: { status: 'fully_personalized', headline: 'Melhor que a Stone' } } });
+    expect(screen.getByText('Cita Stone')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Nubank/ }));
+    expect(screen.getByText(/Nubank: O anúncio cita Stone, outra empresa desta campanha/)).toBeTruthy();
+  });
+});
