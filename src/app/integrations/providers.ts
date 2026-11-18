@@ -1,13 +1,14 @@
 // Provider catalog: name, description, icon, OAuth scopes, docs link.
 
 import type { IntegrationMeta } from './types';
+import { LINKEDIN_LOGO_URL } from '@/app/components/LinkedInLogo';
 
 export const INTEGRATION_META: Record<string, IntegrationMeta> = {
   linkedin: {
     name: 'LinkedIn Ads',
     description:
       'Valide contas, crie campanhas e sincronize métricas diretamente com o LinkedIn Marketing API.',
-    icon: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png',
+    icon: LINKEDIN_LOGO_URL,
     permissions: [
       'r_ads — Ler Campanhas',
       'r_ads_reporting — Ler Analytics',

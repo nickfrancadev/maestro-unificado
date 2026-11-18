@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { X, ChevronRight, ChevronLeft, Check, Linkedin, Users, Image as ImageIcon, DollarSign, Sparkles } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Check, Users, Image as ImageIcon, DollarSign, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import type { LinkedInAdData } from './TouchpointTimeline';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 interface AudienceAccount { id: string; name: string; }
 interface AudienceContact { id: string; name: string; role?: string; }
@@ -106,9 +107,7 @@ export function LinkedInAdDrawer({
         {/* Header */}
         <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#0a66c2] flex items-center justify-center">
-              <Linkedin className="w-5 h-5 text-white" />
-            </div>
+            <LinkedInLogo size={40} />
             <div>
               <h2 className="font-bold text-[#212a46] text-base">Criar LinkedIn Ad</h2>
               <p className="text-xs text-gray-500">Play: {playName}</p>
@@ -404,7 +403,7 @@ export function LinkedInAdDrawer({
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              <Linkedin className="w-4 h-4" />
+              <LinkedInLogo size={16} onBrand />
               {publishing ? 'Publicando...' : 'Publicar no LinkedIn Ads'}
             </button>
           )}

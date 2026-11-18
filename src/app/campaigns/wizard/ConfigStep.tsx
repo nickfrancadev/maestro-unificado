@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Calendar,
-  Linkedin,
   Target,
   Megaphone,
   DollarSign,
@@ -15,6 +14,7 @@ import { OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET, effectiveCostType } from './types
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 import { currencySymbol as symbolFor, fmtMoney, spendStatement, DAYS_PER_MONTH } from '../format';
 import { plural } from '../labels';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 interface ConfigStepProps {
   config: CampaignConfig;
@@ -90,7 +90,7 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
       {/* LinkedIn Status Banner */}
       {linkedinStatus?.status === 'connected' && linkedinStatus.selected_ad_account_id ? (
         <div className="mb-6 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-5 py-3">
-          <Linkedin className="w-5 h-5 text-[#0077b5] shrink-0" />
+          <LinkedInLogo size={20} />
           <div className="flex-1">
             <span className="text-sm font-medium text-green-800">
               Conta conectada: {linkedinStatus.selected_ad_account_name || 'LinkedIn Ads'}

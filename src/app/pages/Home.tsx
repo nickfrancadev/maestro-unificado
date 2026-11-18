@@ -16,7 +16,6 @@ import {
   Activity,
   Mail,
   Phone,
-  Linkedin,
   MessageSquare,
   CheckCircle2,
   ChevronDown,
@@ -39,6 +38,7 @@ import {
 } from 'recharts';
 import { InternoTab } from './dashboard/InternoTab';
 import { FunilTab } from './dashboard/FunilTab';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 type DashboardTab = 'estrategico' | 'funil' | 'interno';
 
@@ -244,7 +244,7 @@ export function Home() {
       case "call":
         return <Phone size={16} style={{ color: "#6B7280" }} />;
       case "linkedin":
-        return <Linkedin size={16} style={{ color: "#0A66C2" }} />;
+        return <LinkedInLogo size={16} label="LinkedIn" />;
       case "whatsapp":
         return <MessageSquare size={16} style={{ color: "#25D366" }} />;
       case "meeting":

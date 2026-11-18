@@ -29,6 +29,7 @@ import {
 import type { LinkedInAdAccount } from '@/lib/linkedin';
 import type { IntegrationData } from './types';
 import { adAccountStatusLabel } from '../campaigns/labels';
+import { LINKEDIN_LOGO_URL } from '@/app/components/LinkedInLogo';
 
 type ModalState = 'idle' | 'authorizing' | 'selecting_account' | 'connected';
 
@@ -197,7 +198,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
               <img
-                src="https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png"
+                src={LINKEDIN_LOGO_URL}
                 alt="LinkedIn"
                 className="w-6 h-6"
               />

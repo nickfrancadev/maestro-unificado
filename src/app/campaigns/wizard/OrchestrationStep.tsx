@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
-  Linkedin,
   X,
   Loader2,
   Shield,
@@ -41,6 +40,7 @@ import type {
   LinkedInIntegrationStatus,
   BillingStatus,
 } from '@/lib/linkedin';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 interface OrchestrationStepProps {
   selectedAccounts: TargetAccount[];
@@ -635,7 +635,7 @@ export function OrchestrationStep({
             </div>
             {isLinkedInReady ? (
               <p className="text-sm text-slate-700 flex items-center gap-2">
-                <Linkedin className="w-4 h-4 text-[#0077b5]" />
+                <LinkedInLogo size={16} />
                 {linkedinStatus?.selected_ad_account_name || 'LinkedIn Ads'} · cobra em {currency}
               </p>
             ) : (

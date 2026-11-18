@@ -12,7 +12,6 @@ import {
   Target,
   Mail,
   Phone,
-  Linkedin,
   MessageSquare,
   Calendar,
   TrendingUp,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import type { AccountDetail } from "./AccountDetailPage";
 import { CreatePlayWizard } from "./CreatePlayWizard";
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 interface PlayStep {
   id: string;
@@ -51,7 +51,7 @@ const channelIcon = (type: PlayStep["type"]) => {
   const props = { size: 13 };
   switch (type) {
     case "email":      return <Mail {...props} />;
-    case "linkedin":   return <Linkedin {...props} />;
+    case "linkedin":   return <LinkedInLogo size={13} />;
     case "telefone":   return <Phone {...props} />;
     case "whatsapp":   return <MessageSquare {...props} />;
     case "reuniao":    return <Calendar {...props} />;

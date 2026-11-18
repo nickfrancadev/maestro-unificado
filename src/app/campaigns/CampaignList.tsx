@@ -8,7 +8,6 @@ import {
   Trash2,
   BarChart3,
   Loader2,
-  Linkedin,
   Info,
   RefreshCw,
   X,
@@ -31,6 +30,7 @@ import { fmtCurrency, fmtOptional, fmtPct, fmtDate } from './format';
 import { statusLabel, plural } from './labels';
 import { listDrafts, deleteDraft, draftDailyTotal } from './drafts';
 import type { CampaignDraft } from './drafts';
+import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 /**
  * Uma linha = um conjunto de anúncios no LinkedIn (no produto, uma empresa-alvo).
@@ -785,7 +785,7 @@ export function CampaignList() {
                           <span className="min-w-0">
                             <span className="font-semibold text-slate-900 block">{group.name}</span>
                             <span className="flex items-center gap-1.5 mt-1 text-xs text-slate-500">
-                              <Linkedin className="w-3 h-3 text-[#0A66C2]" />
+                              <LinkedInLogo size={12} />
                               {isMockGroup ? 'Demonstração' : account.name} · {s.currency}
                             </span>
                           </span>
