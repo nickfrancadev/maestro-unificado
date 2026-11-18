@@ -41,6 +41,27 @@ import {
   type CampaignProblems,
 } from "./campaignEditGuards.ts";
 import { registerBrandBookRoute, geminiPdfRequestBody } from "./brandBook.ts";
+import {
+  CREATIVE_BUCKET,
+  SIGNED_URL_TTL_SECONDS,
+  storagePathFromUrl,
+  isSafeStoragePath,
+} from "./creativeStorage.ts";
+import {
+  toUrn,
+  urnId,
+  resolveCampaignGroupUrn,
+  effectiveCampaignStatus,
+  withDefaultLocation,
+  audienceProblem,
+  budgetDateProblem,
+  creativeProblems,
+  creativeMessage,
+} from "./publishRules.ts";
+import { objectiveFor, resolveCostType, copyObjectiveBlock } from "./objectives.ts";
+import { analyticsWindowStart } from "./analyticsRange.ts";
+import { checkRateLimit, rateLimitConfigFrom, rateLimitKey, rateLimitMessage } from "./aiRateLimit.ts";
+import { fetchWithRetry as fetchWithRetryPure, translateLinkedInError, RECONNECT_MESSAGE } from "./linkedinHttp.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -49,7 +70,6 @@ const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
-const CREATIVE_BUCKET = "make-a4d5bbe0-creatives";
 const LOGO_DEV_KEY = Deno.env.get("LOGO_DEV_PUBLIC_KEY") ?? "pk_MnyWFrunT_GidypWnkvVJg";
 
 const app = new Hono();
@@ -62,12 +82,47 @@ app.use(
   "/*",
   cors({
     origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-maestro-company-id", "x-maestro-user-id"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    exposeHeaders: ["Content-Length"],
+    exposeHeaders: ["Content-Length", "Retry-After", "X-RateLimit-Remaining"],
     maxAge: 600,
   }),
 );
+
+// Limite de uso da IA por empresa e usuário (F085) nas rotas que custam.
+// A identificação vem dos cabeçalhos que o app manda; autenticação de verdade
+// é decisão à parte e não muda esta regra.
+const AI_LIMITED_ROUTES = new Set([
+  "/make-server-a4d5bbe0/ai/brand-brief",
+  "/make-server-a4d5bbe0/ai/extract-brand-voice",
+  "/make-server-a4d5bbe0/ai/generate-copy",
+  "/make-server-a4d5bbe0/ai/generate-base-image",
+]);
+const AI_RATE_LIMIT = rateLimitConfigFrom({
+  max: Deno.env.get("AI_RATE_LIMIT_MAX"),
+  windowMin: Deno.env.get("AI_RATE_LIMIT_WINDOW_MIN"),
+});
+app.use("/make-server-a4d5bbe0/ai/*", async (c, next) => {
+  if (c.req.method !== "POST" || !AI_LIMITED_ROUTES.has(c.req.path)) return next();
+  const key = rateLimitKey(c.req.header("x-maestro-company-id"), c.req.header("x-maestro-user-id"));
+  const now = Date.now();
+  try {
+    const decision = checkRateLimit(await kv.get(key), now, AI_RATE_LIMIT);
+    if (!decision.allowed) {
+      c.header("Retry-After", String(decision.retryAfterSeconds));
+      return c.json({
+        error: rateLimitMessage(decision.retryAfterSeconds, now, AI_RATE_LIMIT),
+        retry_after_seconds: decision.retryAfterSeconds,
+      }, 429);
+    }
+    await kv.set(key, decision.timestamps);
+    c.header("X-RateLimit-Remaining", String(decision.remaining));
+  } catch (err: any) {
+    // Contador indisponível não derruba a IA.
+    console.log(`[AI Rate Limit] contador indisponível: ${err.message}`);
+  }
+  return next();
+});
 
 // Health check endpoint
 app.get("/make-server-a4d5bbe0/health", (c) => {
@@ -370,7 +425,7 @@ app.post("/make-server-a4d5bbe0/linkedin/select-ad-account", async (c) => {
     return c.json({ success: true });
   } catch (err: any) {
     console.log("[LinkedIn Select Ad Account] Erro:", err.message);
-    return c.json({ error: `Erro ao selecionar ad account: ${err.message}` }, 500);
+    return c.json({ error: "Não foi possível selecionar a conta de anúncios. Tente de novo." }, 500);
   }
 });
 
@@ -423,7 +478,7 @@ app.get("/make-server-a4d5bbe0/linkedin/ad-accounts", async (c) => {
     return c.json({ accounts });
   } catch (err: any) {
     console.log("[LinkedIn Ad Accounts] Erro:", err.message);
-    return c.json({ error: `Erro ao buscar ad accounts: ${err.message}` }, 500);
+    return c.json({ error: "Não foi possível buscar as contas de anúncios. Tente de novo." }, 500);
   }
 });
 
@@ -825,6 +880,33 @@ function serializeTargetingCriteriaV2(criteria: any): string {
   return `(${parts.join(",")})`;
 }
 
+// Estimativa de público do LinkedIn. `total` é 0 abaixo de 300 (piso de
+// privacidade) e null quando a API não respondeu.
+async function fetchAudienceCount(accessToken: string, criteria: any): Promise<{ total: number | null; active: number | null; error?: string }> {
+  // LinkedIn audienceCounts is a Rest.li 2.0.0 FINDER: GET with the criteria
+  // serialized into the query string (not a POST body). Finder name is
+  // targetingCriteriaV2 for the current include/exclude schema.
+  const serialized = serializeTargetingCriteriaV2(criteria);
+  const url = `https://api.linkedin.com/rest/audienceCounts?q=targetingCriteriaV2&targetingCriteria=${serialized}`;
+  console.log(`[LinkedIn Audience Count] GET ${url}`);
+  try {
+    const response = await fetchWithRetry(url, { method: "GET", headers: linkedInHeaders(accessToken) }, "Audience Count");
+    if (!response.ok) {
+      const errText = await response.text();
+      console.log(`[LinkedIn Audience Count] API error ${response.status}: ${errText}`);
+      return { total: null, active: null, error: "Não foi possível estimar o público no LinkedIn agora." };
+    }
+    // Response shape: { elements: [{ active: N, total: M }], paging: {...} }
+    const data = await response.json();
+    const element = data.elements?.[0] || {};
+    console.log(`[LinkedIn Audience Count] Response: total=${element.total} active=${element.active}`);
+    return { total: element.total ?? null, active: element.active ?? null };
+  } catch (err: any) {
+    console.log(`[LinkedIn Audience Count] Erro: ${err.message}`);
+    return { total: null, active: null, error: "Não foi possível estimar o público no LinkedIn agora." };
+  }
+}
+
 app.post("/make-server-a4d5bbe0/linkedin/audience-count", async (c) => {
   try {
     const integration = await getLinkedInIntegration();
@@ -837,37 +919,12 @@ app.post("/make-server-a4d5bbe0/linkedin/audience-count", async (c) => {
       return c.json({ count: null, error: "targeting_criteria é obrigatório" }, 400);
     }
 
-    // LinkedIn audienceCounts is a Rest.li 2.0.0 FINDER: GET with the criteria
-    // serialized into the query string (not a POST body). Finder name is
-    // targetingCriteriaV2 for the current include/exclude schema.
-    const serialized = serializeTargetingCriteriaV2(targeting_criteria);
-    const url = `https://api.linkedin.com/rest/audienceCounts?q=targetingCriteriaV2&targetingCriteria=${serialized}`;
-
-    console.log(`[LinkedIn Audience Count] GET ${url}`);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${integration.access_token}`,
-        "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": "202602",
-      },
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.log(`[LinkedIn Audience Count] API error ${response.status}: ${errText}`);
-      return c.json({ count: null, error: `LinkedIn API ${response.status}: ${errText}` });
-    }
-
-    // Response shape: { elements: [{ active: N, total: M }], paging: {...} }
-    // total is 0 when audience size < 300 (LinkedIn privacy floor).
-    const data = await response.json();
-    const element = data.elements?.[0] || {};
-    console.log(`[LinkedIn Audience Count] Response: total=${element.total} active=${element.active} raw=${JSON.stringify(data).slice(0, 500)}`);
-    return c.json({
-      count: element.total ?? null,
-      active_count: element.active ?? null,
-    });
+    // Sem localização, o servidor completa com Brasil (F052) — a mesma regra
+    // da criação do conjunto, para a estimativa contar o que vai ao ar.
+    const { criteria, defaulted } = withDefaultLocation(targeting_criteria);
+    const result = await fetchAudienceCount(integration.access_token, criteria);
+    if (result.error) return c.json({ count: null, error: result.error, default_location: defaulted });
+    return c.json({ count: result.total, active_count: result.active, default_location: defaulted });
   } catch (err: any) {
     console.log("[LinkedIn Audience Count] Erro:", err.message);
     return c.json({ count: null, error: err.message });
@@ -881,34 +938,10 @@ app.post("/make-server-a4d5bbe0/linkedin/audience-count", async (c) => {
 // exponential backoff, and persists audit trail in KV.
 // ================================================
 
-// Retry helper (1 retry for 5xx, exponential backoff)
-async function fetchWithRetry(
-  url: string,
-  opts: RequestInit,
-  label: string,
-  maxRetries = 1
-): Promise<Response> {
-  let lastErr: Error | null = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const res = await fetch(url, opts);
-      if (res.status >= 500 && attempt < maxRetries) {
-        const wait = Math.pow(2, attempt) * 500;
-        console.log(`[${label}] 5xx (${res.status}), retry #${attempt + 1} in ${wait}ms`);
-        await new Promise((r) => setTimeout(r, wait));
-        continue;
-      }
-      return res;
-    } catch (err: any) {
-      lastErr = err;
-      if (attempt < maxRetries) {
-        const wait = Math.pow(2, attempt) * 500;
-        console.log(`[${label}] Network error, retry #${attempt + 1} in ${wait}ms: ${err.message}`);
-        await new Promise((r) => setTimeout(r, wait));
-      }
-    }
-  }
-  throw lastErr || new Error(`[${label}] All retries exhausted`);
+// Nova tentativa com espera (500 ms, 1 s) em 5xx e erro de rede, em TODAS as
+// chamadas da publicação (F140). Lógica pura em `linkedinHttp.ts`, testada.
+function fetchWithRetry(url: string, opts: RequestInit, label: string): Promise<Response> {
+  return fetchWithRetryPure(url, opts, label);
 }
 
 // LinkedIn REST API headers (consistent v202602)
@@ -920,6 +953,14 @@ function linkedInHeaders(accessToken: string, extra?: Record<string, string>): R
     "LinkedIn-Version": "202602",
     ...(extra || {}),
   };
+}
+
+// Resposta de erro de uma chamada ao LinkedIn: frase em português que diz o
+// que fazer (F140). O texto cru da API fica só no log e na auditoria.
+function linkedInErrorResponse(c: any, status: number, errText: string, action: string) {
+  const t = translateLinkedInError(status, errText, action);
+  console.log(`[LinkedIn] ${action}: ${status} → ${t.kind}`);
+  return c.json({ success: false, error: t.message, error_kind: t.kind }, t.status);
 }
 
 // Validate integration, return access token or throw
@@ -948,6 +989,8 @@ app.post("/make-server-a4d5bbe0/linkedin/campaigns", async (c) => {
     }
 
     switch (action) {
+      case "validate-launch":
+        return await handleValidateLaunch(c, body);
       case "create-campaign-group":
         return await handleCreateCampaignGroup(c, body);
       case "create-campaign":
@@ -967,19 +1010,62 @@ app.post("/make-server-a4d5bbe0/linkedin/campaigns", async (c) => {
     }
   } catch (err: any) {
     if (err.message === "UNAUTHORIZED") {
-      return c.json({ error: "LinkedIn não conectado" }, 401);
+      return c.json({ success: false, error: RECONNECT_MESSAGE, error_kind: "reconnect" }, 424);
     }
     console.log("[LinkedIn Campaigns] Erro não tratado:", err.message);
-    return c.json({ success: false, error: `Erro interno: ${err.message}` }, 500);
+    // Rede caiu em todas as tentativas, ou falha nossa: nunca o texto cru.
+    return c.json({ success: false, error: "Não foi possível falar com o LinkedIn agora. Tente de novo em instantes; o que já foi criado não será duplicado." }, 502);
   }
 });
 
+// ACTION 0: Validate Launch — confere TODAS as empresas antes de criar
+// qualquer coisa no LinkedIn. Recusa com 422 e a lista do que impede, por
+// empresa, em português. A tela chama antes do primeiro passo da publicação.
+async function handleValidateLaunch(c: any, body: any) {
+  const adSets: any[] = Array.isArray(body.ad_sets) ? body.ad_sets : [];
+  if (!adSets.length) return c.json({ success: false, error: "Nenhuma empresa para publicar." }, 400);
+  const dateProblem = budgetDateProblem({ budgetType: body.budget_type, startDate: body.start_date, endDate: body.end_date });
+  if (dateProblem) return c.json({ success: false, error: dateProblem, field: "end_date" }, 422);
+  const { accessToken } = await requireLinkedIn();
+
+  const problems: { company_name: string; messages: string[] }[] = [];
+  const defaultedLocation: string[] = [];
+  for (const a of adSets) {
+    const company = String(a.company_name || "Empresa");
+    const messages: string[] = [];
+    // Criativo (F138): texto de erro da IA, título vazio, imagem ausente,
+    // variável sem preencher e limite de caracteres depois da troca do nome.
+    const creative = creativeProblems({
+      headline: a.headline,
+      description: a.description,
+      hasImage: !!(a.image_url || a.image_path),
+      landingPageUrl: a.landing_page_url,
+    });
+    if (creative.length) messages.push(creativeMessage(company, creative));
+    const { criteria, defaulted } = withDefaultLocation(a.targeting_criteria);
+    if (defaulted) defaultedLocation.push(company);
+    const audience = await fetchAudienceCount(accessToken, criteria);
+    const tooSmall = audienceProblem(company, audience.total);
+    if (tooSmall) messages.push(tooSmall);
+    if (messages.length) problems.push({ company_name: company, messages });
+  }
+
+  if (problems.length) {
+    const first = problems[0];
+    const more = problems.length > 1 ? ` (e mais ${problems.length - 1} empresa${problems.length > 2 ? "s" : ""})` : "";
+    return c.json({ success: false, error: `${first.messages[0]}${more}`, problems, default_location: defaultedLocation }, 422);
+  }
+  return c.json({ success: true, default_location: defaultedLocation });
+}
+
 // ACTION 1: Create Campaign Group
 async function handleCreateCampaignGroup(c: any, body: any) {
-  const { campaign_id, ad_account_id, name, budget_type, budget_amount, currency, start_date } = body;
+  const { campaign_id, ad_account_id, name, budget_type, budget_amount, currency, start_date, end_date } = body;
   if (!campaign_id || !ad_account_id || !name) {
     return c.json({ error: "campaign_id, ad_account_id e name são obrigatórios" }, 400);
   }
+  const dateProblem = budgetDateProblem({ budgetType: budget_type, startDate: start_date, endDate: end_date });
+  if (dateProblem) return c.json({ success: false, error: dateProblem, field: "end_date" }, 422);
 
   const existing = await kv.get(`campaign_group:${campaign_id}`);
   if (existing?.linkedin_id) {
@@ -1003,6 +1089,7 @@ async function handleCreateCampaignGroup(c: any, body: any) {
   // Only add runSchedule if start_date is explicit (LinkedIn can default otherwise)
   if (start_date) {
     cgBody.runSchedule = { start: new Date(start_date).getTime() };
+    if (end_date) cgBody.runSchedule.end = new Date(end_date).getTime();
   }
   if (budget_type === "total" && budget_amount > 0) cgBody.totalBudget = { amount: budgetStr, currencyCode: curr };
   if (budget_type === "daily" && budget_amount > 0) cgBody.dailyBudget = { amount: budgetStr, currencyCode: curr };
@@ -1018,7 +1105,7 @@ async function handleCreateCampaignGroup(c: any, body: any) {
     const errText = await response.text();
     console.log(`[Create CG] Error ${response.status}: ${errText}`);
     await auditLog(campaign_id, "create-campaign-group", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "criar o grupo da campanha");
   }
 
   const campaignGroupId = response.headers.get("x-restli-id") || null;
@@ -1036,62 +1123,24 @@ async function handleCreateCampaignGroup(c: any, body: any) {
 }
 
 // ---- Objective → LinkedIn API fields mapping ----
-const CAMPAIGN_OBJECTIVE_MAP: Record<string, {
-  objectiveType: string;
-  type: string;
-  format: string;
-  costType: string;
-  optimizationTargetType: string;
-}> = {
-  brand_awareness: {
-    objectiveType: "BRAND_AWARENESS",
-    type: "SPONSORED_UPDATES",
-    format: "STANDARD_UPDATE",
-    costType: "CPM",
-    optimizationTargetType: "MAX_REACH",
-  },
-  website_visits: {
-    objectiveType: "WEBSITE_VISITS",
-    type: "SPONSORED_UPDATES",
-    format: "STANDARD_UPDATE",
-    costType: "CPC",
-    optimizationTargetType: "MAX_CLICK",
-  },
-  engagement: {
-    objectiveType: "ENGAGEMENT",
-    type: "SPONSORED_UPDATES",
-    format: "STANDARD_UPDATE",
-    costType: "CPC",
-    optimizationTargetType: "MAX_CLICK",
-  },
-  lead_generation: {
-    objectiveType: "LEAD_GENERATION",
-    type: "SPONSORED_UPDATES",
-    format: "LEAD_GENERATION_FORM_SPONSORED_CONTENT",
-    costType: "CPM",
-    optimizationTargetType: "MAX_LEAD",
-  },
-  video_views: {
-    objectiveType: "VIDEO_VIEWS",
-    type: "SPONSORED_UPDATES",
-    format: "SINGLE_VIDEO",
-    costType: "CPV",
-    optimizationTargetType: "MAX_VIDEO_VIEW",
-  },
-};
+// A tabela mora em `objectives.ts`, a MESMA que a tela usa (uma fonte só).
 
 // ACTION 2: Create Campaign (with full targeting criteria from frontend)
 async function handleCreateCampaign(c: any, body: any) {
   const {
     campaign_id, campaign_group_id, ad_account_id, name, objective,
-    targeting_criteria, budget_type, budget_amount, currency,
+    budget_type, budget_amount, currency,
     cost_type, bid_amount, unit_cost, start_date, end_date,
-    auto_activate, bidding_strategy,
+    auto_activate, bidding_strategy, company_name,
   } = body;
+  // Sem localização, vai Brasil (F052) — o mesmo critério que a estimativa usou.
+  const targeting_criteria = body.targeting_criteria ? withDefaultLocation(body.targeting_criteria).criteria : null;
 
   if (!campaign_id || !campaign_group_id || !ad_account_id || !name || !targeting_criteria) {
     return c.json({ error: "campaign_id, campaign_group_id, ad_account_id, name e targeting_criteria são obrigatórios" }, 400);
   }
+  const dateProblem = budgetDateProblem({ budgetType: budget_type, startDate: start_date, endDate: end_date });
+  if (dateProblem) return c.json({ success: false, error: dateProblem, field: "end_date" }, 422);
 
   // Idempotency check
   const existing = await kv.get(`campaign:${campaign_id}`);
@@ -1101,17 +1150,32 @@ async function handleCreateCampaign(c: any, body: any) {
   }
 
   const { accessToken } = await requireLinkedIn();
+
+  // Público mínimo de 300 conferido no servidor antes de criar o conjunto
+  // (F055). A tela já trava, mas o servidor não confia nela.
+  const audience = await fetchAudienceCount(accessToken, targeting_criteria);
+  const tooSmall = audienceProblem(company_name || name, audience.total);
+  if (tooSmall) {
+    await auditLog(campaign_id, "create-campaign", { status: "refused", reason: "audience", count: audience.total });
+    return c.json({ success: false, error: tooSmall }, 422);
+  }
+
   const adAccStr2 = String(ad_account_id);
   const accountUrn = adAccStr2.startsWith("urn:") ? adAccStr2 : `urn:li:sponsoredAccount:${adAccStr2}`;
   const cgStr = String(campaign_group_id);
   const groupUrn = cgStr.startsWith("urn:") ? cgStr : `urn:li:sponsoredCampaignGroup:${cgStr}`;
 
   // Map objective to all required LinkedIn API fields
-  const mapped = CAMPAIGN_OBJECTIVE_MAP[objective?.toLowerCase()] ?? CAMPAIGN_OBJECTIVE_MAP["brand_awareness"];
+  const mapped = objectiveFor(objective);
   const curr = currency || "BRL";
 
-  // Determine costType: frontend override (manual bidding) takes precedence
-  const resolvedCostType = cost_type || mapped.costType;
+  // Cobrança: a do objetivo (tabela compartilhada com a tela); lance manual só
+  // quando o objetivo aceita. Um `cost_type` divergente (ex.: CPC em Visitas ao
+  // site, que o LinkedIn recusa com MAX_CLICK) não passa.
+  const resolvedCostType = resolveCostType(objective, bidding_strategy);
+  if (cost_type && cost_type !== resolvedCostType) {
+    console.log(`[Create Campaign] cost_type ${cost_type} ignorado: ${objective} cobra ${resolvedCostType}`);
+  }
 
   // Build unitCost — required even for automated bidding (send "0" for automatic)
   let unitCostObj: { amount: string; currencyCode: string };
@@ -1150,7 +1214,7 @@ async function handleCreateCampaign(c: any, body: any) {
     name,
     status: "PAUSED",
 
-    // Required type/objective fields (derived from CAMPAIGN_OBJECTIVE_MAP)
+    // Required type/objective fields (derived from objectives.ts)
     type: mapped.type,
     objectiveType: mapped.objectiveType,
     format: mapped.format,
@@ -1199,7 +1263,7 @@ async function handleCreateCampaign(c: any, body: any) {
     const errText = await response.text();
     console.log(`[Create Campaign] Error ${response.status}: ${errText}`);
     await auditLog(campaign_id, "create-campaign", { status: "error", http: response.status, error: errText, payload_sent: campaignBody });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "criar o conjunto de anúncio");
   }
 
   const linkedInCampaignId = response.headers.get("x-restli-id") || response.headers.get("x-linkedin-id") || null;
@@ -1234,13 +1298,20 @@ async function handleCreateCampaign(c: any, body: any) {
 
 // ACTION 3a: Upload Image (initializeUpload + PUT binary)
 async function handleUploadImage(c: any, body: any) {
-  const { campaign_id, image_url, ad_account_id } = body;
-  if (!campaign_id || !image_url || !ad_account_id) {
-    return c.json({ error: "campaign_id, image_url e ad_account_id são obrigatórios" }, 400);
+  const { campaign_id, image_url, image_path, ad_account_id } = body;
+  if (!campaign_id || !(image_url || image_path) || !ad_account_id) {
+    return c.json({ error: "campaign_id, image_url (ou image_path) e ad_account_id são obrigatórios" }, 400);
   }
+  // A imagem é identificada pelo caminho no Storage. A URL assinada vence em
+  // 2 h; com o caminho (enviado ou tirado da URL antiga) o servidor baixa
+  // direto do bucket, sem depender dela.
+  const storagePath = isSafeStoragePath(image_path) ? image_path : storagePathFromUrl(image_url);
+  const imageSource = storagePath ? `storage:${storagePath}` : String(image_url);
 
   const existing = await kv.get(`image:${campaign_id}`);
-  if (existing?.asset_urn) {
+  // Mesma imagem já enviada: reaproveita. Imagem trocada depois de uma falha
+  // (o usuário corrigiu): envia a nova em vez de reusar a antiga.
+  if (existing?.asset_urn && (!existing.source || existing.source === imageSource)) {
     console.log(`[Upload Image] Idempotent hit: ${existing.asset_urn}`);
     return c.json({ success: true, asset_urn: existing.asset_urn, idempotent: true });
   }
@@ -1259,7 +1330,7 @@ async function handleUploadImage(c: any, body: any) {
   if (!initResponse.ok) {
     const errText = await initResponse.text();
     await auditLog(campaign_id, "upload-image", { status: "error", step: "initialize", error: errText });
-    return c.json({ success: false, error: `initializeUpload failed: ${errText}` }, 400);
+    return linkedInErrorResponse(c, initResponse.status, errText, "enviar a imagem do anúncio");
   }
   const initData = await initResponse.json();
   const uploadUrl = initData.value?.uploadUrl;
@@ -1268,15 +1339,28 @@ async function handleUploadImage(c: any, body: any) {
     return c.json({ success: false, error: "LinkedIn não retornou uploadUrl ou image URN" }, 500);
   }
 
-  // Step 2: Download image
-  console.log(`[Upload Image] Step 2: downloading ${image_url}`);
-  const imageResponse = await fetch(image_url);
-  if (!imageResponse.ok) {
-    await auditLog(campaign_id, "upload-image", { status: "error", step: "download", error: `HTTP ${imageResponse.status}` });
-    return c.json({ success: false, error: `Não foi possível baixar a imagem: HTTP ${imageResponse.status}` }, 400);
+  // Step 2: Download image — do Storage pelo caminho; URL só quando não há caminho.
+  let imageBytes: ArrayBuffer;
+  let contentType: string;
+  if (storagePath) {
+    console.log(`[Upload Image] Step 2: downloading storage:${storagePath}`);
+    const { data: blob, error: dlError } = await supabaseAdmin.storage.from(CREATIVE_BUCKET).download(storagePath);
+    if (dlError || !blob) {
+      await auditLog(campaign_id, "upload-image", { status: "error", step: "download", error: dlError?.message || "not found" });
+      return c.json({ success: false, error: "A imagem do anúncio não está mais disponível. Envie ou gere a imagem de novo em Criativos." }, 422);
+    }
+    imageBytes = await blob.arrayBuffer();
+    contentType = blob.type || "image/png";
+  } else {
+    console.log(`[Upload Image] Step 2: downloading ${image_url}`);
+    const imageResponse = await fetchWithRetry(image_url, { method: "GET" }, "Download Image");
+    if (!imageResponse.ok) {
+      await auditLog(campaign_id, "upload-image", { status: "error", step: "download", error: `HTTP ${imageResponse.status}` });
+      return c.json({ success: false, error: "Não foi possível baixar a imagem do anúncio. Envie ou gere a imagem de novo em Criativos." }, 422);
+    }
+    imageBytes = await imageResponse.arrayBuffer();
+    contentType = imageResponse.headers.get("content-type") || "image/png";
   }
-  const imageBytes = await imageResponse.arrayBuffer();
-  const contentType = imageResponse.headers.get("content-type") || "image/png";
 
   // Step 3: PUT binary to LinkedIn
   console.log(`[Upload Image] Step 3: PUT binary (${imageBytes.byteLength} bytes)`);
@@ -1288,11 +1372,11 @@ async function handleUploadImage(c: any, body: any) {
   if (!uploadResponse.ok && uploadResponse.status !== 201) {
     const errText = await uploadResponse.text();
     await auditLog(campaign_id, "upload-image", { status: "error", step: "upload", error: errText });
-    return c.json({ success: false, error: `Upload failed: ${errText}` }, 400);
+    return linkedInErrorResponse(c, uploadResponse.status, errText, "enviar a imagem do anúncio");
   }
 
   console.log(`[Upload Image] Success: ${imageUrn}`);
-  await kv.set(`image:${campaign_id}`, { asset_urn: imageUrn, campaign_id, uploaded_at: new Date().toISOString() });
+  await kv.set(`image:${campaign_id}`, { asset_urn: imageUrn, campaign_id, source: imageSource, uploaded_at: new Date().toISOString() });
   await auditLog(campaign_id, "upload-image", { status: "success", asset_urn: imageUrn });
   return c.json({ success: true, asset_urn: imageUrn });
 }
@@ -1302,6 +1386,12 @@ async function handleCreateCreative(c: any, body: any) {
   const { campaign_id, linkedin_campaign_id, ad_account_id, asset_urn, headline, description, cta, landing_page_url } = body;
   if (!campaign_id || !linkedin_campaign_id || !ad_account_id) {
     return c.json({ error: "campaign_id, linkedin_campaign_id e ad_account_id são obrigatórios" }, 400);
+  }
+  // O servidor não confia na tela (F138): recusa antes de chamar o LinkedIn.
+  const problems = creativeProblems({ headline, description, hasImage: !!asset_urn, landingPageUrl: landing_page_url });
+  if (problems.length) {
+    await auditLog(campaign_id, "create-creative", { status: "refused", problems });
+    return c.json({ success: false, error: creativeMessage(body.company_name || "Empresa", problems), problems }, 422);
   }
 
   const existing = await kv.get(`creative:${campaign_id}`);
@@ -1341,7 +1431,7 @@ async function handleCreateCreative(c: any, body: any) {
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "create-creative", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "criar o anúncio");
   }
 
   const creativeId = response.headers.get("x-restli-id") || response.headers.get("x-linkedin-id") || null;
@@ -1353,66 +1443,93 @@ async function handleCreateCreative(c: any, body: any) {
 }
 
 // ACTION 4: Activate Campaign + Campaign Group (PAUSED → ACTIVE)
+// O grupo nasce PAUSED: conjunto ativo dentro de grupo pausado não entrega.
+// Ativar um conjunto ativa o grupo dele antes (se o grupo falhar, o conjunto
+// não é ativado) e devolve o status REAL lido do LinkedIn depois da mudança.
 async function handleActivate(c: any, body: any) {
-  const { campaign_id, linkedin_campaign_id } = body;
+  const { campaign_id, linkedin_campaign_id, campaign_group_id } = body;
   if (!campaign_id || !linkedin_campaign_id) {
     return c.json({ error: "campaign_id e linkedin_campaign_id são obrigatórios" }, 400);
   }
 
   const { accessToken } = await requireLinkedIn();
-  const liCampStr2 = String(linkedin_campaign_id);
-  const campaignUrn = liCampStr2.startsWith("urn:") ? liCampStr2 : `urn:li:sponsoredCampaign:${liCampStr2}`;
+  const campaignUrn = toUrn(linkedin_campaign_id, "sponsoredCampaign");
+  const campaignUrl = `https://api.linkedin.com/rest/adCampaigns/${encodeURIComponent(campaignUrn)}`;
 
-  // Also activate the campaign group
-  const cgRecord = await kv.get(`campaign_group:${campaign_id}`);
-  if (cgRecord?.linkedin_id) {
-    const cgId = String(cgRecord.linkedin_id);
-    const cgUrn = cgId.startsWith("urn:") ? cgId : `urn:li:sponsoredCampaignGroup:${cgId}`;
-    console.log(`[Activate] Activating Campaign Group ${cgUrn}`);
-    const cgResp = await fetchWithRetry(
-      `https://api.linkedin.com/rest/adCampaignGroups/${encodeURIComponent(cgUrn)}`,
-      {
-        method: "POST",
-        headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }),
-        body: JSON.stringify({ patch: { $set: { status: "ACTIVE" } } }),
-      },
-      "Activate CG"
-    );
-    if (!cgResp.ok) {
-      const errText = await cgResp.text();
-      console.log(`[Activate] Campaign Group activation failed: ${errText}`);
-      // Non-fatal — continue to activate the campaign itself
-    } else {
-      console.log(`[Activate] Campaign Group ${cgId} activated`);
-    }
+  const campaignRecord = await kv.get(`campaign:${campaign_id}`);
+  const groupRecord = await kv.get(`campaign_group:${campaign_id}`);
+  let fromLinkedIn: string | null = null;
+  if (!campaign_group_id && !campaignRecord?.campaign_group_id && !groupRecord?.linkedin_id) {
+    // A lista manda o id do LinkedIn: pergunta ao LinkedIn qual é o grupo.
+    const getResp = await fetchWithRetry(campaignUrl, { method: "GET", headers: linkedInHeaders(accessToken) }, "Get Campaign");
+    if (getResp.ok) fromLinkedIn = (await getResp.json())?.campaignGroup ?? null;
+  }
+  const groupUrn = resolveCampaignGroupUrn({
+    fromRequest: campaign_group_id,
+    fromCampaignRecord: campaignRecord?.campaign_group_id,
+    fromGroupRecord: groupRecord?.linkedin_id,
+    fromLinkedIn,
+  });
+  if (!groupUrn) {
+    await auditLog(campaign_id, "activate", { status: "error", error: "grupo não encontrado" });
+    return c.json({ success: false, error: "Não foi possível achar o grupo desta campanha no LinkedIn. Atualize a lista e tente de novo." }, 422);
   }
 
-  console.log(`[Activate] POST /rest/adCampaigns/${encodeURIComponent(campaignUrn)} (PARTIAL_UPDATE)`);
-  const response = await fetchWithRetry(
-    `https://api.linkedin.com/rest/adCampaigns/${encodeURIComponent(campaignUrn)}`,
+  const groupUrl = `https://api.linkedin.com/rest/adCampaignGroups/${encodeURIComponent(groupUrn)}`;
+  console.log(`[Activate] Activating Campaign Group ${groupUrn}`);
+  const cgResp = await fetchWithRetry(
+    groupUrl,
     {
       method: "POST",
       headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }),
       body: JSON.stringify({ patch: { $set: { status: "ACTIVE" } } }),
     },
-    "Activate"
+    "Activate CG",
+  );
+  if (!cgResp.ok) {
+    const errText = await cgResp.text();
+    await auditLog(campaign_id, "activate", { status: "error", step: "group", http: cgResp.status, error: errText });
+    return linkedInErrorResponse(c, cgResp.status, errText, "ativar o grupo da campanha");
+  }
+
+  console.log(`[Activate] POST ${campaignUrl} (PARTIAL_UPDATE)`);
+  const response = await fetchWithRetry(
+    campaignUrl,
+    {
+      method: "POST",
+      headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }),
+      body: JSON.stringify({ patch: { $set: { status: "ACTIVE" } } }),
+    },
+    "Activate",
   );
 
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "activate", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "ativar a campanha");
   }
 
-  console.log(`[Activate] Campaign ${linkedin_campaign_id} activated`);
-  const record = await kv.get(`campaign:${campaign_id}`);
-  if (record) {
-    record.status = "ACTIVE";
-    record.activated_at = new Date().toISOString();
-    await kv.set(`campaign:${campaign_id}`, record);
+  // Status real depois da mudança (o LinkedIn pode recusar em silêncio,
+  // ex.: conta sem pagamento). A tela mostra este, não o que pediu.
+  let campaignStatus = "ACTIVE";
+  let groupStatus = "ACTIVE";
+  const [campGet, groupGet] = await Promise.all([
+    fetchWithRetry(campaignUrl, { method: "GET", headers: linkedInHeaders(accessToken) }, "Get Campaign"),
+    fetchWithRetry(groupUrl, { method: "GET", headers: linkedInHeaders(accessToken) }, "Get CG"),
+  ]);
+  if (campGet.ok) campaignStatus = (await campGet.json())?.status || campaignStatus;
+  if (groupGet.ok) groupStatus = (await groupGet.json())?.status || groupStatus;
+  const status = effectiveCampaignStatus(campaignStatus, groupStatus);
+
+  console.log(`[Activate] Campaign ${linkedin_campaign_id} → ${campaignStatus}, group ${groupUrn} → ${groupStatus}`);
+  if (campaignRecord) {
+    campaignRecord.status = status;
+    campaignRecord.campaign_group_id = campaignRecord.campaign_group_id || urnId(groupUrn);
+    campaignRecord.activated_at = new Date().toISOString();
+    await kv.set(`campaign:${campaign_id}`, campaignRecord);
   }
-  await auditLog(campaign_id, "activate", { status: "success", linkedin_campaign_id });
-  return c.json({ success: true });
+  await auditLog(campaign_id, "activate", { status: "success", linkedin_campaign_id, campaign_status: campaignStatus, group_status: groupStatus });
+  return c.json({ success: true, status, campaign_status: campaignStatus, group_status: groupStatus, campaign_group_id: urnId(groupUrn) });
 }
 
 // ACTION 5: Pause Campaign (ACTIVE → PAUSED)
@@ -1440,7 +1557,7 @@ async function handlePause(c: any, body: any) {
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "pause", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "pausar a campanha");
   }
 
   console.log(`[Pause] Campaign ${linkedin_campaign_id} paused`);
@@ -1479,7 +1596,7 @@ async function handleArchive(c: any, body: any) {
   if (!response.ok) {
     const errText = await response.text();
     await auditLog(campaign_id, "archive", { status: "error", http: response.status, error: errText });
-    return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+    return linkedInErrorResponse(c, response.status, errText, "excluir a campanha");
   }
 
   console.log(`[Archive] Campaign ${linkedin_campaign_id} archived`);
@@ -1664,7 +1781,7 @@ app.get("/make-server-a4d5bbe0/linkedin/ad-account-billing", async (c) => {
 
     const adAccountId = integration.selected_ad_account_id;
     if (!adAccountId) {
-      return c.json({ error: "Nenhuma Ad Account selecionada", has_billing: false }, 400);
+      return c.json({ error: "Nenhuma conta de anúncios selecionada. Escolha uma em Integrações.", has_billing: false }, 400);
     }
 
     // Always fetch from LinkedIn API: only servingStatuses tells us whether a
@@ -1694,7 +1811,7 @@ app.get("/make-server-a4d5bbe0/linkedin/ad-account-billing", async (c) => {
         has_billing: false,
         account_status: "UNKNOWN",
         serving_statuses: [],
-        error: `LinkedIn API ${response.status}: ${errText}`,
+        error: translateLinkedInError(response.status, errText, "conferir o pagamento da conta de anúncios").message,
       });
     }
 
@@ -1736,7 +1853,7 @@ app.post("/make-server-a4d5bbe0/linkedin/create-ad-account", async (c) => {
     const { name, currency, reference } = await c.req.json();
 
     if (!name) {
-      return c.json({ error: "Nome da Ad Account é obrigatório" }, 400);
+      return c.json({ error: "Nome da conta de anúncios é obrigatório" }, 400);
     }
 
     const payload: Record<string, any> = {
@@ -1769,7 +1886,7 @@ app.post("/make-server-a4d5bbe0/linkedin/create-ad-account", async (c) => {
     if (!response.ok) {
       const errText = await response.text();
       console.log(`[Create Ad Account] Error ${response.status}: ${errText}`);
-      return c.json({ success: false, error: `LinkedIn API ${response.status}: ${errText}` }, response.status >= 500 ? 502 : 400);
+      return linkedInErrorResponse(c, response.status, errText, "criar a conta de anúncios");
     }
 
     const newAccountId = response.headers.get("x-restli-id") || response.headers.get("x-linkedin-id") || null;
@@ -1789,7 +1906,7 @@ app.post("/make-server-a4d5bbe0/linkedin/create-ad-account", async (c) => {
       return c.json({ error: "LinkedIn não conectado" }, 401);
     }
     console.log("[Create Ad Account] Erro:", err.message);
-    return c.json({ error: `Erro ao criar Ad Account: ${err.message}` }, 500);
+    return c.json({ error: "Não foi possível criar a conta de anúncios. Tente de novo." }, 500);
   }
 });
 
@@ -1835,7 +1952,7 @@ app.post("/make-server-a4d5bbe0/creative-upload", async (c) => {
     // Create signed URL valid for 2 hours (enough for pipeline to download)
     const { data: signedData, error: signedError } = await supabaseAdmin.storage
       .from(CREATIVE_BUCKET)
-      .createSignedUrl(path, 7200);
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
 
     if (signedError || !signedData?.signedUrl) {
       console.log(`[Creative Upload] Signed URL error: ${signedError?.message}`);
@@ -1851,6 +1968,42 @@ app.post("/make-server-a4d5bbe0/creative-upload", async (c) => {
 });
 
 // ================================================
+// Creative Images — URL assinada nova a partir do caminho
+// ================================================
+// O rascunho guarda o caminho no Storage; a tela pede URLs novas para exibir
+// (a assinada vence em 2 h). Aceita também a URL antiga (vencida): o caminho
+// sai dela. `missing` lista o que não existe mais no bucket.
+app.post("/make-server-a4d5bbe0/creative-signed-urls", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const raw: unknown[] = Array.isArray(body?.paths) ? body.paths : [];
+    const paths = [...new Set(raw
+      .map((p) => (typeof p === "string" && p.startsWith("http") ? storagePathFromUrl(p) : p))
+      .filter(isSafeStoragePath))].slice(0, 100);
+    if (!paths.length) return c.json({ urls: {}, missing: [] });
+
+    const { data, error } = await supabaseAdmin.storage
+      .from(CREATIVE_BUCKET)
+      .createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+    if (error) {
+      console.log(`[Creative URLs] Storage error: ${error.message}`);
+      return c.json({ error: "Não foi possível carregar as imagens do rascunho. Tente de novo." }, 502);
+    }
+    const urls: Record<string, string> = {};
+    const missing: string[] = [];
+    for (const item of data || []) {
+      if (item.signedUrl && !item.error && item.path) urls[item.path] = item.signedUrl;
+      else if (item.path) missing.push(item.path);
+    }
+    for (const p of paths) if (!urls[p] && !missing.includes(p)) missing.push(p);
+    return c.json({ urls, missing, expires_in: SIGNED_URL_TTL_SECONDS });
+  } catch (err: any) {
+    console.log("[Creative URLs] Erro:", err.message);
+    return c.json({ error: "Não foi possível carregar as imagens do rascunho. Tente de novo." }, 500);
+  }
+});
+
+// ================================================
 // LinkedIn — List Real Campaigns from Ad Account
 // ================================================
 app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
@@ -1862,7 +2015,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
 
     const adAccountId = integration.selected_ad_account_id;
     if (!adAccountId) {
-      return c.json({ error: "Nenhuma Ad Account selecionada", campaigns: [] }, 400);
+      return c.json({ error: "Nenhuma conta de anúncios selecionada. Escolha uma em Integrações.", campaigns: [] }, 400);
     }
 
     const accessToken = integration.access_token;
@@ -1878,21 +2031,40 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
     const endpoint = `https://api.linkedin.com/rest/adAccounts/${accountIdPath}/adCampaigns?q=search&search=${searchExpr}&fields=id,name,status,type,totalBudget,dailyBudget,runSchedule,costType,campaignGroup&count=100`;
 
     console.log(`[LinkedIn Campaigns List] GET ${endpoint}`);
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(endpoint, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "LinkedIn-Version": "202602",
         "X-Restli-Protocol-Version": "2.0.0",
       },
-    });
+    }, "List Campaigns");
 
     if (!response.ok) {
       const errText = await response.text();
       console.log(`[LinkedIn Campaigns List] API error ${response.status}: ${errText}`);
-      return c.json({ campaigns: [], error: `LinkedIn API ${response.status}: ${errText}` });
+      // Erro é erro: status HTTP de erro, nunca 200 com lista vazia (a tela
+      // mostraria "nenhuma campanha" para uma conta que tem campanhas).
+      return linkedInErrorResponse(c, response.status, errText, "listar as campanhas");
     }
 
     const data = await response.json();
+
+    // Status dos grupos: conjunto ativo em grupo pausado não entrega, e a
+    // lista precisa mostrar isso. Melhor esforço: sem os grupos, vale o do conjunto.
+    const groupStatus = new Map<string, string>();
+    try {
+      const groupsResp = await fetchWithRetry(
+        `https://api.linkedin.com/rest/adAccounts/${accountIdPath}/adCampaignGroups?q=search&search=${searchExpr}&fields=id,status&count=100`,
+        { headers: linkedInHeaders(accessToken) },
+        "List CGs",
+      );
+      if (groupsResp.ok) {
+        for (const g of (await groupsResp.json()).elements || []) groupStatus.set(String(g.id), g.status);
+      }
+    } catch (e: any) {
+      console.log(`[LinkedIn Campaigns List] grupos indisponíveis: ${e.message}`);
+    }
+
     const statusMap: Record<string, string> = {
       ACTIVE: "Active",
       PAUSED: "Paused",
@@ -1901,11 +2073,15 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
       CANCELED: "Canceled",
     };
 
-    const campaigns = (data.elements || []).map((el: any) => ({
+    const campaigns = (data.elements || []).map((el: any) => {
+      const gStatus = el.campaignGroup ? groupStatus.get(urnId(el.campaignGroup)) ?? null : null;
+      const shown = effectiveCampaignStatus(el.status, gStatus);
+      return {
       id: String(el.id),
       name: el.name || "Sem nome",
-      status: statusMap[el.status] || el.status,
+      status: statusMap[shown] || shown,
       rawStatus: el.status,
+      campaignGroupStatus: gStatus,
       type: el.type || "SPONSORED_UPDATES",
       costType: el.costType || "CPM",
       totalBudget: el.totalBudget
@@ -1920,7 +2096,8 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
       // Grupo de campanhas (URN). A lista do front agrupa os conjuntos de um
       // mesmo lançamento (um por empresa) por este campo.
       campaignGroup: el.campaignGroup || null,
-    }));
+    };
+    });
 
     console.log(`[LinkedIn Campaigns List] Returned ${campaigns.length} campaigns`);
     return c.json({
@@ -1930,7 +2107,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
     });
   } catch (err: any) {
     console.log("[LinkedIn Campaigns List] Erro:", err.message);
-    return c.json({ campaigns: [], error: err.message });
+    return c.json({ campaigns: [], error: "Não foi possível falar com o LinkedIn agora. Tente de novo em instantes." }, 502);
   }
 });
 
@@ -2274,7 +2451,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics", async (c) => {
     }
 
     const campaignId = c.req.query("campaignId");
-    const dateRange = c.req.query("dateRange") || "30d";
+    const dateRange = c.req.query("dateRange") || "all";
     if (!campaignId) {
       return c.json({ error: "campaignId é obrigatório" }, 400);
     }
@@ -2284,11 +2461,9 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics", async (c) => {
     const currency = integration.selected_ad_account_currency || "USD";
 
     const now = new Date();
-    let daysBack = 30;
-    if (dateRange === "7d") daysBack = 7;
-    else if (dateRange === "90d") daysBack = 90;
-    else if (dateRange === "all") daysBack = 365;
-    const start = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    // Padrão: vida da campanha (do início dela até hoje), não 30 dias fixos.
+    const start = analyticsWindowStart(dateRange, c.req.query("start"), now);
+    const daysBack = Math.max(1, Math.ceil((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
     const dateRangeParam = `(start:(year:${start.getFullYear()},month:${start.getMonth() + 1},day:${start.getDate()}),end:(year:${now.getFullYear()},month:${now.getMonth() + 1},day:${now.getDate()}))`;
 
     const liHeaders = {
@@ -2394,7 +2569,7 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-full", async (c) => {
     }
 
     const campaignId = c.req.query("campaignId");
-    const dateRange = c.req.query("dateRange") || "30d";
+    const dateRange = c.req.query("dateRange") || "all";
     if (!campaignId) {
       return c.json({ error: "campaignId é obrigatório" }, 400);
     }
@@ -2404,11 +2579,9 @@ app.get("/make-server-a4d5bbe0/linkedin/campaign-analytics-full", async (c) => {
     const currency = integration.selected_ad_account_currency || "USD";
 
     const now = new Date();
-    let daysBack = 30;
-    if (dateRange === "7d") daysBack = 7;
-    else if (dateRange === "90d") daysBack = 90;
-    else if (dateRange === "all") daysBack = 365;
-    const start = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    // Padrão: vida da campanha (do início dela até hoje), não 30 dias fixos.
+    const start = analyticsWindowStart(dateRange, c.req.query("start"), now);
+    const daysBack = Math.max(1, Math.ceil((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
     const drParam = `(start:(year:${start.getFullYear()},month:${start.getMonth() + 1},day:${start.getDate()}),end:(year:${now.getFullYear()},month:${now.getMonth() + 1},day:${now.getDate()}))`;
 
     const liHeaders = {
@@ -3055,6 +3228,7 @@ app.post("/make-server-a4d5bbe0/ai/generate-copy", async (c) => {
 REGRAS CRÍTICAS:
 - O TOM DE VOZ é do cliente Maestro (o anunciante), descrito em <client_voice>. Mantenha esse tom rigorosamente.
 - O anunciante vende o que está em <advertiser>. A MENSAGEM é direcionada à empresa-alvo (target_company_name) e deve usar referências dos "key_messaging_themes" do brief para ressoar com ela.
+- O texto serve ao OBJETIVO da campanha descrito em <campaign>: escreva para provocar o que ele pede.
 - Headline: até 150 caracteres (nunca mais de ${LINKEDIN_HEADLINE_MAX}), alta conversão, mencione a empresa-alvo OU um problema específico do contexto dela.
 - BodyText: até 500 caracteres (nunca mais de ${LINKEDIN_INTRO_MAX}), 2-3 frases curtas, primeira frase puxa atenção (pode mencionar a empresa-alvo), última frase incentiva o CTA.
 - Idioma: português do Brasil, salvo se o tom de voz pedir explicitamente outro idioma.
@@ -3086,10 +3260,7 @@ Temas de mensagem que ressoam com ela: ${(brand_brief?.key_messaging_themes || [
 Persona típica: ${brand_brief?.target_persona_hint || "?"}
 </target_company>
 
-<campaign>
-Objetivo da campanha: ${objective || "brand_awareness"}
-CTA: ${cta || "LEARN_MORE"}
-</campaign>
+${copyObjectiveBlock(objective, cta)}
 
 Gere headline e bodyText para este anúncio.`;
 
@@ -3210,7 +3381,7 @@ async function saveImageToStorage(
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
   const { data: signed, error: signedError } = await supabaseAdmin.storage
     .from(CREATIVE_BUCKET)
-    .createSignedUrl(path, 7200);
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
   if (signedError || !signed?.signedUrl) throw new Error(`Signed URL failed: ${signedError?.message}`);
   return { url: signed.signedUrl, path, filename: `${safeLabel}.${ext}` };
 }

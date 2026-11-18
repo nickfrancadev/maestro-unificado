@@ -10,6 +10,7 @@ import {
   extractBrandBook,
   sanitizeBrandExtraction,
   AiRequestError,
+  isUserFacingAiError,
   joinPt,
   type BrandExtraction,
 } from '@/lib/ai';
@@ -272,7 +273,8 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
         : 'Marca extraída do site. Revise os campos antes de salvar.');
     } catch (e: unknown) {
       // 422 = o servidor recusou a extração e já diz o que preencher.
-      setExtractError(e instanceof AiRequestError && e.status === 422
+      // 429 = limite de uso da IA, já diz quando tentar de novo.
+      setExtractError(isUserFacingAiError(e)
         ? `${e.message} Seus campos foram mantidos.`
         : 'Não conseguimos extrair a marca agora. Seus campos foram mantidos; tente de novo ou preencha manualmente o tom de voz, o contexto e as cores.');
     } finally {

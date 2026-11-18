@@ -16,6 +16,7 @@ import { currencySymbol as symbolFor, fmtMoney, spendStatement, DAYS_PER_MONTH }
 import { plural } from '../labels';
 import { monthlySpendEstimate, needsSpendConfirmation, isSpendConfirmed, HIGH_SPEND_MONTHLY_THRESHOLD } from './spendGuard';
 import { LinkedInLogo } from '@/app/components/LinkedInLogo';
+import { budgetDateProblem } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
 
 interface ConfigStepProps {
   config: CampaignConfig;
@@ -28,13 +29,16 @@ interface ConfigStepProps {
 }
 
 /** Erros dos campos obrigatórios. Puro: o wizard e o teste usam a mesma regra. */
-export function configErrors(config: CampaignConfig): { campaignName?: string; budgetAmount?: string } {
-  const errors: { campaignName?: string; budgetAmount?: string } = {};
+export function configErrors(config: CampaignConfig): { campaignName?: string; budgetAmount?: string; endDate?: string } {
+  const errors: { campaignName?: string; budgetAmount?: string; endDate?: string } = {};
   if (!config.campaignName.trim()) errors.campaignName = 'Dê um nome à campanha';
   const budget = parseFloat(config.budgetAmount);
   const kind = config.budgetType === 'daily' ? 'diário' : 'total';
   if (!config.budgetAmount.trim() || Number.isNaN(budget)) errors.budgetAmount = `Informe o orçamento ${kind}`;
   else if (budget < MIN_BUDGET_PER_AD_SET) errors.budgetAmount = `O LinkedIn aceita no mínimo ${MIN_BUDGET_PER_AD_SET} por empresa`;
+  // Orçamento total exige data de fim (F037). Mesma regra do servidor.
+  const dateProblem = budgetDateProblem(config);
+  if (dateProblem) errors.endDate = dateProblem;
   return errors;
 }
 
@@ -45,9 +49,9 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
 
   // Erro só depois de interagir: ao sair do campo ou ao tentar avançar. Antes,
   // a tela abria com tudo em vermelho e o rodapé já dizia o que faltava.
-  const [touched, setTouched] = useState<{ campaignName?: boolean; budgetAmount?: boolean }>({});
+  const [touched, setTouched] = useState<{ campaignName?: boolean; budgetAmount?: boolean; endDate?: boolean }>({});
   const errors = configErrors(config);
-  const errorFor = (field: 'campaignName' | 'budgetAmount') =>
+  const errorFor = (field: 'campaignName' | 'budgetAmount' | 'endDate') =>
     (touched[field] || showErrors) ? errors[field] : undefined;
 
   const handleObjectiveChange = (val: string) => {
@@ -321,13 +325,24 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
                   <Calendar className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
                   <input
                     type="date"
+                    aria-label="Encerramento"
                     value={config.endDate}
                     min={config.startDate}
                     onChange={(e) => update({ endDate: e.target.value })}
-                    className="w-full pl-9 p-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-[#FF5F39]"
+                    onBlur={() => setTouched((t) => ({ ...t, endDate: true }))}
+                    aria-invalid={!!errorFor('endDate')}
+                    className={`w-full pl-9 p-2 text-sm border rounded-lg bg-white text-slate-600 outline-none focus:ring-2 focus:ring-[#FF5F39] ${errorFor('endDate') ? 'border-red-300' : 'border-slate-200'}`}
                   />
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Opcional. Sem data, segue até você pausar.</p>
+                {errorFor('endDate') ? (
+                  <p className="text-xs text-red-600 mt-1">{errorFor('endDate')}</p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-1">
+                    {config.budgetType === 'total'
+                      ? 'Obrigatória com orçamento total: é o prazo em que o total é gasto.'
+                      : 'Opcional. Sem data, segue até você pausar.'}
+                  </p>
+                )}
               </div>
             </div>
           </div>

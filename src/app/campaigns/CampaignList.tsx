@@ -32,6 +32,9 @@ import { statusLabel, plural } from './labels';
 import { listDrafts, deleteDraft, draftDailyTotal } from './drafts';
 import type { CampaignDraft } from './drafts';
 import { LinkedInLogo } from '@/app/components/LinkedInLogo';
+import { groupRoutePath } from './groupAnalytics';
+import { sortGroups, nextSort, paginate, PAGE_SIZE } from './listSorting';
+import type { SortKey, SortDir } from './listSorting';
 
 /**
  * Uma linha = um conjunto de anúncios no LinkedIn (no produto, uma empresa-alvo).
@@ -77,6 +80,24 @@ function mapCampaignToRow(c: LinkedInCampaign, currency: string): CampaignRow {
     analyticsLoading: false,
     actionLoading: false,
   };
+}
+
+const SERVER_STATUS: Record<string, string> = {
+  ACTIVE: 'Active', PAUSED: 'Paused', DRAFT: 'Draft', ARCHIVED: 'Completed', CANCELED: 'Canceled',
+};
+
+/**
+ * Status que a linha mostra depois de pausar/ativar: o que o servidor leu do
+ * LinkedIn depois da mudança (ativar considera o grupo), não o que foi pedido.
+ */
+export function statusAfterToggle(kind: 'pause' | 'activate', serverStatus?: string): string {
+  if (serverStatus && SERVER_STATUS[serverStatus]) return SERVER_STATUS[serverStatus];
+  return kind === 'pause' ? 'Paused' : 'Active';
+}
+
+/** O que a lista manda para ativar uma empresa: o grupo vai junto, para ser ativado também. */
+export function activationParams(row: Pick<CampaignRow, 'id' | 'campaignGroup'>) {
+  return { campaign_id: row.id, linkedin_campaign_id: row.id, campaign_group_id: row.campaignGroup };
 }
 
 /** Separador que o assistente usa entre a campanha e a empresa (buildLaunchPlan). */
@@ -395,6 +416,10 @@ export function CampaignList() {
     navigate(`/campaigns/${groupId}/edit${campaignId ? `?empresa=${encodeURIComponent(campaignId)}` : ''}`);
   // A demonstração tem uma tela de analytics só; cada conjunto real tem a sua.
   const onViewPerformance = (row: CampaignRow) => navigate(`/campaigns/${row.isMock ? MOCK_CAMPAIGN_ID : row.id}`);
+  // Visão do grupo: a mesma tela da demonstração, com a tabela por empresa.
+  const onViewGroup = (first: CampaignRow) => navigate(first.isMock
+    ? `/campaigns/${MOCK_CAMPAIGN_ID}`
+    : groupRoutePath(first.campaignGroup!));
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -408,9 +433,15 @@ export function CampaignList() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['drafts']));
   const [confirmAction, setConfirmAction] = useState<ConfirmState | null>(null);
   const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
+  /** Ordenação por coluna (vale para a lista inteira) e página atual (30 por página). */
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+  const [page, setPage] = useState(1);
+  /** A lista do LinkedIn não carregou: mostra o erro com "Tentar de novo", não "nenhuma campanha". */
+  const [listError, setListError] = useState<string | null>(null);
 
   const loadCampaigns = useCallback(async () => {
     setLoading(true);
+    setListError(null);
     setDrafts(listDrafts());
     try {
       const status = await getLinkedInStatus();
@@ -427,7 +458,16 @@ export function CampaignList() {
         return;
       }
 
-      const { campaigns: liCampaigns, currency, adAccountName } = await fetchLinkedInCampaigns();
+      const { campaigns: liCampaigns, currency, adAccountName, error: listFailure } = await fetchLinkedInCampaigns();
+      if (listFailure) {
+        setAccount({
+          name: status?.selected_ad_account_name || `Conta ${status?.selected_ad_account_id}`,
+          currency: status?.selected_ad_account_currency || 'USD',
+        });
+        setCampaigns([]);
+        setListError(listFailure);
+        return;
+      }
       // Nome da conta: o da lista, senão o do status; o id só em último caso.
       // Nunca "Conta não definida" quando há uma conta selecionada.
       setAccount({
@@ -462,7 +502,8 @@ export function CampaignList() {
       setSyncedAt(new Date());
     } catch (err) {
       console.error('[CampaignList] Erro ao carregar campanhas:', err);
-      toast.error('Não foi possível carregar as campanhas do LinkedIn. Tente atualizar.');
+      setCampaigns([]);
+      setListError('Não foi possível carregar as campanhas do LinkedIn.');
     } finally {
       setLoading(false);
       setSyncing(false);
@@ -476,19 +517,22 @@ export function CampaignList() {
   const patchRows = (ids: string[], patch: Partial<CampaignRow>) =>
     setCampaigns(prev => prev.map(c => ids.includes(c.id) ? { ...c, ...patch } : c));
 
-  /** Pausa ou ativa UM conjunto. Nunca lança: devolve o erro para a linha. */
-  const toggleOne = async (row: CampaignRow, kind: 'pause' | 'activate'): Promise<string | null> => {
+  /** Pausa ou ativa UM conjunto. Nunca lança: devolve o erro (ou o status real) para a linha. */
+  const toggleOne = async (row: CampaignRow, kind: 'pause' | 'activate'): Promise<{ error: string | null; status?: string }> => {
     if (row.isMock) {
       await new Promise(r => setTimeout(r, 300));
-      return null;
+      return { error: null };
     }
     try {
-      const params = { campaign_id: row.id, linkedin_campaign_id: row.id };
-      const result = kind === 'pause' ? await pauseCampaign(params) : await activateCampaign(params);
-      return result.success ? null : (result.error || 'erro desconhecido');
+      // Ativar leva o grupo: ele nasce pausado e, sem ativá-lo, o conjunto
+      // "Ativo" não entrega.
+      const result = kind === 'pause'
+        ? await pauseCampaign({ campaign_id: row.id, linkedin_campaign_id: row.id })
+        : await activateCampaign(activationParams(row));
+      return result.success ? { error: null, status: result.status } : { error: result.error || 'erro desconhecido' };
     } catch (err: any) {
       console.error('[CampaignList] Toggle status error:', err);
-      return 'erro de rede';
+      return { error: 'erro de rede' };
     }
   };
 
@@ -500,14 +544,13 @@ export function CampaignList() {
   const handleToggle = async (targets: CompanyRow[], kind: 'pause' | 'activate', groupName: string) => {
     setConfirmAction(null);
     patchRows(targets.map(t => t.id), { actionLoading: true, actionError: null });
-    const newStatus = kind === 'pause' ? 'Paused' : 'Active';
     const verb = kind === 'pause' ? 'pausar' : 'ativar';
 
     const errors = await Promise.all(targets.map(async (t) => {
-      const error = await toggleOne(t, kind);
+      const { error, status } = await toggleOne(t, kind);
       patchRows([t.id], error
         ? { actionLoading: false, actionError: `Não foi possível ${verb}: ${error}` }
-        : { actionLoading: false, actionError: null, status: newStatus });
+        : { actionLoading: false, actionError: null, status: statusAfterToggle(kind, status) });
       return error;
     }));
 
@@ -574,6 +617,10 @@ export function CampaignList() {
     const matchesSearch = !q || g.name.toLowerCase().includes(q) || g.children.some(c => c.company.toLowerCase().includes(q));
     return matchesFilter && matchesSearch;
   });
+  // Ordena a lista inteira e só depois corta a página (F013).
+  const pageOfGroups = paginate(sortGroups(filteredGroups, sort), page);
+  useEffect(() => { setPage(1); }, [filter, q, sort]);
+
   const filteredDrafts = (filter === 'all' || filter === 'draft')
     ? drafts.filter(d => !q || d.name.toLowerCase().includes(q))
     : [];
@@ -688,14 +735,34 @@ export function CampaignList() {
           <table className="w-full min-w-[1080px] text-left border-collapse text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-xs font-semibold text-slate-500 uppercase">
-                <th className="px-4 py-3 min-w-[240px]">Campanha</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3 text-right">Empresas</th>
-                <th className="px-3 py-3 text-right">Orçamento</th>
-                <th className="px-3 py-3 text-right" title="Últimos 90 dias">Gasto</th>
-                <th className="px-3 py-3 text-right">Impressões</th>
-                <th className="px-3 py-3 text-right">CTR</th>
-                <th className="px-3 py-3">Período</th>
+                {([
+                  { key: 'name', label: 'Campanha', className: 'px-4 py-3 min-w-[240px]' },
+                  { key: 'status', label: 'Status', className: 'px-3 py-3' },
+                  { key: 'companies', label: 'Empresas', className: 'px-3 py-3 text-right' },
+                  { key: 'budget', label: 'Orçamento', className: 'px-3 py-3 text-right' },
+                  { key: 'spend', label: 'Gasto', className: 'px-3 py-3 text-right', title: 'Últimos 90 dias' },
+                  { key: 'impressions', label: 'Impressões', className: 'px-3 py-3 text-right' },
+                  { key: 'ctr', label: 'CTR', className: 'px-3 py-3 text-right' },
+                  { key: 'period', label: 'Período', className: 'px-3 py-3' },
+                ] as { key: SortKey; label: string; className: string; title?: string }[]).map((col) => {
+                  const active = sort?.key === col.key;
+                  return (
+                    <th
+                      key={col.key}
+                      className={col.className}
+                      title={col.title}
+                      aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
+                      <button
+                        onClick={() => setSort(nextSort(sort, col.key))}
+                        className={`inline-flex items-center gap-1 uppercase hover:text-slate-800 ${active ? 'text-slate-800' : ''}`}
+                      >
+                        {col.label}
+                        <span aria-hidden="true" className="text-[10px]">{active ? (sort!.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="px-4 py-3 text-right">Ações</th>
               </tr>
             </thead>
@@ -782,7 +849,7 @@ export function CampaignList() {
                 </>
               )}
 
-              {!loading && filteredGroups.map((group) => {
+              {!loading && pageOfGroups.items.map((group) => {
                 const s = group.summary;
                 const isOpen = expanded.has(group.key);
                 const isMockGroup = !!group.children[0]?.isMock;
@@ -827,6 +894,15 @@ export function CampaignList() {
                       <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{periodLabel(s.start, s.end, s.continuous)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
+                          {(isMockGroup || group.children[0]?.campaignGroup) && (
+                            <button
+                              onClick={() => onViewGroup(group.children[0])}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 bg-white hover:bg-[#FFF1ED] hover:border-[#FFD0C2] rounded-lg"
+                              title="Analytics da campanha, com a tabela por empresa"
+                            >
+                              <BarChart3 className="w-3.5 h-3.5" /> Analytics
+                            </button>
+                          )}
                           {pausable.length > 0 && (
                             <button
                               onClick={() => setConfirmAction({ type: 'pause', targets: pausable, groupName: group.name, bulk: true })}
@@ -948,7 +1024,22 @@ export function CampaignList() {
                 );
               })}
 
-              {!loading && filteredGroups.length === 0 && filteredDrafts.length === 0 && (
+              {!loading && listError && (
+                <tr>
+                  <td colSpan={COLS} className="px-6 py-10 text-center" role="alert">
+                    <p className="text-sm font-semibold text-red-700">Não foi possível carregar as campanhas do LinkedIn</p>
+                    <p className="text-sm text-slate-600 mt-1">{listError}</p>
+                    <button
+                      onClick={loadCampaigns}
+                      className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#FF5F39] hover:bg-[#E54A26] rounded-lg shadow-sm"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Tentar de novo
+                    </button>
+                  </td>
+                </tr>
+              )}
+
+              {!loading && !listError && filteredGroups.length === 0 && filteredDrafts.length === 0 && (
                 <tr>
                   <td colSpan={COLS} className="px-6 py-12 text-center text-slate-500">
                     Nenhuma campanha encontrada com os filtros atuais.
@@ -974,6 +1065,30 @@ export function CampaignList() {
             )}
           </table>
         </div>
+        {!loading && pageOfGroups.total > PAGE_SIZE && (
+          <nav className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm" aria-label="Paginação">
+            <span className="text-slate-500">
+              {pageOfGroups.from}–{pageOfGroups.to} de {plural(pageOfGroups.total, 'campanha')}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(pageOfGroups.page - 1)}
+                disabled={pageOfGroups.page <= 1}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <span className="text-slate-600">Página {pageOfGroups.page} de {pageOfGroups.pageCount}</span>
+              <button
+                onClick={() => setPage(pageOfGroups.page + 1)}
+                disabled={pageOfGroups.page >= pageOfGroups.pageCount}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Próxima
+              </button>
+            </div>
+          </nav>
+        )}
         {!loading && groups.some(g => g.summary.partial) && (
           <p className="px-4 py-2 text-xs text-slate-400 border-t border-slate-100">
             * Soma só das empresas com dados. As outras não carregaram; atualize para tentar de novo.

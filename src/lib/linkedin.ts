@@ -12,3 +12,4 @@ export * from './linkedin/adAccounts';
 export * from './linkedin/maestroCampaigns';
 export * from './linkedin/creativeUpload';
 export * from './linkedin/logo';
+export * from './linkedin/creativeImages';

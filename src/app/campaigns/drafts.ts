@@ -8,6 +8,9 @@
 import type { TargetingData } from './wizard/SegmentationStep';
 import type { CampaignConfig, CreativeData, TargetAccount } from './wizard/types';
 import type { BriefDraft } from './wizard/BriefPane';
+import type { LaunchRecord } from './wizard/launchProgress';
+import { collectCreativeImagePaths } from '@/lib/linkedin/creativeImages';
+import type { CreativeImagePaths } from '@/lib/linkedin/creativeImages';
 
 export interface WizardDraftState {
   campaignConfig: CampaignConfig;
@@ -17,6 +20,11 @@ export interface WizardDraftState {
   selectedAccounts: TargetAccount[];
   /** Passo em que o usuário parou, para reabrir no mesmo lugar. */
   step: number;
+  /**
+   * Publicação em andamento: o que uma tentativa anterior já criou no
+   * LinkedIn. Republicar continua daqui em vez de duplicar grupo e conjuntos.
+   */
+  launch?: LaunchRecord | null;
 }
 
 export interface CampaignDraft {
@@ -24,6 +32,12 @@ export interface CampaignDraft {
   name: string;
   savedAt: string; // ISO
   state: WizardDraftState;
+  /**
+   * Caminho no Storage de cada imagem do criativo. A URL assinada que fica em
+   * `state.creativeData` vence em 2 h: ao reabrir, a tela pede URLs novas a
+   * partir daqui (rascunho antigo, sem o campo, recupera o caminho da URL).
+   */
+  imagePaths?: CreativeImagePaths;
 }
 
 const KEY = 'maestro.linkedinAds.drafts.v1';
@@ -63,6 +77,7 @@ export function saveDraft(id: string, state: WizardDraftState): CampaignDraft {
     name: state.campaignConfig.campaignName.trim() || 'Rascunho sem nome',
     savedAt: new Date().toISOString(),
     state,
+    imagePaths: collectCreativeImagePaths(state.creativeData),
   };
   const others = readAll().filter((d) => d.id !== id);
   writeAll([draft, ...others]);

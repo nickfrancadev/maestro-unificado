@@ -259,3 +259,81 @@ describe('buildReviewChecklist', () => {
     expect(items.find((i) => i.id === 'billing')).toMatchObject({ status: 'attention', blocking: false });
   });
 });
+
+describe('imagens na Revisão — não aprova imagem que não carrega', () => {
+  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50' };
+  const signedImg = 'https://abc.supabase.co/storage/v1/object/sign/make-a4d5bbe0-creatives/composed/t.png?token=x';
+  const base = () => {
+    const plan = buildLaunchPlan(config, targeting([nubank, itau]), { ...creative(), imageUrl: signedImg });
+    return { config, plan, creativeIssues: {}, audience: { pending: false, small: [] }, linkedInReady: true, hasBilling: true };
+  };
+
+  it('o plano leva o caminho da imagem no Storage e o servidor recebe image_path', () => {
+    const { plan } = base();
+    expect(plan[0].creative.imagePath).toBe('composed/t.png');
+    const params = buildPipelineParams(plan[0], plan, config, { adAccountId: '1', currency: 'BRL' });
+    expect(params.image_path).toBe('composed/t.png');
+  });
+
+  it('imagem que não carrega trava a publicação, com link para Criativos da empresa', () => {
+    const items = buildReviewChecklist({ ...base(), images: { pending: [], broken: ['c2'] } });
+    const item = items.find((i) => i.id === 'image-c2')!;
+    expect(item.label).toBe('Itaú: a imagem não carrega');
+    expect(item.blocking).toBe(true);
+    expect(item.fix).toMatchObject({ step: 4, companyId: 'c2' });
+    expect(canPublishChecklist(items)).toBe(false);
+  });
+
+  it('enquanto as imagens não foram conferidas, não publica', () => {
+    const items = buildReviewChecklist({ ...base(), images: { pending: ['c1'], broken: [] } });
+    expect(items.find((i) => i.id === 'images')?.blocking).toBe(true);
+    expect(canPublishChecklist(buildReviewChecklist({ ...base(), images: { pending: [], broken: [] } }))).toBe(true);
+  });
+});
+
+describe('Revisão mostra a localização padrão e o servidor confere antes de criar', () => {
+  it('sem localização, a Revisão diz que vai Brasil (padrão)', async () => {
+    const { defaultLocationLabel } = await import('./launchPlan');
+    const t = createEmptyTargeting();
+    const semLocal = { ...t, companies: { ...t.companies, included: [nubank] } } as TargetingData;
+    const plan = buildLaunchPlan({ ...createDefaultCampaignConfig(), campaignName: 'Q4' }, semLocal, creative());
+    expect(defaultLocationLabel(plan[0])).toMatch(/^Brasil \(padrão/);
+    const tl = targeting([nubank]);
+    tl.defaultTargeting.locations.included = [{ id: 'urn:li:geo:106057199', urn: 'urn:li:geo:106057199', label: 'Brasil' }] as never;
+    const comLocal = buildLaunchPlan({ ...createDefaultCampaignConfig(), campaignName: 'Q4' }, tl, creative());
+    expect(defaultLocationLabel(comLocal[0])).toBeNull();
+  });
+
+  it('a conferência leva cada empresa com segmentação, criativo e datas', async () => {
+    const { buildValidateLaunchParams } = await import('./launchPlan');
+    const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetType: 'total' as const, endDate: '2026-12-31' };
+    const plan = buildLaunchPlan(config, targeting([nubank, itau]), creative());
+    const p = buildValidateLaunchParams(plan, config);
+    expect(p.budget_type).toBe('total');
+    expect(p.end_date).toBe('2026-12-31');
+    expect(p.ad_sets.map((a) => a.company_name)).toEqual(['Nubank', 'Itaú']);
+    expect(p.ad_sets[0].headline).toBe('ABM para Nubank');
+    expect(JSON.stringify(p.ad_sets[0].targeting_criteria)).toContain('urn:li:organization:1');
+  });
+
+  it('cada conjunto leva o nome da empresa para a mensagem do servidor', () => {
+    const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50' };
+    const plan = buildLaunchPlan(config, targeting([nubank]), creative());
+    expect(buildPipelineParams(plan[0], plan, config, { adAccountId: '1', currency: 'BRL' }).company_name).toBe('Nubank');
+  });
+});
+
+describe('limite de caracteres por empresa, depois da troca de {{company.name}}', () => {
+  it('o template cabe mas o nome comprido estoura: trava só aquela empresa', () => {
+    const longo = { id: 'c9', label: 'Itaú Unibanco Holding S.A. — Banco de Investimentos e Serviços Financeiros Integrados', urn: 'urn:li:organization:9' };
+    const headline = `${'x'.repeat(180)} {{company.name}}`; // 197 no template
+    const plan = buildLaunchPlan(
+      { ...createDefaultCampaignConfig(), campaignName: 'Q4' },
+      targeting([nubank, longo]),
+      { ...creative(), headline },
+    );
+    const issues = validateLaunchPlan(plan);
+    expect(issues.c1).toBeUndefined();
+    expect(issues.c9.join()).toMatch(/O título fica com \d+ caracteres com o nome da empresa; o LinkedIn aceita até 200/);
+  });
+});

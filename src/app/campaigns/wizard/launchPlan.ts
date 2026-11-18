@@ -3,16 +3,21 @@ import { hasTitleConflict, TITLE_CONFLICT_REASON } from './segmentation/targetin
 import type { TargetingData } from './SegmentationStep';
 import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET } from './types';
 import type { CampaignConfig, CreativeData } from './types';
-import type { CampaignPipelineParams } from '@/lib/linkedin';
 import { artStatus, artIssue } from './composition';
 import { isSpendConfirmed, HIGH_SPEND_MONTHLY_THRESHOLD } from './spendGuard';
 import { crossCompanyMentions, creativeTextsFor, crossMentionIssue } from './crossMention';
 import type { ArtStatus } from './composition';
+import type { CampaignPipelineParams, ValidateLaunchParams } from '@/lib/linkedin';
+import { storagePathFromUrl } from '../../../../supabase/functions/make-server-a4d5bbe0/creativeStorage';
+import { hasLocation, DEFAULT_LOCATION_LABEL, budgetDateProblem } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
+import { LINKEDIN_HEADLINE_MAX, LINKEDIN_INTRO_MAX } from '../../../../supabase/functions/make-server-a4d5bbe0/aiGuards';
 
 export interface AdSetCreative {
   headline: string;
   bodyText: string;
   imageUrl: string | null;
+  /** Caminho da imagem no Storage. É o que identifica a imagem: a URL assinada vence. */
+  imagePath: string | null;
   landingPageUrl: string;
   cta: string;
   /** A arte composta vale para o que o editor mostra? Ver composition.ts. */
@@ -84,6 +89,7 @@ export function buildLaunchPlan(
         headline: fill(resolved.headline),
         bodyText: fill(resolved.bodyText),
         imageUrl: resolved.imageUrl,
+        imagePath: storagePathFromUrl(resolved.imageUrl),
         landingPageUrl: resolved.landingPageUrl
           .replace(/\{\{account\.slug\}\}/g, slug)
           .replace(/\{\{company\.name\}\}/g, encodeURIComponent(acc.label)),
@@ -93,6 +99,14 @@ export function buildLaunchPlan(
       },
     };
   });
+}
+
+/**
+ * O conjunto vai sem localização e o servidor completa com Brasil (F052, a
+ * mesma função do servidor). A Revisão mostra isso em vez de esconder.
+ */
+export function defaultLocationLabel(adSet: Pick<AdSetPlan, 'criteria'>): string | null {
+  return hasLocation(adSet.criteria) ? null : `${DEFAULT_LOCATION_LABEL} (padrão: nenhuma localização escolhida)`;
 }
 
 /** Fallback que a IA do produto grava quando não consegue gerar o texto. */
@@ -128,6 +142,15 @@ export function validateLaunchPlan(plan: AdSetPlan[]): Record<string, string[]> 
     else if (AI_ERROR_TEXT.test(headline)) issues.push('O título é uma mensagem de erro da IA, não um texto de anúncio');
     if (!bodyText.trim()) issues.push('Sem texto do anúncio');
     else if (AI_ERROR_TEXT.test(bodyText)) issues.push('O texto é uma mensagem de erro da IA, não um texto de anúncio');
+
+    // Limite do LinkedIn conferido DEPOIS de trocar {{company.name}} pelo nome
+    // desta empresa: o template cabia, o nome comprido pode estourar.
+    if (headline.trim().length > LINKEDIN_HEADLINE_MAX) {
+      issues.push(`O título fica com ${headline.trim().length} caracteres com o nome da empresa; o LinkedIn aceita até ${LINKEDIN_HEADLINE_MAX}`);
+    }
+    if (bodyText.trim().length > LINKEDIN_INTRO_MAX) {
+      issues.push(`O texto fica com ${bodyText.trim().length} caracteres com o nome da empresa; o LinkedIn aceita até ${LINKEDIN_INTRO_MAX}`);
+    }
 
     const headlineVar = headline.match(UNRESOLVED_VAR);
     if (headlineVar) issues.push(`O título tem uma variável que não foi preenchida: ${headlineVar[0]}`);
@@ -183,12 +206,37 @@ export function buildPipelineParams(
     unit_cost: manual ? { amount: config.unitCostAmount, currency_code: ctx.currency } : undefined,
     group_budget_amount: perAdSet * plan.length,
     image_url: adSet.creative.imageUrl || undefined,
+    // O servidor baixa a imagem do Storage por aqui, sem depender da URL assinada.
+    image_path: adSet.creative.imagePath || undefined,
     headline: adSet.creative.headline || undefined,
     description: adSet.creative.bodyText || undefined,
     cta: adSet.creative.cta || undefined,
     landing_page_url: adSet.creative.landingPageUrl || undefined,
+    // Nome da empresa nas mensagens do servidor ("O público de Nubank…").
+    company_name: adSet.companyName,
     // O primeiro conjunto cria o grupo; os demais reaproveitam o mesmo.
     existing_campaign_group_id: ctx.campaignGroupId || undefined,
+  };
+}
+
+/**
+ * O que a Revisão manda ao servidor para conferir ANTES de criar qualquer
+ * coisa: só as empresas que ainda vão ser criadas agora.
+ */
+export function buildValidateLaunchParams(plan: AdSetPlan[], config: CampaignConfig): ValidateLaunchParams {
+  return {
+    budget_type: config.budgetType,
+    start_date: config.startDate || undefined,
+    end_date: config.endDate || undefined,
+    ad_sets: plan.map((a) => ({
+      company_name: a.companyName,
+      targeting_criteria: a.criteria,
+      headline: a.creative.headline,
+      description: a.creative.bodyText,
+      image_url: a.creative.imageUrl || undefined,
+      image_path: a.creative.imagePath || undefined,
+      landing_page_url: a.creative.landingPageUrl,
+    })),
   };
 }
 
@@ -217,6 +265,11 @@ export interface ChecklistInput {
   linkedInReady: boolean;
   /** null = ainda não verificado. */
   hasBilling: boolean | null;
+  /**
+   * Imagens conferidas na tela (por id da empresa): `pending` ainda não
+   * carregou nem falhou, `broken` não carrega. Ausente = não conferido.
+   */
+  images?: { pending: string[]; broken: string[] };
 }
 
 const STEP_NAMES: Record<number, string> = { 1: 'Configuração', 2: 'Segmentação', 3: 'Marca', 4: 'Criativos' };
@@ -239,9 +292,15 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
     : { id: 'linkedin', status: 'blocked', label: 'Conecte o LinkedIn e escolha a conta de anúncios', detail: 'Em Integrações.', blocking: true });
 
   const budget = parseFloat(config.budgetAmount);
-  items.push(config.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET
-    ? { id: 'config', status: 'ok', label: 'Nome e orçamento definidos', blocking: false }
-    : { id: 'config', status: 'blocked', label: !config.campaignName.trim() ? 'A campanha está sem nome' : `Orçamento abaixo do mínimo de ${MIN_BUDGET_PER_AD_SET} por empresa`, blocking: true, fix: fixLink(1) });
+  const dateProblem = budgetDateProblem(config);
+  items.push(config.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET && !dateProblem
+    ? { id: 'config', status: 'ok', label: 'Nome, orçamento e datas definidos', blocking: false }
+    : {
+        id: 'config', status: 'blocked', blocking: true, fix: fixLink(1),
+        label: !config.campaignName.trim()
+          ? 'A campanha está sem nome'
+          : !(budget >= MIN_BUDGET_PER_AD_SET) ? `Orçamento abaixo do mínimo de ${MIN_BUDGET_PER_AD_SET} por empresa` : dateProblem!,
+      });
 
   // Gasto alto sem confirmação (ou confirmado para um valor menor, antes de
   // escolher mais empresas ou subir o orçamento): não publica.
@@ -305,6 +364,25 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
         label: `${a.companyName}: ${creativeIssues[a.companyId].map((t, i) => (i === 0 ? t : t.charAt(0).toLowerCase() + t.slice(1))).join('; ')}`,
         fix: fixLink(4, a.companyName, a.companyId),
       });
+    }
+  }
+
+  // A Revisão não aprova imagem que não carrega: URL vencida, arquivo
+  // apagado ou blob: de outra sessão vão falhar no upload para o LinkedIn.
+  if (plan.length > 0 && input.images) {
+    const withImage = plan.filter((a) => a.creative.imageUrl);
+    const broken = withImage.filter((a) => input.images!.broken.includes(a.companyId));
+    const pending = withImage.filter((a) => input.images!.pending.includes(a.companyId));
+    for (const a of broken) {
+      items.push({
+        id: `image-${a.companyId}`, status: 'blocked', blocking: true,
+        label: `${a.companyName}: a imagem não carrega`,
+        detail: 'Envie ou gere a imagem de novo antes de publicar.',
+        fix: fixLink(4, a.companyName, a.companyId),
+      });
+    }
+    if (broken.length === 0 && pending.length > 0) {
+      items.push({ id: 'images', status: 'attention', label: 'Conferindo se as imagens carregam…', blocking: true });
     }
   }
 

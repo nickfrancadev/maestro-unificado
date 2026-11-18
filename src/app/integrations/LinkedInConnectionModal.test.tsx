@@ -29,7 +29,7 @@ function renderManage() {
   );
 }
 
-describe('LinkedInConnectionModal — lista de Ad Accounts', () => {
+describe('LinkedInConnectionModal — lista de contas de anúncios', () => {
   it('expõe radiogroup/radio com aria-checked e marca a conta vinculada', async () => {
     renderManage();
     const group = await screen.findByRole('radiogroup');
@@ -61,5 +61,27 @@ describe('LinkedInConnectionModal — lista de Ad Accounts', () => {
       <LinkedInConnectionModal mode="connect" currentStatus={status} onClose={() => {}} onStatusRefresh={async () => {}} />,
     );
     expect(screen.getByText('Gerenciar LinkedIn Ads')).toBeInTheDocument();
+  });
+});
+
+describe('LinkedInConnectionModal — aviso ao trocar de conta (F125)', () => {
+  it('escolher outra conta mostra o aviso e só libera "Trocar conta" depois do "Entendi"', async () => {
+    renderManage();
+    const radios = within(await screen.findByRole('radiogroup')).getAllByRole('radio');
+    expect(screen.queryByRole('alert', { name: 'Aviso de troca de conta' })).toBeNull();
+
+    fireEvent.click(radios[1]);
+    const alert = screen.getByRole('alert', { name: 'Aviso de troca de conta' });
+    expect(within(alert).getByText('Trocar a conta afeta as campanhas existentes')).toBeTruthy();
+
+    const confirm = screen.getByRole('button', { name: /Trocar conta/ }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(within(alert).getByRole('checkbox'));
+    expect(confirm.disabled).toBe(false);
+
+    // Voltar para a conta vinculada some com o aviso.
+    fireEvent.click(radios[0]);
+    expect(screen.queryByRole('alert', { name: 'Aviso de troca de conta' })).toBeNull();
+    expect((screen.getByRole('button', { name: /Confirmar seleção/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
