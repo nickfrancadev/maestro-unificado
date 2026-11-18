@@ -29,6 +29,7 @@ import {
 import type { LinkedInAdAccount } from '@/lib/linkedin';
 import type { IntegrationData } from './types';
 import { adAccountStatusLabel } from '../campaigns/labels';
+import { accountSwitchWarning } from './accountSwitch';
 import { LINKEDIN_LOGO_URL } from '@/app/components/LinkedInLogo';
 
 type ModalState = 'idle' | 'authorizing' | 'selecting_account' | 'connected';
@@ -58,6 +59,8 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
     currentStatus?.selected_ad_account_id || null,
   );
   const [loadingAccounts, setLoadingAccounts] = useState(false);
+  // Troca de conta: o aviso precisa ser lido e marcado antes de confirmar (F125).
+  const [switchAcknowledged, setSwitchAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,8 +157,18 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
     }
   };
 
+  const switchWarning = accountSwitchWarning(
+    linkedAccountId
+      ? { id: linkedAccountId, name: currentStatus?.selected_ad_account_name, currency: currentStatus?.selected_ad_account_currency }
+      : null,
+    adAccounts.find((a) => a.id === selectedAccountId) ?? (selectedAccountId ? { id: selectedAccountId } : null),
+  );
+  // Trocou de novo a conta escolhida: o "entendi" vale para a troca que foi lida.
+  useEffect(() => { setSwitchAcknowledged(false); }, [selectedAccountId]);
+
   const handleSelectAccount = async () => {
     if (!selectedAccountId) return;
+    if (switchWarning && !switchAcknowledged) return;
     const account = adAccounts.find((a) => a.id === selectedAccountId);
     if (!account) return;
 
@@ -458,6 +471,29 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
                     </div>
                   )}
 
+                  {switchWarning && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4" role="alert" aria-label="Aviso de troca de conta">
+                      <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        {switchWarning.title}
+                      </p>
+                      <ul className="mt-2 space-y-1.5 list-disc pl-5">
+                        {switchWarning.items.map((t) => (
+                          <li key={t} className="text-xs text-amber-900 leading-relaxed">{t}</li>
+                        ))}
+                      </ul>
+                      <label className="mt-3 flex items-start gap-2 text-xs font-medium text-amber-900 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={switchAcknowledged}
+                          onChange={(e) => setSwitchAcknowledged(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        {switchWarning.acknowledge}
+                      </label>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => {
                       setView('create');
@@ -729,15 +765,15 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
               </button>
               <button
                 onClick={handleSelectAccount}
-                disabled={!selectedAccountId || submitting}
+                disabled={!selectedAccountId || submitting || (!!switchWarning && !switchAcknowledged)}
                 className={`py-2.5 px-6 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition-all ${
-                  !selectedAccountId || submitting
+                  !selectedAccountId || submitting || (!!switchWarning && !switchAcknowledged)
                     ? 'bg-blue-300 text-white cursor-not-allowed'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                Confirmar Seleção
+                {switchWarning ? 'Trocar conta' : 'Confirmar seleção'}
               </button>
             </div>
           )}

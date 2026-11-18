@@ -86,3 +86,25 @@ describe('termos: "Conta de anúncios", nunca "Ad Account"', () => {
     }
   });
 });
+
+describe('LinkedInConnectionModal — aviso ao trocar de conta (F125)', () => {
+  it('escolher outra conta mostra o aviso e só libera "Trocar conta" depois do "Entendi"', async () => {
+    renderManage();
+    const radios = within(await screen.findByRole('radiogroup')).getAllByRole('radio');
+    expect(screen.queryByRole('alert', { name: 'Aviso de troca de conta' })).toBeNull();
+
+    fireEvent.click(radios[1]);
+    const alert = screen.getByRole('alert', { name: 'Aviso de troca de conta' });
+    expect(within(alert).getByText('Trocar a conta afeta as campanhas existentes')).toBeInTheDocument();
+
+    const confirm = screen.getByRole('button', { name: /Trocar conta/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(within(alert).getByRole('checkbox'));
+    expect(confirm).not.toBeDisabled();
+
+    // Voltar para a conta vinculada some com o aviso.
+    fireEvent.click(radios[0]);
+    expect(screen.queryByRole('alert', { name: 'Aviso de troca de conta' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Confirmar seleção/ })).not.toBeDisabled();
+  });
+});
