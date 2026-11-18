@@ -71,3 +71,30 @@ describe('ConfigStep: gasto explícito', () => {
     expect(cpc.disabled).toBe(true);
   });
 });
+
+describe('ConfigStep: confirmação de gasto alto', () => {
+  it('abaixo do teto não pede confirmação', () => {
+    render(<Harness adSetCount={2} initial={{ budgetAmount: '10' }} />);
+    expect(screen.queryByLabelText('Confirmo o gasto estimado')).toBeNull();
+  });
+
+  it('acima de 1.000 por mês mostra a frase de gasto e exige marcar', () => {
+    render(<Harness adSetCount={2} initial={{ budgetAmount: '50' }} showErrors />);
+    const group = screen.getByRole('group', { name: 'Confirmação de gasto' });
+    expect(group.textContent).toContain('Você vai gastar até');
+    expect(group.textContent).toContain('por mês');
+    expect(screen.getByText('Marque a confirmação para continuar.')).toBeTruthy();
+    const box = screen.getByLabelText('Confirmo o gasto estimado') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect((screen.getByLabelText('Confirmo o gasto estimado') as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText('Marque a confirmação para continuar.')).toBeNull();
+  });
+
+  it('subir o orçamento depois de confirmar pede confirmação de novo', () => {
+    render(<Harness adSetCount={2} initial={{ budgetAmount: '50' }} />);
+    fireEvent.click(screen.getByLabelText('Confirmo o gasto estimado'));
+    fireEvent.change(screen.getByPlaceholderText('Ex.: 50'), { target: { value: '80' } });
+    expect((screen.getByLabelText('Confirmo o gasto estimado') as HTMLInputElement).checked).toBe(false);
+  });
+});

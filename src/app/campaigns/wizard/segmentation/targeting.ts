@@ -144,3 +144,25 @@ export function setAccountFacet(
   }
   return { ...data, overrides };
 }
+
+// ---- Cargo × Função/Senioridade (F045) ----
+// O LinkedIn recusa uma segmentação que combina Cargo com Função ou com
+// Senioridade. A tela não deixa montar a combinação: com Função ou Senioridade
+// escolhida, Cargo fica desabilitado, e vice-versa — no padrão e em cada
+// empresa personalizada, com o motivo na tela.
+
+export const TITLE_CONFLICT_REASON = 'O LinkedIn não combina Cargo com Função ou Senioridade';
+
+const hasAny = (sel: FacetSelection) => sel.included.length > 0 || sel.excluded.length > 0;
+
+/** Motivo para a faceta ficar desabilitada, ou null se pode usar. */
+export function facetBlockedReason(pt: PersonTargeting, key: keyof PersonTargeting): string | null {
+  if (key === 'jobTitles') return hasAny(pt.seniorities) || hasAny(pt.jobFunctions) ? TITLE_CONFLICT_REASON : null;
+  if (key === 'seniorities' || key === 'jobFunctions') return hasAny(pt.jobTitles) ? TITLE_CONFLICT_REASON : null;
+  return null;
+}
+
+/** A segmentação já combina Cargo com Função ou Senioridade (rascunho antigo, por ex.). */
+export function hasTitleConflict(pt: PersonTargeting): boolean {
+  return hasAny(pt.jobTitles) && (hasAny(pt.seniorities) || hasAny(pt.jobFunctions));
+}

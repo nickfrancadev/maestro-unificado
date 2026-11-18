@@ -1,8 +1,13 @@
 import { buildTargetingCriteria, resolveTargetingForAccount } from './SegmentationStep';
+import { hasTitleConflict, TITLE_CONFLICT_REASON } from './segmentation/targeting';
 import type { TargetingData } from './SegmentationStep';
 import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET } from './types';
 import type { CampaignConfig, CreativeData } from './types';
 import type { CampaignPipelineParams } from '@/lib/linkedin';
+import { artStatus, artIssue } from './composition';
+import { isSpendConfirmed, HIGH_SPEND_MONTHLY_THRESHOLD } from './spendGuard';
+import { crossCompanyMentions, creativeTextsFor, crossMentionIssue } from './crossMention';
+import type { ArtStatus } from './composition';
 
 export interface AdSetCreative {
   headline: string;
@@ -10,6 +15,10 @@ export interface AdSetCreative {
   imageUrl: string | null;
   landingPageUrl: string;
   cta: string;
+  /** A arte composta vale para o que o editor mostra? Ver composition.ts. */
+  artStatus?: ArtStatus;
+  /** Textos sobre a imagem, já com a empresa trocada (para a regra F076). */
+  imageTexts?: string[];
 }
 
 export interface AdSetPlan {
@@ -22,6 +31,8 @@ export interface AdSetPlan {
   name: string;
   criteria: any;
   creative: AdSetCreative;
+  /** Combina Cargo com Função ou Senioridade: o LinkedIn recusa. */
+  targetingConflict?: boolean;
 }
 
 /** "Itaú Unibanco" → "itau-unibanco": o slug que {{account.slug}} vira na URL. */
@@ -68,6 +79,7 @@ export function buildLaunchPlan(
         ? config.campaignName.replace(/\{\{company\.name\}\}/g, acc.label)
         : `${config.campaignName} — ${acc.label}`,
       criteria: buildTargetingCriteria(acc, resolveTargetingForAccount(targeting, acc.id)),
+      targetingConflict: hasTitleConflict(resolveTargetingForAccount(targeting, acc.id)),
       creative: {
         headline: fill(resolved.headline),
         bodyText: fill(resolved.bodyText),
@@ -76,6 +88,8 @@ export function buildLaunchPlan(
           .replace(/\{\{account\.slug\}\}/g, slug)
           .replace(/\{\{company\.name\}\}/g, encodeURIComponent(acc.label)),
         cta: resolved.cta,
+        artStatus: artStatus(creativeData, acc),
+        imageTexts: creativeTextsFor(creativeData, acc).slice(2),
       },
     };
   });
@@ -92,11 +106,24 @@ const UNRESOLVED_VAR = /\{\{\s*[\w.]+\s*\}\}/;
  */
 export function validateLaunchPlan(plan: AdSetPlan[]): Record<string, string[]> {
   const result: Record<string, string[]> = {};
+  // F076: o criativo de uma empresa não pode citar outra empresa da campanha.
+  const mentions = crossCompanyMentions(plan.map((a) => ({
+    companyId: a.companyId,
+    companyName: a.companyName,
+    texts: [a.creative.headline, a.creative.bodyText, ...(a.creative.imageTexts ?? [])],
+  })));
   for (const adSet of plan) {
     const issues: string[] = [];
+    if (mentions[adSet.companyId]) issues.push(crossMentionIssue(mentions[adSet.companyId]));
     const { headline, bodyText, imageUrl, landingPageUrl } = adSet.creative;
 
     if (!imageUrl) issues.push('Sem imagem');
+    else {
+      // Nunca publicar a base crua (ou uma arte antiga) enquanto o editor
+      // mostra outros textos e logos por cima.
+      const art = artIssue(adSet.creative.artStatus ?? 'not_needed');
+      if (art) issues.push(art);
+    }
     if (!headline.trim()) issues.push('Sem título');
     else if (AI_ERROR_TEXT.test(headline)) issues.push('O título é uma mensagem de erro da IA, não um texto de anúncio');
     if (!bodyText.trim()) issues.push('Sem texto do anúncio');
@@ -185,7 +212,8 @@ export interface ChecklistInput {
   plan: AdSetPlan[];
   /** Saída de validateLaunchPlan. */
   creativeIssues: Record<string, string[]>;
-  audience: { pending: boolean; small: string[] };
+  /** `unconfirmed`: empresas cujo público o LinkedIn não confirmou. */
+  audience: { pending: boolean; small: string[]; unconfirmed?: string[] };
   linkedInReady: boolean;
   /** null = ainda não verificado. */
   hasBilling: boolean | null;
@@ -215,6 +243,17 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
     ? { id: 'config', status: 'ok', label: 'Nome e orçamento definidos', blocking: false }
     : { id: 'config', status: 'blocked', label: !config.campaignName.trim() ? 'A campanha está sem nome' : `Orçamento abaixo do mínimo de ${MIN_BUDGET_PER_AD_SET} por empresa`, blocking: true, fix: fixLink(1) });
 
+  // Gasto alto sem confirmação (ou confirmado para um valor menor, antes de
+  // escolher mais empresas ou subir o orçamento): não publica.
+  if (!isSpendConfirmed(config, plan.length)) {
+    items.push({
+      id: 'spend', status: 'blocked', blocking: true,
+      label: 'Confirme o gasto estimado',
+      detail: `O gasto passa de ${HIGH_SPEND_MONTHLY_THRESHOLD.toLocaleString('pt-BR')} por mês. Marque "Confirmo o gasto estimado" na Configuração.`,
+      fix: fixLink(1),
+    });
+  }
+
   if (plan.length === 0) {
     items.push({ id: 'companies', status: 'blocked', label: 'Nenhuma empresa-alvo escolhida', blocking: true, fix: fixLink(2) });
   }
@@ -224,7 +263,17 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
       items.push({ id: 'audience', status: 'attention', label: 'Calculando o público de cada empresa…', blocking: true });
     } else {
       const small = plan.filter((a) => audience.small.includes(a.companyId));
-      if (small.length === 0) {
+      const unconfirmed = plan.filter((a) => audience.unconfirmed?.includes(a.companyId));
+      // Sem número confirmado não há como saber se passa de 300: trava.
+      for (const a of unconfirmed) {
+        items.push({
+          id: `audience-unconfirmed-${a.companyId}`, status: 'blocked', blocking: true,
+          label: `Não conseguimos confirmar o público de ${a.companyName}`,
+          detail: 'A consulta ao LinkedIn falhou. Use "Tentar de novo" na Segmentação.',
+          fix: fixLink(2, a.companyName, a.companyId),
+        });
+      }
+      if (small.length === 0 && unconfirmed.length === 0) {
         items.push({ id: 'audience', status: 'ok', label: `Público acima de 300 pessoas em ${plan.length === 1 ? 'a empresa' : `todas as ${plan.length} empresas`}`, blocking: false });
       }
       for (const a of small) {
@@ -235,6 +284,15 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
           fix: fixLink(2, a.companyName, a.companyId),
         });
       }
+    }
+
+    for (const a of plan.filter((p) => p.targetingConflict)) {
+      items.push({
+        id: `targeting-${a.companyId}`, status: 'blocked', blocking: true,
+        label: `${a.companyName}: ${TITLE_CONFLICT_REASON}`,
+        detail: 'Tire o Cargo ou tire Função e Senioridade desta empresa.',
+        fix: fixLink(2, a.companyName, a.companyId),
+      });
     }
 
     const withIssues = plan.filter((a) => creativeIssues[a.companyId]?.length);

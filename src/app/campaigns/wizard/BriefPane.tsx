@@ -3,12 +3,15 @@ import { Sparkles, Loader2, Upload, Settings2, CheckCircle2 } from 'lucide-react
 import { FontPicker } from './FontPicker';
 import { MOCK_PRODUCTS, MOCK_AUDIENCES, MOCK_PERSONAS } from './brandKit';
 import type { BrandKit } from './brandKit';
+import { BRAND_BOOK_MAX_MB } from '@/lib/ai';
+import { uploadCreativeImageToStorage } from '@/lib/linkedin/creativeUpload';
 
 const MAX_ASSET_MB = 5;
-function makeImageObjectUrl(file: File, onError: (msg: string) => void): string | null {
-  if (!file.type.startsWith('image/')) { onError('Use uma imagem (PNG, JPG ou SVG).'); return null; }
-  if (file.size > MAX_ASSET_MB * 1024 * 1024) { onError(`Arquivo excede ${MAX_ASSET_MB}MB.`); return null; }
-  return URL.createObjectURL(file);
+/** Erro de validação do arquivo de logo, ou null se pode enviar. */
+function logoFileError(file: File): string | null {
+  if (!file.type.startsWith('image/')) return 'Use uma imagem (PNG, JPG ou SVG).';
+  if (file.size > MAX_ASSET_MB * 1024 * 1024) return `O arquivo passa de ${MAX_ASSET_MB} MB.`;
+  return null;
 }
 
 export interface BriefDraft {
@@ -21,6 +24,10 @@ export interface BriefDraft {
   brandColors: { primary: string; secondary: string; accent: string };
   fontFamily: string;
   logo: string | null;
+  /** Caminho do logo no Storage (o mesmo bucket da imagem-base). */
+  logoPath?: string | null;
+  /** Seguidores da página no LinkedIn, como digitado. Opcional. */
+  followers?: string;
   colorOptions?: { primary: string[]; secondary: string[]; accent: string[] };
   source: 'website' | 'brandbook' | null;   // qual método de extração foi usado (null = nenhum ainda)
   extractedRef: string;                       // referência exibida no chip: URL do site ou nome do arquivo PDF
@@ -181,7 +188,7 @@ function SecondaryExtraction({ draft, setDraft, extracting, onUploadBrandBook, o
     <div className="mt-2 space-y-3">
       <div>
         <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-          Website da sua empresa
+          Site da sua empresa
         </label>
         <input
           id="brief-website" type="url" value={draft.websiteUrl}
@@ -226,7 +233,7 @@ function PrimaryExtraction({ draft, setDraft, extracting, onUploadBrandBook, onE
         <span className="flex-1 h-px bg-slate-200" /> ou <span className="flex-1 h-px bg-slate-200" />
       </div>
       <div>
-        <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Website da sua empresa</label>
+        <label htmlFor="brief-website" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Site da sua empresa</label>
         <div className="flex gap-2">
           <input id="brief-website" type="url" value={draft.websiteUrl}
             onChange={(e) => setDraft((d) => ({ ...d, websiteUrl: e.target.value }))}
@@ -278,7 +285,7 @@ function ProvenanceChip({ source, reference, onReset }: {
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[11px] font-bold text-emerald-800">
-          {source === 'website' ? 'Extraído do site' : 'Brand Book lido'}
+          {source === 'website' ? 'Extraído do site' : 'Lido do manual da marca'}
         </div>
         <div className="text-[10px] text-emerald-700 truncate">{reference}</div>
       </div>
@@ -365,37 +372,75 @@ function BrandFields({ draft, setDraft }: {
       </div>
 
       <LogoGallery draft={draft} setDraft={setDraft} />
+
+      {/* Opcional: sem o número, o preview do anúncio não mostra seguidores. */}
+      <div>
+        <label htmlFor="brand-followers" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
+          Seguidores no LinkedIn <span className="normal-case font-normal text-slate-400">(opcional)</span>
+        </label>
+        <input
+          id="brand-followers"
+          inputMode="numeric"
+          value={draft.followers ?? ''}
+          onChange={(e) => { const v = e.target.value; setDraft((d) => ({ ...d, followers: v })); }}
+          placeholder="Ex.: 3.550"
+          className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
+        />
+        <p className="text-[11px] text-slate-400 mt-1">Aparece no preview do anúncio. Sem valor, o preview não mostra número.</p>
+      </div>
     </div>
   );
 }
 
+// O logo sobe ao Storage pela mesma rota da imagem-base, e o rascunho guarda a
+// URL e o caminho. Antes era um `blob:` da aba: sumia ao reabrir o rascunho e
+// o servidor nunca conseguia baixá-lo para compor o anúncio.
 function LogoGallery({ draft, setDraft }: {
   draft: BriefDraft; setDraft: React.Dispatch<React.SetStateAction<BriefDraft>>;
 }) {
   const [err, setErr] = useState<string | null>(null);
-  const pick = () => {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = 'image/*';
-    input.onchange = () => {
-      const file = input.files?.[0]; if (!file) return;
-      const url = makeImageObjectUrl(file, setErr);
-      if (url) { setErr(null); setDraft((d) => ({ ...d, logo: url })); }
-    };
-    input.click();
+  const [uploading, setUploading] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    const invalid = logoFileError(file);
+    if (invalid) { setErr(invalid); return; }
+    setErr(null);
+    setUploading(true);
+    try {
+      const result = await uploadCreativeImageToStorage(file);
+      if (result.success && result.url) {
+        setDraft((d) => ({ ...d, logo: result.url!, logoPath: result.path ?? null }));
+      } else {
+        setErr('Não conseguimos enviar o logo. Tente de novo.');
+      }
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
   };
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Logo</label>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        aria-label="Enviar logo"
+        className="hidden"
+        onChange={(e) => void upload(e.target.files?.[0])}
+      />
       {draft.logo ? (
         <div className="relative border border-slate-200 rounded-lg p-2 bg-white inline-block">
           <img src={draft.logo} alt="Logo da marca" className="h-12 object-contain" />
-          <button type="button" onClick={() => setDraft((d) => ({ ...d, logo: null }))}
+          <button type="button" aria-label="Remover logo" onClick={() => setDraft((d) => ({ ...d, logo: null, logoPath: null }))}
             className="absolute -top-1 -right-1 bg-white text-slate-500 rounded-full w-4 h-4 text-[10px] leading-none border border-slate-200">×</button>
         </div>
       ) : (
-        <button type="button" onClick={pick}
-          className="w-full h-16 flex items-center justify-center text-slate-400 hover:text-[#FF5F39] border border-dashed border-slate-300 rounded-lg">
-          <Upload className="w-4 h-4" />
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
+          aria-label="Escolher arquivo de logo"
+          className="w-full h-16 flex items-center justify-center gap-2 text-slate-400 hover:text-[#FF5F39] border border-dashed border-slate-300 rounded-lg disabled:opacity-60">
+          {uploading ? <><Loader2 className="w-4 h-4 animate-spin" /><span className="text-xs">Enviando logo…</span></> : <Upload className="w-4 h-4" />}
         </button>
       )}
       {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
@@ -409,7 +454,7 @@ function BrandBookDropzone({ disabled, onFile }: { disabled: boolean; onFile: (f
   const handle = (file?: File) => {
     if (!file) return;
     if (file.type !== 'application/pdf') { setErr('Envie um arquivo PDF.'); return; }
-    if (file.size > 20 * 1024 * 1024) { setErr('PDF excede 20MB.'); return; }
+    if (file.size > BRAND_BOOK_MAX_MB * 1024 * 1024) { setErr(`O PDF passa de ${BRAND_BOOK_MAX_MB} MB.`); return; }
     setErr(null); onFile(file);
   };
   const pick = () => {
@@ -420,7 +465,7 @@ function BrandBookDropzone({ disabled, onFile }: { disabled: boolean; onFile: (f
   };
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Upload do Brand Book (PDF)</label>
+      <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Manual da marca (PDF)</label>
       <div
         onClick={() => !disabled && pick()}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}

@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PaintBucket } from 'lucide-react';
 import { BriefPane, type BriefDraft } from './BriefPane';
-import { createDefaultBrandKit, MOCK_BRAND_FIXTURE } from './brandKit';
+import { createDefaultBrandKit, parseFollowers } from './brandKit';
 import type { CreativeData } from './types';
 import {
   fetchClientVoice,
   saveClientVoice,
   extractBrandVoice,
+  extractBrandBook,
   sanitizeBrandExtraction,
   AiRequestError,
   joinPt,
@@ -20,6 +21,8 @@ export function createEmptyBriefDraft(): BriefDraft {
     brandColors: { primary: '', secondary: '', accent: '' },
     fontFamily: 'Inter',
     logo: null,
+    logoPath: null,
+    followers: '',
     source: null,
     extractedRef: '',
   };
@@ -114,6 +117,8 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
     brandKit.colors.primary,
     brandKit.colors.secondary,
     brandKit.colors.accent,
+    brandKit.logo ?? '',
+    brandKit.followers ?? '',
   ].join('\u0000');
   const seededSignatureRef = useRef<string | null>(null);
   if (seededSignatureRef.current === null) seededSignatureRef.current = brandSignature;
@@ -129,6 +134,8 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
       brandColors: brandKit.colors,
       fontFamily: brandKit.fontFamily,
       logo: brandKit.logo,
+      logoPath: brandKit.logoPath ?? null,
+      followers: typeof brandKit.followers === 'number' ? String(brandKit.followers) : '',
       colorOptions: brandKit.colorOptions,
       // `source`/`extractedRef` NÃO são tocados aqui de propósito: quem os
       // possui são os handlers de extração (`applyFixtureToDraft` grava,
@@ -180,6 +187,8 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
         colorOptions: draft.colorOptions,
         fontFamily: draft.fontFamily,
         logo: draft.logo,
+        logoPath: draft.logoPath ?? null,
+        followers: parseFollowers(draft.followers),
       },
       clientProductService: draft.productService,
       clientAudienceMarket: draft.audienceMarket,
@@ -211,24 +220,10 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
     return () => clearTimeout(t);
   }, [brandSaved]);
 
-  const applyFixtureToDraft = (source: 'brandbook' | 'website', ref: string) => {
-    setDraft((d) => ({
-      ...d,
-      voice: MOCK_BRAND_FIXTURE.voice,
-      context: MOCK_BRAND_FIXTURE.context,
-      brandColors: MOCK_BRAND_FIXTURE.colors,
-      fontFamily: MOCK_BRAND_FIXTURE.fontFamily,
-      logo: MOCK_BRAND_FIXTURE.logo,
-      colorOptions: MOCK_BRAND_FIXTURE.colorOptions,
-      source,
-      extractedRef: ref,
-    }));
-  };
-
   // Só campos que vieram de fato entram no rascunho; o que a extração não
   // achou mantém o valor anterior (ou fica vazio para preenchimento manual).
   // Cores ausentes não derrubam o resto: a paleta anterior fica.
-  const applyExtractionToDraft = (r: BrandExtraction, url: string) => {
+  const applyExtractionToDraft = (r: BrandExtraction, ref: string, source: 'website' | 'brandbook') => {
     const colorsFound = !!(r.brand_colors.primary || r.brand_colors.secondary || r.brand_colors.accent);
     const candidates = r.color_candidates ?? [];
     const optionsFor = (chosen: string) => [...new Set([chosen, ...candidates].filter(Boolean))].slice(0, 4);
@@ -244,10 +239,17 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
           accent: optionsFor(r.brand_colors.accent),
         }
         : d.colorOptions,
-      source: 'website',
-      extractedRef: url,
+      source,
+      extractedRef: ref,
     }));
   };
+
+  /** O que a extração não achou, para a frase de aviso. */
+  const missingFrom = (r: BrandExtraction) => [
+    !r.voice && 'o tom de voz',
+    !r.brand_context && 'o contexto da marca',
+    !(r.brand_colors.primary || r.brand_colors.secondary || r.brand_colors.accent) && 'as cores',
+  ].filter((m): m is string => !!m);
 
   const handleExtract = async () => {
     const url = draft.websiteUrl.trim();
@@ -263,12 +265,8 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
         setExtractError(`Não conseguimos extrair a marca de ${url}. Seus campos foram mantidos; preencha manualmente o tom de voz, o contexto e as cores.`);
         return;
       }
-      applyExtractionToDraft(result, url);
-      const missing = [
-        !result.voice && 'o tom de voz',
-        !result.brand_context && 'o contexto da marca',
-        !(result.brand_colors.primary || result.brand_colors.secondary || result.brand_colors.accent) && 'as cores',
-      ].filter((m): m is string => !!m);
+      applyExtractionToDraft(result, url, 'website');
+      const missing = missingFrom(result);
       setExtractWarning(missing.length
         ? `Não encontramos ${joinPt(missing)} no site. Preencha manualmente e revise antes de salvar.`
         : 'Marca extraída do site. Revise os campos antes de salvar.');
@@ -282,14 +280,31 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
     }
   };
 
+  // Brand book em PDF: envio real ao Storage e extração no servidor, com o
+  // mesmo tratamento de erro da extração pelo site. Falhou, o rascunho fica
+  // como estava.
   const handleBrandBookUpload = async (file: File) => {
     setExtracting(true);
     setExtractError(null);
     setExtractWarning(null);
-    await new Promise((r) => setTimeout(r, 900));
-    applyFixtureToDraft('brandbook', file.name);
-    setExtractWarning('Brand Book lido (mock) — revise os campos antes de salvar.');
-    setExtracting(false);
+    try {
+      const result = sanitizeBrandExtraction(await extractBrandBook(file));
+      if (!result) {
+        setExtractError(`Não conseguimos extrair a marca de ${file.name}. Seus campos foram mantidos; preencha manualmente o tom de voz, o contexto e as cores.`);
+        return;
+      }
+      applyExtractionToDraft(result, file.name, 'brandbook');
+      const missing = missingFrom(result);
+      setExtractWarning(missing.length
+        ? `Não encontramos ${joinPt(missing)} no PDF. Preencha manualmente e revise antes de salvar.`
+        : 'Marca extraída do PDF. Revise os campos antes de salvar.');
+    } catch (e: unknown) {
+      setExtractError(e instanceof AiRequestError && e.status === 422
+        ? `${e.message} Seus campos foram mantidos.`
+        : 'Não conseguimos ler o PDF agora. Seus campos foram mantidos; tente de novo ou preencha manualmente o tom de voz, o contexto e as cores.');
+    } finally {
+      setExtracting(false);
+    }
   };
 
   const handleResetExtraction = () => {
@@ -304,11 +319,13 @@ export function BriefStep({ creativeData, onCreativeChange, draft, setDraft }: B
       context: '',
       brandColors: { primary: '', secondary: '', accent: '' },
       logo: null,
+      logoPath: null,
     }));
   };
 
   return (
-    <div className="max-w-3xl mx-auto pb-8">
+    // Largura e margens vêm do assistente (stepLayout.ts), não daqui.
+    <div className="pb-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <PaintBucket className="w-6 h-6 text-[#FF5F39]" />

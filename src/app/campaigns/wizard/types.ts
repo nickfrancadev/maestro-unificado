@@ -65,6 +65,11 @@ export interface CampaignConfig {
   autoActivate: boolean;
   biddingStrategy: 'automated' | 'manual_cpm' | 'manual_cpc';
   unitCostAmount: string;
+  /**
+   * Gasto mensal que o anunciante confirmou com "Confirmo o gasto estimado"
+   * (ver spendGuard.ts). Só vale enquanto a estimativa não passar dele.
+   */
+  spendConfirmedMonthly?: number;
 }
 
 export function createDefaultCampaignConfig(): CampaignConfig {
@@ -121,6 +126,9 @@ export interface CompanyCreativeOverride {
   bodyText?: string;
   imageUrl?: string;            // the COMPOSED ad for this company
   imageFileName?: string;
+  // Assinatura do que foi composto em `imageUrl` (ver composition.ts). Se a
+  // configuração atual não bate com ela, a arte está desatualizada.
+  composedSignature?: string;
   // Image composition, overridden for this company only. Every field is
   // optional: `undefined` means "inherit whatever the template says". Read
   // them through resolveImageConfig, never directly.

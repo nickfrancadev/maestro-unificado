@@ -3,6 +3,7 @@ import { buildLaunchPlan, validateLaunchPlan, buildPipelineParams, buildReviewCh
 import { createEmptyTargeting } from './SegmentationStep';
 import { createDefaultCampaignConfig, createDefaultCreativeData, OBJECTIVE_MAP } from './types';
 import type { TargetingData } from './SegmentationStep';
+import { composedPatch } from './composition';
 
 const nubank = { id: 'c1', label: 'Nubank', urn: 'urn:li:organization:1' };
 const itau = { id: 'c2', label: 'Itaú', urn: 'urn:li:organization:2' };
@@ -19,9 +20,27 @@ function targeting(companies: { id: string; label: string; urn?: string }[]): Ta
   } as TargetingData;
 }
 
+// Template sem texto nem logo sobre a imagem: a própria imagem é o anúncio e
+// não precisa de arte composta. Os testes de arte composta ficam em
+// composition.test.ts e no fim deste arquivo.
+function plainTemplateLogo() {
+  const tpl = createDefaultCreativeData().templateLogo;
+  return {
+    ...tpl,
+    textoDestaque: '',
+    textoComplementar: '',
+    layout: {
+      ...tpl.layout,
+      advertiserLogo: { ...tpl.layout.advertiserLogo, enabled: false },
+      targetLogo: { ...tpl.layout.targetLogo, enabled: false },
+    },
+  };
+}
+
 function creative() {
   return {
     ...createDefaultCreativeData(),
+    templateLogo: plainTemplateLogo(),
     headline: 'ABM para {{company.name}}',
     bodyText: 'Time da {{company.name}}, venha para a certificação.',
     landingPageUrl: 'https://maestroabm.com/p/{{account.slug}}',
@@ -185,7 +204,7 @@ describe('buildPipelineParams: o que a Revisão mostra é o que vai ao servidor'
 });
 
 describe('buildReviewChecklist', () => {
-  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4 ABM', budgetAmount: '50' };
+  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4 ABM', budgetAmount: '50', spendConfirmedMonthly: 3000 };
   const ready = { audience: { pending: false, small: [] as string[] }, linkedInReady: true, hasBilling: true };
 
   it('tudo certo: só itens ok e pode publicar', () => {
@@ -198,7 +217,7 @@ describe('buildReviewChecklist', () => {
   it('empresa sem imagem trava, com link para Criativos daquela empresa', () => {
     const data = creative();
     data.imageUrl = null;
-    data.overrides = { c1: { status: 'fully_personalized', imageUrl: 'https://cdn/nubank.png' } };
+    data.overrides = { c1: { status: 'fully_personalized', ...composedPatch(data, nubank, { url: 'https://cdn/nubank.png' }) } };
     const plan = buildLaunchPlan(config, targeting([nubank, itau]), data);
     const items = buildReviewChecklist({ config, plan, creativeIssues: validateLaunchPlan(plan), ...ready });
     const itauItem = items.find((i) => i.id === 'creative-c2');
