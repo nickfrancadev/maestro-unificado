@@ -98,7 +98,9 @@ export async function createCampaign(params: CreateCampaignParams): Promise<Camp
 // --- Action 3a: Upload Image ---
 export interface UploadImageParams {
   campaign_id: string;
-  image_url: string;
+  image_url?: string;
+  /** Caminho no Storage: o servidor baixa por aqui (a URL assinada vence). */
+  image_path?: string;
   ad_account_id: string;
 }
 
@@ -181,6 +183,7 @@ export interface CampaignPipelineParams {
   bidding_strategy?: string;
   bid_amount?: number;
   image_url?: string;
+  image_path?: string;
   headline?: string;
   description?: string;
   cta?: string;
@@ -207,7 +210,8 @@ export async function runCampaignPipeline(
     { action: 'create-campaign', label: 'Criar Campanha com Targeting', status: 'pending' },
   ];
 
-  if (params.image_url) {
+  const hasImage = !!(params.image_url || params.image_path);
+  if (hasImage) {
     steps.push({ action: 'upload-image', label: 'Upload de Imagem', status: 'pending' });
     steps.push({ action: 'create-creative', label: 'Criar Criativo', status: 'pending' });
   }
@@ -274,12 +278,13 @@ export async function runCampaignPipeline(
   let stepIdx = 2;
 
   // Step 3a: Upload Image (optional)
-  if (params.image_url) {
+  if (hasImage) {
     steps[stepIdx].status = 'running';
     notify();
     const imgResult = await uploadCreativeImage({
       campaign_id: campaignId,
       image_url: params.image_url,
+      image_path: params.image_path,
       ad_account_id: params.ad_account_id,
     });
     steps[stepIdx].result = imgResult;

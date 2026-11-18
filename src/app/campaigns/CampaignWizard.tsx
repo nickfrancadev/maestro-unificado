@@ -25,6 +25,7 @@ import type { BriefDraft } from './wizard/BriefPane';
 import { saveDraft, getDraft, deleteDraft, newDraftId, isDraftId } from './drafts';
 import type { CampaignDraft, WizardDraftState } from './drafts';
 import { getLinkedInStatus } from '@/lib/linkedin';
+import { refreshCreativeImages, withoutSignedTokens } from '@/lib/linkedin/creativeImages';
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 import { toast } from 'sonner';
 
@@ -44,7 +45,8 @@ function fmtTime(d: Date): string {
 /** O que o rascunho guarda, sem o passo: base da comparação "tem alteração não salva?". */
 function snapshotOf(s: Omit<WizardDraftState, 'step'>): string {
   const { campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts } = s;
-  return JSON.stringify({ campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts });
+  // Sem o token da URL assinada: renovar a imagem não é alteração do usuário.
+  return withoutSignedTokens(JSON.stringify({ campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts }));
 }
 
 export function CampaignWizard() {
@@ -115,6 +117,17 @@ export function CampaignWizard() {
     if (boot.missing) toast.error('Rascunho não encontrado neste navegador. Começando uma campanha nova.');
   }, [boot.missing]);
 
+  // Imagens do rascunho: a URL assinada gravada vence em 2 h. Ao abrir um
+  // rascunho, pede URLs novas a partir do caminho no Storage.
+  const refreshDraftImages = useCallback((d: CampaignDraft) => {
+    refreshCreativeImages(d.state.creativeData, d.imagePaths).then((fresh) => {
+      if (fresh !== d.state.creativeData) setCreativeData((cur) => (cur === d.state.creativeData ? fresh : cur));
+    });
+  }, []);
+  useEffect(() => {
+    if (boot.draft) refreshDraftImages(boot.draft);
+  }, [boot.draft, refreshDraftImages]);
+
   function hydrate(d: CampaignDraft) {
     const s = d.state;
     setDraftId(d.id);
@@ -128,6 +141,7 @@ export function CampaignWizard() {
     setMaxStepReached(s.step);
     setSavedSnapshot(snapshotOf(s));
     setLastSavedAt(new Date(d.savedAt));
+    refreshDraftImages(d);
   }
 
   // Outro rascunho aberto com o wizard já montado (o React Router reaproveita

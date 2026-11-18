@@ -3,11 +3,14 @@ import type { TargetingData } from './SegmentationStep';
 import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET } from './types';
 import type { CampaignConfig, CreativeData } from './types';
 import type { CampaignPipelineParams } from '@/lib/linkedin';
+import { storagePathFromUrl } from '../../../../supabase/functions/make-server-a4d5bbe0/creativeStorage';
 
 export interface AdSetCreative {
   headline: string;
   bodyText: string;
   imageUrl: string | null;
+  /** Caminho da imagem no Storage. É o que identifica a imagem: a URL assinada vence. */
+  imagePath: string | null;
   landingPageUrl: string;
   cta: string;
 }
@@ -72,6 +75,7 @@ export function buildLaunchPlan(
         headline: fill(resolved.headline),
         bodyText: fill(resolved.bodyText),
         imageUrl: resolved.imageUrl,
+        imagePath: storagePathFromUrl(resolved.imageUrl),
         landingPageUrl: resolved.landingPageUrl
           .replace(/\{\{account\.slug\}\}/g, slug)
           .replace(/\{\{company\.name\}\}/g, encodeURIComponent(acc.label)),
@@ -156,6 +160,8 @@ export function buildPipelineParams(
     unit_cost: manual ? { amount: config.unitCostAmount, currency_code: ctx.currency } : undefined,
     group_budget_amount: perAdSet * plan.length,
     image_url: adSet.creative.imageUrl || undefined,
+    // O servidor baixa a imagem do Storage por aqui, sem depender da URL assinada.
+    image_path: adSet.creative.imagePath || undefined,
     headline: adSet.creative.headline || undefined,
     description: adSet.creative.bodyText || undefined,
     cta: adSet.creative.cta || undefined,
@@ -189,6 +195,11 @@ export interface ChecklistInput {
   linkedInReady: boolean;
   /** null = ainda não verificado. */
   hasBilling: boolean | null;
+  /**
+   * Imagens conferidas na tela (por id da empresa): `pending` ainda não
+   * carregou nem falhou, `broken` não carrega. Ausente = não conferido.
+   */
+  images?: { pending: string[]; broken: string[] };
 }
 
 const STEP_NAMES: Record<number, string> = { 1: 'Configuração', 2: 'Segmentação', 3: 'Marca', 4: 'Criativos' };
@@ -247,6 +258,25 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
         label: `${a.companyName}: ${creativeIssues[a.companyId].map((t, i) => (i === 0 ? t : t.charAt(0).toLowerCase() + t.slice(1))).join('; ')}`,
         fix: fixLink(4, a.companyName, a.companyId),
       });
+    }
+  }
+
+  // A Revisão não aprova imagem que não carrega: URL vencida, arquivo
+  // apagado ou blob: de outra sessão vão falhar no upload para o LinkedIn.
+  if (plan.length > 0 && input.images) {
+    const withImage = plan.filter((a) => a.creative.imageUrl);
+    const broken = withImage.filter((a) => input.images!.broken.includes(a.companyId));
+    const pending = withImage.filter((a) => input.images!.pending.includes(a.companyId));
+    for (const a of broken) {
+      items.push({
+        id: `image-${a.companyId}`, status: 'blocked', blocking: true,
+        label: `${a.companyName}: a imagem não carrega`,
+        detail: 'Envie ou gere a imagem de novo antes de publicar.',
+        fix: fixLink(4, a.companyName, a.companyId),
+      });
+    }
+    if (broken.length === 0 && pending.length > 0) {
+      items.push({ id: 'images', status: 'attention', label: 'Conferindo se as imagens carregam…', blocking: true });
     }
   }
 

@@ -29,6 +29,12 @@ import {
   LINKEDIN_HEADLINE_MAX,
   LINKEDIN_INTRO_MAX,
 } from "./aiGuards.ts";
+import {
+  CREATIVE_BUCKET,
+  SIGNED_URL_TTL_SECONDS,
+  storagePathFromUrl,
+  isSafeStoragePath,
+} from "./creativeStorage.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -37,7 +43,6 @@ const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
-const CREATIVE_BUCKET = "make-a4d5bbe0-creatives";
 const LOGO_DEV_KEY = Deno.env.get("LOGO_DEV_PUBLIC_KEY") ?? "pk_MnyWFrunT_GidypWnkvVJg";
 
 const app = new Hono();
@@ -1222,13 +1227,20 @@ async function handleCreateCampaign(c: any, body: any) {
 
 // ACTION 3a: Upload Image (initializeUpload + PUT binary)
 async function handleUploadImage(c: any, body: any) {
-  const { campaign_id, image_url, ad_account_id } = body;
-  if (!campaign_id || !image_url || !ad_account_id) {
-    return c.json({ error: "campaign_id, image_url e ad_account_id são obrigatórios" }, 400);
+  const { campaign_id, image_url, image_path, ad_account_id } = body;
+  if (!campaign_id || !(image_url || image_path) || !ad_account_id) {
+    return c.json({ error: "campaign_id, image_url (ou image_path) e ad_account_id são obrigatórios" }, 400);
   }
+  // A imagem é identificada pelo caminho no Storage. A URL assinada vence em
+  // 2 h; com o caminho (enviado ou tirado da URL antiga) o servidor baixa
+  // direto do bucket, sem depender dela.
+  const storagePath = isSafeStoragePath(image_path) ? image_path : storagePathFromUrl(image_url);
+  const imageSource = storagePath ? `storage:${storagePath}` : String(image_url);
 
   const existing = await kv.get(`image:${campaign_id}`);
-  if (existing?.asset_urn) {
+  // Mesma imagem já enviada: reaproveita. Imagem trocada depois de uma falha
+  // (o usuário corrigiu): envia a nova em vez de reusar a antiga.
+  if (existing?.asset_urn && (!existing.source || existing.source === imageSource)) {
     console.log(`[Upload Image] Idempotent hit: ${existing.asset_urn}`);
     return c.json({ success: true, asset_urn: existing.asset_urn, idempotent: true });
   }
@@ -1256,15 +1268,28 @@ async function handleUploadImage(c: any, body: any) {
     return c.json({ success: false, error: "LinkedIn não retornou uploadUrl ou image URN" }, 500);
   }
 
-  // Step 2: Download image
-  console.log(`[Upload Image] Step 2: downloading ${image_url}`);
-  const imageResponse = await fetch(image_url);
-  if (!imageResponse.ok) {
-    await auditLog(campaign_id, "upload-image", { status: "error", step: "download", error: `HTTP ${imageResponse.status}` });
-    return c.json({ success: false, error: `Não foi possível baixar a imagem: HTTP ${imageResponse.status}` }, 400);
+  // Step 2: Download image — do Storage pelo caminho; URL só quando não há caminho.
+  let imageBytes: ArrayBuffer;
+  let contentType: string;
+  if (storagePath) {
+    console.log(`[Upload Image] Step 2: downloading storage:${storagePath}`);
+    const { data: blob, error: dlError } = await supabaseAdmin.storage.from(CREATIVE_BUCKET).download(storagePath);
+    if (dlError || !blob) {
+      await auditLog(campaign_id, "upload-image", { status: "error", step: "download", error: dlError?.message || "not found" });
+      return c.json({ success: false, error: "A imagem do anúncio não está mais disponível. Envie ou gere a imagem de novo em Criativos." }, 422);
+    }
+    imageBytes = await blob.arrayBuffer();
+    contentType = blob.type || "image/png";
+  } else {
+    console.log(`[Upload Image] Step 2: downloading ${image_url}`);
+    const imageResponse = await fetchWithRetry(image_url, { method: "GET" }, "Download Image");
+    if (!imageResponse.ok) {
+      await auditLog(campaign_id, "upload-image", { status: "error", step: "download", error: `HTTP ${imageResponse.status}` });
+      return c.json({ success: false, error: "Não foi possível baixar a imagem do anúncio. Envie ou gere a imagem de novo em Criativos." }, 422);
+    }
+    imageBytes = await imageResponse.arrayBuffer();
+    contentType = imageResponse.headers.get("content-type") || "image/png";
   }
-  const imageBytes = await imageResponse.arrayBuffer();
-  const contentType = imageResponse.headers.get("content-type") || "image/png";
 
   // Step 3: PUT binary to LinkedIn
   console.log(`[Upload Image] Step 3: PUT binary (${imageBytes.byteLength} bytes)`);
@@ -1280,7 +1305,7 @@ async function handleUploadImage(c: any, body: any) {
   }
 
   console.log(`[Upload Image] Success: ${imageUrn}`);
-  await kv.set(`image:${campaign_id}`, { asset_urn: imageUrn, campaign_id, uploaded_at: new Date().toISOString() });
+  await kv.set(`image:${campaign_id}`, { asset_urn: imageUrn, campaign_id, source: imageSource, uploaded_at: new Date().toISOString() });
   await auditLog(campaign_id, "upload-image", { status: "success", asset_urn: imageUrn });
   return c.json({ success: true, asset_urn: imageUrn });
 }
@@ -1823,7 +1848,7 @@ app.post("/make-server-a4d5bbe0/creative-upload", async (c) => {
     // Create signed URL valid for 2 hours (enough for pipeline to download)
     const { data: signedData, error: signedError } = await supabaseAdmin.storage
       .from(CREATIVE_BUCKET)
-      .createSignedUrl(path, 7200);
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
 
     if (signedError || !signedData?.signedUrl) {
       console.log(`[Creative Upload] Signed URL error: ${signedError?.message}`);
@@ -1835,6 +1860,42 @@ app.post("/make-server-a4d5bbe0/creative-upload", async (c) => {
   } catch (err: any) {
     console.log("[Creative Upload] Erro:", err.message);
     return c.json({ error: `Erro no upload: ${err.message}` }, 500);
+  }
+});
+
+// ================================================
+// Creative Images — URL assinada nova a partir do caminho
+// ================================================
+// O rascunho guarda o caminho no Storage; a tela pede URLs novas para exibir
+// (a assinada vence em 2 h). Aceita também a URL antiga (vencida): o caminho
+// sai dela. `missing` lista o que não existe mais no bucket.
+app.post("/make-server-a4d5bbe0/creative-signed-urls", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const raw: unknown[] = Array.isArray(body?.paths) ? body.paths : [];
+    const paths = [...new Set(raw
+      .map((p) => (typeof p === "string" && p.startsWith("http") ? storagePathFromUrl(p) : p))
+      .filter(isSafeStoragePath))].slice(0, 100);
+    if (!paths.length) return c.json({ urls: {}, missing: [] });
+
+    const { data, error } = await supabaseAdmin.storage
+      .from(CREATIVE_BUCKET)
+      .createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+    if (error) {
+      console.log(`[Creative URLs] Storage error: ${error.message}`);
+      return c.json({ error: "Não foi possível carregar as imagens do rascunho. Tente de novo." }, 502);
+    }
+    const urls: Record<string, string> = {};
+    const missing: string[] = [];
+    for (const item of data || []) {
+      if (item.signedUrl && !item.error && item.path) urls[item.path] = item.signedUrl;
+      else if (item.path) missing.push(item.path);
+    }
+    for (const p of paths) if (!urls[p] && !missing.includes(p)) missing.push(p);
+    return c.json({ urls, missing, expires_in: SIGNED_URL_TTL_SECONDS });
+  } catch (err: any) {
+    console.log("[Creative URLs] Erro:", err.message);
+    return c.json({ error: "Não foi possível carregar as imagens do rascunho. Tente de novo." }, 500);
   }
 });
 
@@ -2926,7 +2987,7 @@ async function saveImageToStorage(
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
   const { data: signed, error: signedError } = await supabaseAdmin.storage
     .from(CREATIVE_BUCKET)
-    .createSignedUrl(path, 7200);
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
   if (signedError || !signed?.signedUrl) throw new Error(`Signed URL failed: ${signedError?.message}`);
   return { url: signed.signedUrl, path, filename: `${safeLabel}.${ext}` };
 }

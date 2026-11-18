@@ -35,6 +35,7 @@ import {
   saveCampaignToServer,
   checkAdAccountBilling,
 } from '@/lib/linkedin';
+import { fetchSignedImageUrls } from '@/lib/linkedin/creativeImages';
 import type {
   PipelineStep,
   LinkedInIntegrationStatus,
@@ -337,6 +338,30 @@ export function OrchestrationStep({
     ? audienceCheckFor(audience, adSetPlan.map((a) => a.companyId))
     : { small: [], pending: adSetPlan.length > 0 };
   const audienceById = new Map((audience?.perAdSet ?? []).map((a) => [a.id, a]));
+
+  // Imagens: a URL gravada no criativo é assinada e vence em 2 h. A Revisão
+  // pede uma nova pelo caminho no Storage e confere se cada imagem carrega de
+  // fato; a que não carrega trava a publicação.
+  const [freshUrls, setFreshUrls] = useState<Record<string, string>>({});
+  const [imageStatus, setImageStatus] = useState<Record<string, 'ok' | 'broken'>>({});
+  const imagePathsKey = adSetPlan.map((a) => a.creative.imagePath || '').join('|');
+  React.useEffect(() => {
+    const paths = adSetPlan.map((a) => a.creative.imagePath).filter((p): p is string => !!p);
+    if (!paths.length) return;
+    let alive = true;
+    fetchSignedImageUrls(paths).then((r) => { if (alive) setFreshUrls((prev) => ({ ...prev, ...r.urls })); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imagePathsKey]);
+  const displayUrl = (a: AdSetPlan): string | null =>
+    (a.creative.imagePath && freshUrls[a.creative.imagePath]) || a.creative.imageUrl;
+  const markImage = (url: string, status: 'ok' | 'broken') =>
+    setImageStatus((prev) => (prev[url] === status ? prev : { ...prev, [url]: status }));
+  const imagesCheck = {
+    pending: adSetPlan.filter((a) => { const u = displayUrl(a); return !!u && !imageStatus[u]; }).map((a) => a.companyId),
+    broken: adSetPlan.filter((a) => { const u = displayUrl(a); return !!u && imageStatus[u] === 'broken'; }).map((a) => a.companyId),
+  };
+
   const checklist = buildReviewChecklist({
     config: campaignConfig,
     plan: adSetPlan,
@@ -344,6 +369,7 @@ export function OrchestrationStep({
     audience: audienceCheck,
     linkedInReady: isLinkedInReady,
     hasBilling: billingStatus ? billingStatus.has_billing : null,
+    images: imagesCheck,
   });
   const blocking = checklist.filter((i) => i.blocking);
   const canPublish = !isPipelineRunning && canPublishChecklist(checklist);
@@ -404,6 +430,9 @@ export function OrchestrationStep({
       const params = buildPipelineParams(adSet, plan, campaignConfig, {
         adAccountId, currency, campaignGroupId,
       });
+      // URL recém-assinada (a do criativo pode ter vencido); o servidor usa o caminho.
+      const fresh = displayUrl(adSet);
+      if (fresh) params.image_url = fresh;
 
       const result = await runCampaignPipeline(params, (steps) => {
         if (i === 0) {
@@ -457,7 +486,7 @@ export function OrchestrationStep({
 
     setIsPipelineRunning(false);
     if (!allSuccess) console.error('[Launch] Some ad sets failed');
-  }, [linkedinStatus, targetingData, campaignConfig, creativeData, currency]);
+  }, [linkedinStatus, targetingData, campaignConfig, creativeData, currency, freshUrls]);
 
   const handlePipelineClose = () => {
     setShowPipelineModal(false);
@@ -515,10 +544,17 @@ export function OrchestrationStep({
                   className={`bg-white rounded-xl border shadow-sm p-4 flex flex-col sm:flex-row gap-4 ${blocked ? 'border-red-200' : 'border-slate-200'}`}
                 >
                   <div className="w-full sm:w-48 shrink-0">
-                    {adSet.creative.imageUrl ? (
+                    {displayUrl(adSet) && imageStatus[displayUrl(adSet)!] === 'broken' ? (
+                      <div className="w-full aspect-[1.91/1] rounded-md border border-dashed border-red-300 bg-red-50/50 flex flex-col items-center justify-center gap-1 text-xs text-red-600 text-center px-2">
+                        <ImageIcon className="w-4 h-4" />
+                        A imagem não carrega
+                      </div>
+                    ) : displayUrl(adSet) ? (
                       <img
-                        src={adSet.creative.imageUrl}
+                        src={displayUrl(adSet)!}
                         alt={`Anúncio para ${adSet.companyName}`}
+                        onLoad={() => markImage(displayUrl(adSet)!, 'ok')}
+                        onError={() => markImage(displayUrl(adSet)!, 'broken')}
                         className="w-full aspect-[1.91/1] object-cover rounded-md border border-slate-200 bg-white"
                       />
                     ) : (

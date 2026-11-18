@@ -240,3 +240,34 @@ describe('buildReviewChecklist', () => {
     expect(items.find((i) => i.id === 'billing')).toMatchObject({ status: 'attention', blocking: false });
   });
 });
+
+describe('imagens na Revisão — não aprova imagem que não carrega', () => {
+  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50' };
+  const signedImg = 'https://abc.supabase.co/storage/v1/object/sign/make-a4d5bbe0-creatives/composed/t.png?token=x';
+  const base = () => {
+    const plan = buildLaunchPlan(config, targeting([nubank, itau]), { ...creative(), imageUrl: signedImg });
+    return { config, plan, creativeIssues: {}, audience: { pending: false, small: [] }, linkedInReady: true, hasBilling: true };
+  };
+
+  it('o plano leva o caminho da imagem no Storage e o servidor recebe image_path', () => {
+    const { plan } = base();
+    expect(plan[0].creative.imagePath).toBe('composed/t.png');
+    const params = buildPipelineParams(plan[0], plan, config, { adAccountId: '1', currency: 'BRL' });
+    expect(params.image_path).toBe('composed/t.png');
+  });
+
+  it('imagem que não carrega trava a publicação, com link para Criativos da empresa', () => {
+    const items = buildReviewChecklist({ ...base(), images: { pending: [], broken: ['c2'] } });
+    const item = items.find((i) => i.id === 'image-c2')!;
+    expect(item.label).toBe('Itaú: a imagem não carrega');
+    expect(item.blocking).toBe(true);
+    expect(item.fix).toMatchObject({ step: 4, companyId: 'c2' });
+    expect(canPublishChecklist(items)).toBe(false);
+  });
+
+  it('enquanto as imagens não foram conferidas, não publica', () => {
+    const items = buildReviewChecklist({ ...base(), images: { pending: ['c1'], broken: [] } });
+    expect(items.find((i) => i.id === 'images')?.blocking).toBe(true);
+    expect(canPublishChecklist(buildReviewChecklist({ ...base(), images: { pending: [], broken: [] } }))).toBe(true);
+  });
+});
