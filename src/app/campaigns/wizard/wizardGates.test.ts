@@ -36,7 +36,7 @@ describe('canProceedFromStep — 1 Configuração', () => {
   it('exige um nome de campanha', () => {
     expect(canProceedFromStep(WIZARD_STEPS.config, state())).toBe(false);
     expect(canProceedFromStep(WIZARD_STEPS.config, state({
-      campaignConfig: { ...createDefaultCampaignConfig(), campaignName: 'Q3 ABM', budgetAmount: '50' },
+      campaignConfig: { ...createDefaultCampaignConfig(), campaignName: 'Q3 ABM', budgetAmount: '30' },
     }))).toBe(true);
   });
 

@@ -204,7 +204,7 @@ describe('buildPipelineParams: o que a Revisão mostra é o que vai ao servidor'
 });
 
 describe('buildReviewChecklist', () => {
-  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4 ABM', budgetAmount: '50' };
+  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4 ABM', budgetAmount: '50', spendConfirmedMonthly: 3000 };
   const ready = { audience: { pending: false, small: [] as string[] }, linkedInReady: true, hasBilling: true };
 
   it('tudo certo: só itens ok e pode publicar', () => {

@@ -3,6 +3,7 @@ import type { TargetingData, AudienceCheck } from './SegmentationStep';
 import { buildLaunchPlan, validateLaunchPlan } from './launchPlan';
 import type { CampaignConfig, CreativeData } from './types';
 import { MIN_BUDGET_PER_AD_SET } from './types';
+import { isSpendConfirmed } from './spendGuard';
 
 export const WIZARD_STEPS = {
   config: 1,
@@ -44,7 +45,9 @@ export function canProceedFromStep(step: number, state: WizardState): boolean {
     // Nome da campanha e orçamento por conjunto acima do mínimo do LinkedIn.
     // Antes o aviso de mínimo aparecia em vermelho mas não travava o avanço.
     const budget = parseFloat(campaignConfig.budgetAmount);
-    return !!campaignConfig.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET;
+    // Gasto alto (acima do teto mensal) só avança confirmado.
+    return !!campaignConfig.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET
+      && isSpendConfirmed(campaignConfig, targetingData.companies.included.length);
   }
 
   if (step === WIZARD_STEPS.segmentation) {

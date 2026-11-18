@@ -4,6 +4,7 @@ import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET
 import type { CampaignConfig, CreativeData } from './types';
 import type { CampaignPipelineParams } from '@/lib/linkedin';
 import { artStatus, artIssue } from './composition';
+import { isSpendConfirmed, HIGH_SPEND_MONTHLY_THRESHOLD } from './spendGuard';
 import type { ArtStatus } from './composition';
 
 export interface AdSetCreative {
@@ -226,6 +227,17 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
   items.push(config.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET
     ? { id: 'config', status: 'ok', label: 'Nome e orçamento definidos', blocking: false }
     : { id: 'config', status: 'blocked', label: !config.campaignName.trim() ? 'A campanha está sem nome' : `Orçamento abaixo do mínimo de ${MIN_BUDGET_PER_AD_SET} por empresa`, blocking: true, fix: fixLink(1) });
+
+  // Gasto alto sem confirmação (ou confirmado para um valor menor, antes de
+  // escolher mais empresas ou subir o orçamento): não publica.
+  if (!isSpendConfirmed(config, plan.length)) {
+    items.push({
+      id: 'spend', status: 'blocked', blocking: true,
+      label: 'Confirme o gasto estimado',
+      detail: `O gasto passa de ${HIGH_SPEND_MONTHLY_THRESHOLD.toLocaleString('pt-BR')} por mês. Marque "Confirmo o gasto estimado" na Configuração.`,
+      fix: fixLink(1),
+    });
+  }
 
   if (plan.length === 0) {
     items.push({ id: 'companies', status: 'blocked', label: 'Nenhuma empresa-alvo escolhida', blocking: true, fix: fixLink(2) });

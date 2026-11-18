@@ -14,6 +14,7 @@ import { OBJECTIVE_MAP, MIN_BUDGET_PER_AD_SET, effectiveCostType } from './types
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
 import { currencySymbol as symbolFor, fmtMoney, spendStatement, DAYS_PER_MONTH } from '../format';
 import { plural } from '../labels';
+import { monthlySpendEstimate, needsSpendConfirmation, isSpendConfirmed, HIGH_SPEND_MONTHLY_THRESHOLD } from './spendGuard';
 import { LinkedInLogo } from '@/app/components/LinkedInLogo';
 
 interface ConfigStepProps {
@@ -77,6 +78,13 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
   const objective = OBJECTIVE_MAP[config.objective];
   const perAdSet = parseFloat(config.budgetAmount) || 0;
   const per = config.budgetType === 'daily' ? 'por dia' : 'no total';
+  // Gasto alto: acima do teto mensal, só avança com a confirmação marcada.
+  const spendAdSets = Math.max(adSetCount, 1);
+  const highSpend = perAdSet > 0 && needsSpendConfirmation(config, adSetCount);
+  const spendConfirmed = isSpendConfirmed(config, adSetCount);
+  const spendSentence = highSpend
+    ? spendStatement({ perAdSet, adSets: spendAdSets, budgetType: config.budgetType, currency, startDate: config.startDate, endDate: config.endDate })
+    : null;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -255,6 +263,38 @@ export function ConfigStep({ config, onChange, linkedinStatus, adSetCount = 0, s
                     : `Por empresa. Com ${plural(adSetCount, 'empresa')}, você vai gastar até ${fmtMoney(perAdSet * adSetCount, currency)} no total.`
                   : `Por empresa. O valor é multiplicado pelo número de empresas que você escolher no passo 2.`}
               </p>
+              {highSpend && spendSentence && (
+                <div
+                  role="group"
+                  aria-label="Confirmação de gasto"
+                  className={`mt-3 rounded-lg border px-3 py-2.5 text-xs ${spendConfirmed ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-amber-50 border-amber-200 text-amber-900'}`}
+                >
+                  <p className="font-medium flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>
+                      {spendSentence.headline}
+                      {adSetCount === 0 && ' Com mais empresas no passo 2, o valor sobe.'}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-[11px] opacity-80">
+                    Acima de {fmtMoney(HIGH_SPEND_MONTHLY_THRESHOLD, currency)} por mês, confirme antes de seguir.
+                  </p>
+                  <label className="mt-2 flex items-center gap-2 font-semibold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={spendConfirmed}
+                      onChange={(e) => update({
+                        spendConfirmedMonthly: e.target.checked ? monthlySpendEstimate(config, adSetCount) : undefined,
+                      })}
+                      className="w-4 h-4 accent-[#FF5F39]"
+                    />
+                    Confirmo o gasto estimado
+                  </label>
+                  {showErrors && !spendConfirmed && (
+                    <p className="mt-1 text-red-600">Marque a confirmação para continuar.</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

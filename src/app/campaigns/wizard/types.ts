@@ -65,6 +65,11 @@ export interface CampaignConfig {
   autoActivate: boolean;
   biddingStrategy: 'automated' | 'manual_cpm' | 'manual_cpc';
   unitCostAmount: string;
+  /**
+   * Gasto mensal que o anunciante confirmou com "Confirmo o gasto estimado"
+   * (ver spendGuard.ts). Só vale enquanto a estimativa não passar dele.
+   */
+  spendConfirmedMonthly?: number;
 }
 
 export function createDefaultCampaignConfig(): CampaignConfig {

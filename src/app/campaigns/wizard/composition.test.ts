@@ -131,7 +131,7 @@ describe('artStatus — a arte composta fica desatualizada', () => {
 });
 
 describe('Revisão barra arte desatualizada dizendo qual empresa', () => {
-  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50' };
+  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '15' };
   const ready = { audience: { pending: false, small: [] }, linkedInReady: true, hasBilling: true };
 
   it('arte em dia: publica', () => {

@@ -17,6 +17,7 @@ import { CreativeStep } from './wizard/CreativeStep';
 import { OrchestrationStep } from './wizard/OrchestrationStep';
 import { SegmentationStep, createEmptyTargeting, smallAudienceSentence } from './wizard/SegmentationStep';
 import { canProceedFromStep, creativeIssues } from './wizard/wizardGates';
+import { isSpendConfirmed } from './wizard/spendGuard';
 import type { TargetingData } from './wizard/SegmentationStep';
 import { useAudienceCount, audienceCheckFor, unconfirmedAudienceSentence } from './wizard/segmentation/useAudienceCount';
 import { TargetAccount, CampaignConfig, createDefaultCampaignConfig, MIN_BUDGET_PER_AD_SET } from './wizard/types';
@@ -282,6 +283,9 @@ export function CampaignWizard() {
       if (!campaignConfig.campaignName.trim()) return 'Nomeie a campanha';
       if (!(parseFloat(campaignConfig.budgetAmount) >= MIN_BUDGET_PER_AD_SET)) {
         return `Defina o orçamento por empresa (mínimo ${MIN_BUDGET_PER_AD_SET})`;
+      }
+      if (!isSpendConfirmed(campaignConfig, targetingData.companies.included.length)) {
+        return 'Confirme o gasto estimado';
       }
       return 'Campanha configurada';
     }
