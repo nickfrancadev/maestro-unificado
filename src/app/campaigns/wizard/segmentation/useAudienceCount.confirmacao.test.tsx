@@ -76,7 +76,7 @@ describe('regras com público não confirmado', () => {
   it('a publicação trava dizendo qual empresa', () => {
     const items = buildReviewChecklist({
       config: { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50' },
-      plan: [{ id: 'inter', companyId: 'inter', companyName: 'Inter', customTargeting: false, name: 'Q4 — Inter', criteria: {}, creative: { headline: 'h', bodyText: 'b', imageUrl: 'x', landingPageUrl: 'https://a.com', cta: 'LEARN_MORE' } }],
+      plan: [{ id: 'inter', companyId: 'inter', companyName: 'Inter', customTargeting: false, name: 'Q4 — Inter', criteria: {}, creative: { headline: 'h', bodyText: 'b', imageUrl: 'x', landingPageUrl: 'https://a.com', cta: 'LEARN_MORE', imagePath: null } }],
       creativeIssues: {},
       audience: { pending: false, small: [], unconfirmed: ['inter'] },
       linkedInReady: true,

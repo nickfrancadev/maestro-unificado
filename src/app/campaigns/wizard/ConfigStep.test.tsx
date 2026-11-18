@@ -104,7 +104,7 @@ describe('ConfigStep: orçamento total exige data de fim (F037)', () => {
     const { canProceedFromStep } = await import('./wizardGates');
     const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '500', budgetType: 'total' as const, endDate: '' };
     expect(configErrors(config).endDate).toBe('Com orçamento total, defina a data de encerramento.');
-    const state = { campaignConfig: config, targetingData: {} as never, creativeData: {} as never };
+    const state = { campaignConfig: config, targetingData: { companies: { included: [], excluded: [] } } as never, creativeData: {} as never };
     expect(canProceedFromStep(1, state)).toBe(false);
     expect(canProceedFromStep(1, { ...state, campaignConfig: { ...config, endDate: '2099-12-31' } })).toBe(true);
   });

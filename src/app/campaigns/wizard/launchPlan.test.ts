@@ -261,7 +261,8 @@ describe('buildReviewChecklist', () => {
 });
 
 describe('imagens na Revisão — não aprova imagem que não carrega', () => {
-  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50' };
+  // Gasto já confirmado: este bloco testa só as imagens.
+  const config = { ...createDefaultCampaignConfig(), campaignName: 'Q4', budgetAmount: '50', spendConfirmedMonthly: 3000 };
   const signedImg = 'https://abc.supabase.co/storage/v1/object/sign/make-a4d5bbe0-creatives/composed/t.png?token=x';
   const base = () => {
     const plan = buildLaunchPlan(config, targeting([nubank, itau]), { ...creative(), imageUrl: signedImg });

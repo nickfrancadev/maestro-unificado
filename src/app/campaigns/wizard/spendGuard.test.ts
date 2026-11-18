@@ -45,7 +45,7 @@ describe(`confirmação acima de ${HIGH_SPEND_MONTHLY_THRESHOLD} por mês`, () =
   });
 
   it('a Revisão trava sem confirmação, com o link para a Configuração', () => {
-    const adSet = (id: string): AdSetPlan => ({ id, companyId: id, companyName: id, customTargeting: false, name: id, criteria: {}, creative: { headline: 'h', bodyText: 'b', imageUrl: 'x', landingPageUrl: 'https://a.com', cta: 'LEARN_MORE' } });
+    const adSet = (id: string): AdSetPlan => ({ id, companyId: id, companyName: id, customTargeting: false, name: id, criteria: {}, creative: { headline: 'h', bodyText: 'b', imageUrl: 'x', landingPageUrl: 'https://a.com', cta: 'LEARN_MORE', imagePath: null } });
     const input = { plan: [adSet('a'), adSet('b')], creativeIssues: {}, audience: { pending: false, small: [] }, linkedInReady: true, hasBilling: true };
     // Confirmado com uma empresa (1.500), mas a campanha tem duas (3.000).
     const items = buildReviewChecklist({ ...input, config: cfg({ budgetAmount: '50', spendConfirmedMonthly: 1500 }) });
