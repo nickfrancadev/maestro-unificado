@@ -41,6 +41,7 @@ import {
   resolveCampaignGroupUrn,
   effectiveCampaignStatus,
 } from "./publishRules.ts";
+import { objectiveFor, resolveCostType } from "./objectives.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -1040,49 +1041,7 @@ async function handleCreateCampaignGroup(c: any, body: any) {
 }
 
 // ---- Objective → LinkedIn API fields mapping ----
-const CAMPAIGN_OBJECTIVE_MAP: Record<string, {
-  objectiveType: string;
-  type: string;
-  format: string;
-  costType: string;
-  optimizationTargetType: string;
-}> = {
-  brand_awareness: {
-    objectiveType: "BRAND_AWARENESS",
-    type: "SPONSORED_UPDATES",
-    format: "STANDARD_UPDATE",
-    costType: "CPM",
-    optimizationTargetType: "MAX_REACH",
-  },
-  website_visits: {
-    objectiveType: "WEBSITE_VISITS",
-    type: "SPONSORED_UPDATES",
-    format: "STANDARD_UPDATE",
-    costType: "CPC",
-    optimizationTargetType: "MAX_CLICK",
-  },
-  engagement: {
-    objectiveType: "ENGAGEMENT",
-    type: "SPONSORED_UPDATES",
-    format: "STANDARD_UPDATE",
-    costType: "CPC",
-    optimizationTargetType: "MAX_CLICK",
-  },
-  lead_generation: {
-    objectiveType: "LEAD_GENERATION",
-    type: "SPONSORED_UPDATES",
-    format: "LEAD_GENERATION_FORM_SPONSORED_CONTENT",
-    costType: "CPM",
-    optimizationTargetType: "MAX_LEAD",
-  },
-  video_views: {
-    objectiveType: "VIDEO_VIEWS",
-    type: "SPONSORED_UPDATES",
-    format: "SINGLE_VIDEO",
-    costType: "CPV",
-    optimizationTargetType: "MAX_VIDEO_VIEW",
-  },
-};
+// A tabela mora em `objectives.ts`, a MESMA que a tela usa (uma fonte só).
 
 // ACTION 2: Create Campaign (with full targeting criteria from frontend)
 async function handleCreateCampaign(c: any, body: any) {
@@ -1111,11 +1070,16 @@ async function handleCreateCampaign(c: any, body: any) {
   const groupUrn = cgStr.startsWith("urn:") ? cgStr : `urn:li:sponsoredCampaignGroup:${cgStr}`;
 
   // Map objective to all required LinkedIn API fields
-  const mapped = CAMPAIGN_OBJECTIVE_MAP[objective?.toLowerCase()] ?? CAMPAIGN_OBJECTIVE_MAP["brand_awareness"];
+  const mapped = objectiveFor(objective);
   const curr = currency || "BRL";
 
-  // Determine costType: frontend override (manual bidding) takes precedence
-  const resolvedCostType = cost_type || mapped.costType;
+  // Cobrança: a do objetivo (tabela compartilhada com a tela); lance manual só
+  // quando o objetivo aceita. Um `cost_type` divergente (ex.: CPC em Visitas ao
+  // site, que o LinkedIn recusa com MAX_CLICK) não passa.
+  const resolvedCostType = resolveCostType(objective, bidding_strategy);
+  if (cost_type && cost_type !== resolvedCostType) {
+    console.log(`[Create Campaign] cost_type ${cost_type} ignorado: ${objective} cobra ${resolvedCostType}`);
+  }
 
   // Build unitCost — required even for automated bidding (send "0" for automatic)
   let unitCostObj: { amount: string; currencyCode: string };
@@ -1154,7 +1118,7 @@ async function handleCreateCampaign(c: any, body: any) {
     name,
     status: "PAUSED",
 
-    // Required type/objective fields (derived from CAMPAIGN_OBJECTIVE_MAP)
+    // Required type/objective fields (derived from objectives.ts)
     type: mapped.type,
     objectiveType: mapped.objectiveType,
     format: mapped.format,
