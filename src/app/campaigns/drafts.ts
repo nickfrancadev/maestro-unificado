@@ -8,6 +8,7 @@
 import type { TargetingData } from './wizard/SegmentationStep';
 import type { CampaignConfig, CreativeData, TargetAccount } from './wizard/types';
 import type { BriefDraft } from './wizard/BriefPane';
+import type { LaunchRecord } from './wizard/launchProgress';
 import { collectCreativeImagePaths } from '@/lib/linkedin/creativeImages';
 import type { CreativeImagePaths } from '@/lib/linkedin/creativeImages';
 
@@ -19,6 +20,11 @@ export interface WizardDraftState {
   selectedAccounts: TargetAccount[];
   /** Passo em que o usuário parou, para reabrir no mesmo lugar. */
   step: number;
+  /**
+   * Publicação em andamento: o que uma tentativa anterior já criou no
+   * LinkedIn. Republicar continua daqui em vez de duplicar grupo e conjuntos.
+   */
+  launch?: LaunchRecord | null;
 }
 
 export interface CampaignDraft {

@@ -24,6 +24,7 @@ import { CreativeData, createDefaultCreativeData } from './wizard/types';
 import type { BriefDraft } from './wizard/BriefPane';
 import { saveDraft, getDraft, deleteDraft, newDraftId, isDraftId } from './drafts';
 import type { CampaignDraft, WizardDraftState } from './drafts';
+import type { LaunchRecord } from './wizard/launchProgress';
 import { getLinkedInStatus } from '@/lib/linkedin';
 import { refreshCreativeImages, withoutSignedTokens } from '@/lib/linkedin/creativeImages';
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
@@ -82,6 +83,8 @@ export function CampaignWizard() {
   const [briefDraft, setBriefDraft] = useState<BriefDraft>(() => initial?.briefDraft ?? createEmptyBriefDraft());
   const [selectedAccounts, setSelectedAccounts] = useState<TargetAccount[]>(() => initial?.selectedAccounts ?? []);
   const [targetingData, setTargetingData] = useState<TargetingData>(() => initial?.targetingData ?? createEmptyTargeting());
+  // O que uma publicação anterior deste rascunho já criou no LinkedIn.
+  const [launchRecord, setLaunchRecord] = useState<LaunchRecord | null>(() => initial?.launch ?? null);
 
   // Público por conjunto. Calculado aqui, e não só na Segmentação, porque
   // trava o avanço do passo 2 e a publicação na Revisão, inclusive quando o
@@ -139,6 +142,7 @@ export function CampaignWizard() {
     setSelectedAccounts(s.selectedAccounts);
     setCurrentStep(s.step);
     setMaxStepReached(s.step);
+    setLaunchRecord(s.launch ?? null);
     setSavedSnapshot(snapshotOf(s));
     setLastSavedAt(new Date(d.savedAt));
     refreshDraftImages(d);
@@ -157,7 +161,7 @@ export function CampaignWizard() {
   const persist = (step: number): boolean => {
     try {
       const saved = saveDraft(draftId, {
-        campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, step,
+        campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, step, launch: launchRecord,
       });
       setSavedSnapshot(snapshot);
       setLastSavedAt(new Date(saved.savedAt));
@@ -169,6 +173,20 @@ export function CampaignWizard() {
       return false;
     }
   };
+
+  // A Revisão avisa a cada passo criado no LinkedIn; o rascunho grava na hora
+  // (mesmo sem "Salvar rascunho"), para que publicar de novo, inclusive depois
+  // de recarregar a página, continue de onde parou sem duplicar.
+  const handleLaunchRecord = useCallback((record: LaunchRecord) => {
+    setLaunchRecord(record);
+    try {
+      saveDraft(draftId, {
+        campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, step: currentStep, launch: record,
+      });
+    } catch {
+      // Sem armazenamento: vale enquanto a tela estiver aberta.
+    }
+  }, [draftId, campaignConfig, targetingData, creativeData, briefDraft, selectedAccounts, currentStep]);
 
   const canProceedFrom = (step: number) =>
     canProceedFromStep(step, { campaignConfig, targetingData, creativeData, audienceCheck });
@@ -471,6 +489,9 @@ export function CampaignWizard() {
               creativeData={creativeData}
               audience={audience}
               onGoToStep={handleGoToStepFromReview}
+              draftId={draftId}
+              launchRecord={launchRecord}
+              onLaunchRecord={handleLaunchRecord}
             />
           )}
         </div>

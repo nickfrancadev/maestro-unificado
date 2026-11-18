@@ -25,6 +25,8 @@ import {
   canPublishChecklist,
 } from './launchPlan';
 import type { AdSetPlan, ChecklistItem } from './launchPlan';
+import { startOrResumeLaunch, withGroup, withAdSet, summarizeResume, resumeSentences } from './launchProgress';
+import type { LaunchRecord, ResumeSummary } from './launchProgress';
 import { resolveTargetingForAccount } from './SegmentationStep';
 import { audienceCheckFor, MIN_AUDIENCE } from './segmentation/useAudienceCount';
 import type { AudienceState } from './segmentation/useAudienceCount';
@@ -55,6 +57,12 @@ interface OrchestrationStepProps {
   audience?: AudienceState;
   /** Leva ao passo que resolve uma pendência; companyId abre a empresa certa quando o passo sabe. */
   onGoToStep?: (step: number, companyId?: string) => void;
+  /** Rascunho sendo publicado: dá o id estável do lançamento. */
+  draftId?: string;
+  /** O que uma tentativa anterior deste rascunho já criou no LinkedIn. */
+  launchRecord?: LaunchRecord | null;
+  /** Chamado a cada passo criado, para o rascunho guardar e a próxima tentativa não duplicar. */
+  onLaunchRecord?: (record: LaunchRecord) => void;
 }
 
 // ---- Pipeline Progress Modal ----
@@ -160,6 +168,7 @@ function ConfirmLaunchModal({
   adSetPlan,
   billingStatus,
   currency,
+  resume,
   onConfirm,
   onCancel,
 }: {
@@ -167,6 +176,7 @@ function ConfirmLaunchModal({
   adSetPlan: AdSetPlan[];
   billingStatus?: BillingStatus | null;
   currency: string;
+  resume?: ResumeSummary;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -174,9 +184,11 @@ function ConfirmLaunchModal({
   const hasBillingIssue = billingStatus && !billingStatus.has_billing;
 
   // Os passos que o lançamento realmente executa, nesta ordem.
+  const resuming = !!resume?.resuming;
+  const pending = resuming ? resume!.partial.length + resume!.toCreate.length : adSetPlan.length;
   const pipelineSteps = [
-    'Criar o grupo de campanhas no LinkedIn',
-    `Criar ${plural(adSetPlan.length, 'conjunto')} de anúncio, um por empresa, cada um com a sua segmentação`,
+    resume?.groupCreated ? 'Reaproveitar o grupo de campanhas já criado' : 'Criar o grupo de campanhas no LinkedIn',
+    `Criar ${plural(pending, 'conjunto')} de anúncio, um por empresa, cada um com a sua segmentação`,
     'Enviar a imagem e criar o anúncio de cada empresa',
     config.autoActivate
       ? 'Ativar os conjuntos: o gasto começa em seguida'
@@ -230,6 +242,15 @@ function ConfirmLaunchModal({
                   ? ' A ativação pode falhar. Recomendamos publicar pausada.'
                   : ' Configure o pagamento antes de ativar.'}
               </div>
+            </div>
+          )}
+
+          {resuming && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-1.5" role="note" aria-label="Publicação anterior">
+              <p className="text-sm font-semibold text-blue-900">Continuando a publicação anterior</p>
+              {resumeSentences(resume!).map((t) => (
+                <p key={t} className="text-xs text-blue-800 leading-relaxed">{t}</p>
+              ))}
             </div>
           )}
 
@@ -292,6 +313,9 @@ export function OrchestrationStep({
   creativeData,
   audience,
   onGoToStep,
+  draftId,
+  launchRecord,
+  onLaunchRecord,
 }: OrchestrationStepProps) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -324,10 +348,15 @@ export function OrchestrationStep({
   const currency = linkedinStatus?.selected_ad_account_currency || 'BRL';
   const perAdSet = parseFloat(campaignConfig.budgetAmount) || 0;
 
-  // Um id por lançamento: o servidor deduplica por ele (ver buildLaunchPlan).
-  // Fica estável durante a revisão para que "tentar de novo" após uma falha
-  // retome os passos já feitos em vez de duplicar.
-  const runIdRef = React.useRef(Date.now().toString(36));
+  // Um id por lançamento, ESTÁVEL por rascunho (launchProgress): o servidor
+  // deduplica por ele (ver buildLaunchPlan). Voltar a um passo, corrigir e
+  // publicar de novo retoma o que a tentativa anterior criou em vez de
+  // duplicar grupo e conjuntos. Sem rascunho, vale enquanto a tela existir.
+  const fallbackDraftIdRef = React.useRef(`sem-rascunho-${Date.now().toString(36)}`);
+  const launchRef = React.useRef<LaunchRecord>(startOrResumeLaunch(launchRecord, draftId ?? fallbackDraftIdRef.current));
+  React.useEffect(() => {
+    if (launchRecord?.launchId) launchRef.current = launchRecord;
+  }, [launchRecord]);
 
   // O que vai ser publicado, já resolvido por empresa, e o que impede publicar.
   const adSetPlan = targetingData && creativeData ? buildLaunchPlan(campaignConfig, targetingData, creativeData) : [];
@@ -388,7 +417,14 @@ export function OrchestrationStep({
     // Um conjunto de anúncio por empresa-alvo (modelo ABM do LinkedIn), cada um
     // com a sua segmentação e o seu criativo. Ver buildLaunchPlan.
     if (!targetingData || !creativeData) return;
-    const plan = buildLaunchPlan(campaignConfig, targetingData, creativeData, { runId: runIdRef.current });
+    let rec = launchRef.current;
+    const save = (next: LaunchRecord) => {
+      rec = next;
+      launchRef.current = next;
+      onLaunchRecord?.(next);
+    };
+    save(rec);
+    const plan = buildLaunchPlan(campaignConfig, targetingData, creativeData, { runId: rec.launchId });
     if (plan.length === 0) return;
 
     setIsPipelineRunning(true);
@@ -396,23 +432,27 @@ export function OrchestrationStep({
 
     // 1x grupo de campanhas + Nx (conjunto com segmentação + imagem + anúncio + ativação)
     const allSteps: PipelineStep[] = [
-      { action: 'create-campaign-group', label: `Criar o grupo "${campaignConfig.campaignName}"`, status: 'pending' },
-      ...plan.map((a) => ({
-        action: 'create-campaign' as const,
-        label: `${a.companyName}: segmentação e anúncio`,
-        status: 'pending' as const,
-      })),
+      rec.groupId
+        ? { action: 'create-campaign-group', label: `Grupo "${campaignConfig.campaignName}" já criado, reaproveitado`, status: 'success' }
+        : { action: 'create-campaign-group', label: `Criar o grupo "${campaignConfig.campaignName}"`, status: 'pending' },
+      ...plan.map((a) => (rec.adSets[a.companyId]?.done
+        ? { action: 'create-campaign' as const, label: `${a.companyName}: já publicada na tentativa anterior`, status: 'success' as const }
+        : { action: 'create-campaign' as const, label: `${a.companyName}: segmentação e anúncio`, status: 'pending' as const })),
     ];
     setPipelineSteps(allSteps);
 
-    let campaignGroupId: string | null = null;
+    let campaignGroupId: string | null = rec.groupId || null;
+    let groupAttempted = !!campaignGroupId;
     let allSuccess = true;
 
     for (let i = 0; i < plan.length; i++) {
       const adSet = plan[i];
       const stepIdx = i + 1; // allSteps[0] é o grupo
 
-      if (i > 0 && !campaignGroupId) {
+      // Já publicada por inteiro numa tentativa anterior: não toca de novo.
+      if (rec.adSets[adSet.companyId]?.done) continue;
+
+      if (groupAttempted && !campaignGroupId) {
         allSteps[stepIdx] = {
           ...allSteps[stepIdx],
           status: 'error',
@@ -434,8 +474,9 @@ export function OrchestrationStep({
       const fresh = displayUrl(adSet);
       if (fresh) params.image_url = fresh;
 
+      const createsGroup = !campaignGroupId;
       const result = await runCampaignPipeline(params, (steps) => {
-        if (i === 0) {
+        if (createsGroup) {
           const cgStep = steps.find((s) => s.action === 'create-campaign-group');
           if (cgStep) allSteps[0] = { ...allSteps[0], status: cgStep.status, result: cgStep.result };
         }
@@ -444,14 +485,25 @@ export function OrchestrationStep({
         setPipelineSteps([...allSteps]);
       });
 
-      if (i === 0) {
+      if (createsGroup) {
+        groupAttempted = true;
         const cgResult = result.steps.find((s) => s.action === 'create-campaign-group');
         campaignGroupId = cgResult?.result?.campaign_group_id || null;
+        save(withGroup(rec, campaignGroupId));
       }
+
+      const campStep = result.steps.find((s) => s.action === 'create-campaign');
+      const linkedinCampaignId = campStep?.result?.linkedin_campaign_id || null;
+      // Grava o que foi criado, inclusive numa falha no meio: a próxima
+      // tentativa retoma este conjunto em vez de criar outro.
+      save(withAdSet(rec, adSet.companyId, {
+        companyName: adSet.companyName,
+        linkedinCampaignId: linkedinCampaignId ?? rec.adSets[adSet.companyId]?.linkedinCampaignId ?? null,
+        done: result.success,
+      }));
 
       if (result.success) {
         allSteps[stepIdx] = { ...allSteps[stepIdx], status: 'success' };
-        const campStep = result.steps.find((s) => s.action === 'create-campaign');
         await saveCampaignToServer({
           id: adSet.id,
           name: adSet.name,
@@ -468,7 +520,7 @@ export function OrchestrationStep({
           start_date: campaignConfig.startDate || null,
           end_date: campaignConfig.endDate || null,
           linkedin_campaign_group_id: campaignGroupId,
-          linkedin_campaign_id: campStep?.result?.linkedin_campaign_id || null,
+          linkedin_campaign_id: linkedinCampaignId,
           bidding_strategy: params.bidding_strategy,
           auto_activate: params.auto_activate,
         });
@@ -486,7 +538,7 @@ export function OrchestrationStep({
 
     setIsPipelineRunning(false);
     if (!allSuccess) console.error('[Launch] Some ad sets failed');
-  }, [linkedinStatus, targetingData, campaignConfig, creativeData, currency, freshUrls]);
+  }, [linkedinStatus, targetingData, campaignConfig, creativeData, currency, freshUrls, onLaunchRecord]);
 
   const handlePipelineClose = () => {
     setShowPipelineModal(false);
@@ -786,6 +838,7 @@ export function OrchestrationStep({
           adSetPlan={adSetPlan}
           billingStatus={billingStatus}
           currency={currency}
+          resume={summarizeResume(launchRef.current, adSetPlan)}
           onConfirm={handleConfirmLaunch}
           onCancel={() => setShowConfirmModal(false)}
         />
