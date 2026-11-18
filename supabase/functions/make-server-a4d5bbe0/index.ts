@@ -42,6 +42,7 @@ import {
   effectiveCampaignStatus,
   withDefaultLocation,
   audienceProblem,
+  budgetDateProblem,
 } from "./publishRules.ts";
 import { objectiveFor, resolveCostType } from "./objectives.ts";
 
@@ -991,6 +992,8 @@ app.post("/make-server-a4d5bbe0/linkedin/campaigns", async (c) => {
 async function handleValidateLaunch(c: any, body: any) {
   const adSets: any[] = Array.isArray(body.ad_sets) ? body.ad_sets : [];
   if (!adSets.length) return c.json({ success: false, error: "Nenhuma empresa para publicar." }, 400);
+  const dateProblem = budgetDateProblem({ budgetType: body.budget_type, startDate: body.start_date, endDate: body.end_date });
+  if (dateProblem) return c.json({ success: false, error: dateProblem, field: "end_date" }, 422);
   const { accessToken } = await requireLinkedIn();
 
   const problems: { company_name: string; messages: string[] }[] = [];
@@ -1016,10 +1019,12 @@ async function handleValidateLaunch(c: any, body: any) {
 
 // ACTION 1: Create Campaign Group
 async function handleCreateCampaignGroup(c: any, body: any) {
-  const { campaign_id, ad_account_id, name, budget_type, budget_amount, currency, start_date } = body;
+  const { campaign_id, ad_account_id, name, budget_type, budget_amount, currency, start_date, end_date } = body;
   if (!campaign_id || !ad_account_id || !name) {
     return c.json({ error: "campaign_id, ad_account_id e name são obrigatórios" }, 400);
   }
+  const dateProblem = budgetDateProblem({ budgetType: budget_type, startDate: start_date, endDate: end_date });
+  if (dateProblem) return c.json({ success: false, error: dateProblem, field: "end_date" }, 422);
 
   const existing = await kv.get(`campaign_group:${campaign_id}`);
   if (existing?.linkedin_id) {
@@ -1043,6 +1048,7 @@ async function handleCreateCampaignGroup(c: any, body: any) {
   // Only add runSchedule if start_date is explicit (LinkedIn can default otherwise)
   if (start_date) {
     cgBody.runSchedule = { start: new Date(start_date).getTime() };
+    if (end_date) cgBody.runSchedule.end = new Date(end_date).getTime();
   }
   if (budget_type === "total" && budget_amount > 0) cgBody.totalBudget = { amount: budgetStr, currencyCode: curr };
   if (budget_type === "daily" && budget_amount > 0) cgBody.dailyBudget = { amount: budgetStr, currencyCode: curr };
@@ -1092,6 +1098,8 @@ async function handleCreateCampaign(c: any, body: any) {
   if (!campaign_id || !campaign_group_id || !ad_account_id || !name || !targeting_criteria) {
     return c.json({ error: "campaign_id, campaign_group_id, ad_account_id, name e targeting_criteria são obrigatórios" }, 400);
   }
+  const dateProblem = budgetDateProblem({ budgetType: budget_type, startDate: start_date, endDate: end_date });
+  if (dateProblem) return c.json({ success: false, error: dateProblem, field: "end_date" }, 422);
 
   // Idempotency check
   const existing = await kv.get(`campaign:${campaign_id}`);

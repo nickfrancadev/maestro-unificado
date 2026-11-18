@@ -25,6 +25,7 @@ import type { BriefDraft } from './wizard/BriefPane';
 import { saveDraft, getDraft, deleteDraft, newDraftId, isDraftId } from './drafts';
 import type { CampaignDraft, WizardDraftState } from './drafts';
 import type { LaunchRecord } from './wizard/launchProgress';
+import { budgetDateProblem } from '../../../supabase/functions/make-server-a4d5bbe0/publishRules';
 import { getLinkedInStatus } from '@/lib/linkedin';
 import { refreshCreativeImages, withoutSignedTokens } from '@/lib/linkedin/creativeImages';
 import type { LinkedInIntegrationStatus } from '@/lib/linkedin';
@@ -315,6 +316,8 @@ export function CampaignWizard() {
       if (!(parseFloat(campaignConfig.budgetAmount) >= MIN_BUDGET_PER_AD_SET)) {
         return `Defina o orçamento por empresa (mínimo ${MIN_BUDGET_PER_AD_SET})`;
       }
+      const dateProblem = budgetDateProblem(campaignConfig);
+      if (dateProblem) return dateProblem;
       return 'Campanha configurada';
     }
     if (currentStep === 2) {

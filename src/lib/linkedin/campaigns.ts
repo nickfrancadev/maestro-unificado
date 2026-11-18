@@ -94,6 +94,8 @@ export interface CreateCampaignGroupParams {
   budget_amount?: number;
   currency?: string;
   start_date?: string;
+  /** Obrigatória com orçamento total (o servidor recusa sem ela). */
+  end_date?: string;
 }
 
 export async function createCampaignGroup(
@@ -274,6 +276,7 @@ export async function runCampaignPipeline(
       budget_amount: params.group_budget_amount ?? params.budget_amount,
       currency: params.currency,
       start_date: params.start_date,
+      end_date: params.end_date,
     });
     steps[0].result = cgResult;
     steps[0].status = cgResult.success ? 'success' : 'error';

@@ -48,3 +48,19 @@ describe('público mínimo de 300 no servidor (F055)', () => {
     expect(audienceProblem('Nubank', null)).toMatch(/Não foi possível conferir o público de Nubank/);
   });
 });
+
+import { budgetDateProblem } from './publishRules';
+
+describe('datas com orçamento total (F037) — mesma regra na tela e no servidor', () => {
+  it('orçamento total sem data de fim é recusado', () => {
+    expect(budgetDateProblem({ budgetType: 'total', startDate: '2026-12-01', endDate: '' })).toBe('Com orçamento total, defina a data de encerramento.');
+  });
+  it('orçamento total com fim passa; diário sem fim passa', () => {
+    expect(budgetDateProblem({ budgetType: 'total', startDate: '2026-12-01', endDate: '2026-12-31' })).toBeNull();
+    expect(budgetDateProblem({ budgetType: 'daily', startDate: '2026-12-01', endDate: '' })).toBeNull();
+  });
+  it('fim antes (ou no mesmo dia) do início é recusado', () => {
+    expect(budgetDateProblem({ budgetType: 'daily', startDate: '2026-12-10', endDate: '2026-12-01' })).toMatch(/depois da data de início/);
+    expect(budgetDateProblem({ budgetType: 'total', startDate: '2026-12-10', endDate: '2026-12-10' })).toMatch(/depois da data de início/);
+  });
+});

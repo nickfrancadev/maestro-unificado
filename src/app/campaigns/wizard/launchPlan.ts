@@ -4,7 +4,7 @@ import { resolveCreativeForCompany, effectiveCostType, OBJECTIVE_MAP, MIN_BUDGET
 import type { CampaignConfig, CreativeData } from './types';
 import type { CampaignPipelineParams, ValidateLaunchParams } from '@/lib/linkedin';
 import { storagePathFromUrl } from '../../../../supabase/functions/make-server-a4d5bbe0/creativeStorage';
-import { hasLocation, DEFAULT_LOCATION_LABEL } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
+import { hasLocation, DEFAULT_LOCATION_LABEL, budgetDateProblem } from '../../../../supabase/functions/make-server-a4d5bbe0/publishRules';
 
 export interface AdSetCreative {
   headline: string;
@@ -254,9 +254,15 @@ export function buildReviewChecklist(input: ChecklistInput): ChecklistItem[] {
     : { id: 'linkedin', status: 'blocked', label: 'Conecte o LinkedIn e escolha a conta de anúncios', detail: 'Em Integrações.', blocking: true });
 
   const budget = parseFloat(config.budgetAmount);
-  items.push(config.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET
-    ? { id: 'config', status: 'ok', label: 'Nome e orçamento definidos', blocking: false }
-    : { id: 'config', status: 'blocked', label: !config.campaignName.trim() ? 'A campanha está sem nome' : `Orçamento abaixo do mínimo de ${MIN_BUDGET_PER_AD_SET} por empresa`, blocking: true, fix: fixLink(1) });
+  const dateProblem = budgetDateProblem(config);
+  items.push(config.campaignName.trim() && budget >= MIN_BUDGET_PER_AD_SET && !dateProblem
+    ? { id: 'config', status: 'ok', label: 'Nome, orçamento e datas definidos', blocking: false }
+    : {
+        id: 'config', status: 'blocked', blocking: true, fix: fixLink(1),
+        label: !config.campaignName.trim()
+          ? 'A campanha está sem nome'
+          : !(budget >= MIN_BUDGET_PER_AD_SET) ? `Orçamento abaixo do mínimo de ${MIN_BUDGET_PER_AD_SET} por empresa` : dateProblem!,
+      });
 
   if (plan.length === 0) {
     items.push({ id: 'companies', status: 'blocked', label: 'Nenhuma empresa-alvo escolhida', blocking: true, fix: fixLink(2) });

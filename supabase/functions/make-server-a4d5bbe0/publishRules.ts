@@ -100,3 +100,31 @@ export function audienceProblem(companyName: string, count: number | null | unde
   }
   return null;
 }
+
+// ---------- Datas com orçamento total (F037) ----------
+
+/**
+ * Orçamento total precisa de data de fim: é ela que diz em quanto tempo o
+ * total é gasto (sem ela o LinkedIn recusa ou gasta tudo de uma vez). Fim
+ * antes do início também não vai. `null` = datas válidas. A tela e o servidor
+ * usam esta mesma função; a tela mostra a frase ao lado do campo de fim.
+ */
+export function budgetDateProblem(input: {
+  budgetType?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}): string | null {
+  const end = (input.endDate || "").trim();
+  if (input.budgetType === "total" && !end) {
+    return "Com orçamento total, defina a data de encerramento.";
+  }
+  const start = (input.startDate || "").trim();
+  if (end && start) {
+    const s = new Date(start).getTime();
+    const e = new Date(end).getTime();
+    if (!Number.isNaN(s) && !Number.isNaN(e) && e <= s) {
+      return "A data de encerramento precisa ser depois da data de início.";
+    }
+  }
+  return null;
+}
