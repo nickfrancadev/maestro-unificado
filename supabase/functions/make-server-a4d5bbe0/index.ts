@@ -29,6 +29,17 @@ import {
   LINKEDIN_HEADLINE_MAX,
   LINKEDIN_INTRO_MAX,
 } from "./aiGuards.ts";
+import {
+  validateUpdateRequest,
+  buildCampaignPatch,
+  buildGroupPatch,
+  liveCampaignProblem,
+  todayIso,
+  type UpdateRequest,
+  type CampaignUpdateInput,
+  type GroupUpdateInput,
+  type CampaignProblems,
+} from "./campaignEditGuards.ts";
 
 const RESVG_WASM_URL = "https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 
@@ -1919,6 +1930,278 @@ app.get("/make-server-a4d5bbe0/linkedin/campaigns-list", async (c) => {
   } catch (err: any) {
     console.log("[LinkedIn Campaigns List] Erro:", err.message);
     return c.json({ campaigns: [], error: err.message });
+  }
+});
+
+// ================================================
+// LinkedIn — Editar campanha publicada (um grupo = uma campanha por empresa)
+// ================================================
+// DE ONDE VÊM OS DADOS DA TELA: do próprio LinkedIn, não do KV.
+//   - O KV do publish (`campaign_group:<id do lançamento>`, `campaign:<id>`,
+//     `maestro_campaign:<id>`) é chaveado pelo id do LANÇAMENTO no Maestro, não
+//     pelo id do grupo no LinkedIn, e não guarda o targetingCriteria nem o
+//     término atual. Não dá para montar a tela com ele.
+//   - `campaigns-list` não traz targetingCriteria nem objetivo.
+//   - Então: GET do grupo (/rest/adAccounts/{conta}/adCampaignGroups/{id}) e
+//     busca das campanhas do grupo (q=search por campaignGroup) com os campos
+//     que a tela precisa. É o estado real, inclusive o que alguém mudou direto
+//     no Campaign Manager.
+//   - Nomes de localização e cargo: o targetingCriteria só tem URNs. O servidor
+//     tenta resolver por /rest/adTargetingEntities?q=urns (melhor esforço; se
+//     falhar, a tela mostra o id). Senioridade, função e experiência têm lista
+//     fixa no front.
+// Ao salvar, o KV é atualizado onde o publish grava esses dados (nome,
+// orçamento e término), para o resto do protótipo não mostrar o valor antigo.
+
+function groupUrnOf(id: string): string {
+  return id.startsWith("urn:") ? id : `urn:li:sponsoredCampaignGroup:${id}`;
+}
+function campaignUrnOf(id: string): string {
+  return id.startsWith("urn:") ? id : `urn:li:sponsoredCampaign:${id}`;
+}
+function accountPathOf(adAccountId: string): string {
+  const s = String(adAccountId);
+  return s.startsWith("urn:") ? s.split(":").pop()! : s;
+}
+
+const EDIT_CAMPAIGN_FIELDS = "id,name,status,campaignGroup,dailyBudget,totalBudget,runSchedule,objectiveType,costType,type,targetingCriteria";
+
+async function fetchLiveCampaign(accessToken: string, accountPath: string, campaignId: string): Promise<any | null> {
+  const id = campaignId.startsWith("urn:") ? campaignId.split(":").pop() : campaignId;
+  const res = await fetchWithRetry(
+    `https://api.linkedin.com/rest/adAccounts/${accountPath}/adCampaigns/${id}`,
+    { headers: linkedInHeaders(accessToken) },
+    "Edit: GET campaign",
+  );
+  if (!res.ok) {
+    console.log(`[Edit] GET campaign ${id} falhou ${res.status}: ${await res.text()}`);
+    return null;
+  }
+  return await res.json();
+}
+
+/** URNs de localização e cargo do público, para pedir os nomes ao LinkedIn. */
+function namedUrnsOf(criteria: any): string[] {
+  const out: string[] = [];
+  const facets = ["urn:li:adTargetingFacet:locations", "urn:li:adTargetingFacet:titles"];
+  for (const clause of criteria?.include?.and ?? []) {
+    for (const f of facets) if (Array.isArray(clause?.or?.[f])) out.push(...clause.or[f]);
+  }
+  for (const f of facets) if (Array.isArray(criteria?.exclude?.or?.[f])) out.push(...criteria.exclude.or[f]);
+  return out;
+}
+
+app.get("/make-server-a4d5bbe0/linkedin/campaign-groups/:groupId/edit-data", async (c) => {
+  try {
+    const { accessToken, integration } = await requireLinkedIn();
+    const adAccountId = integration.selected_ad_account_id;
+    if (!adAccountId) return c.json({ error: "Nenhuma conta de anúncios selecionada" }, 400);
+    const accountPath = accountPathOf(adAccountId);
+    const groupId = c.req.param("groupId").split(":").pop()!;
+    const groupUrn = groupUrnOf(groupId);
+
+    const gRes = await fetchWithRetry(
+      `https://api.linkedin.com/rest/adAccounts/${accountPath}/adCampaignGroups/${groupId}`,
+      { headers: linkedInHeaders(accessToken) },
+      "Edit: GET group",
+    );
+    if (gRes.status === 404) return c.json({ error: "Grupo de campanhas não encontrado nesta conta de anúncios" }, 404);
+    if (!gRes.ok) {
+      const t = await gRes.text();
+      return c.json({ error: `LinkedIn API ${gRes.status}: ${t}` }, gRes.status >= 500 ? 502 : 400);
+    }
+    const group = await gRes.json();
+
+    // Rest.li 2.0: só a URN vai codificada dentro da expressão de busca.
+    const searchExpr = `(campaignGroup:(values:List(${encodeURIComponent(groupUrn)})),status:(values:List(ACTIVE,PAUSED,DRAFT)))`;
+    const cRes = await fetchWithRetry(
+      `https://api.linkedin.com/rest/adAccounts/${accountPath}/adCampaigns?q=search&search=${searchExpr}&fields=${EDIT_CAMPAIGN_FIELDS}&count=100`,
+      { headers: linkedInHeaders(accessToken) },
+      "Edit: search campaigns",
+    );
+    if (!cRes.ok) {
+      const t = await cRes.text();
+      return c.json({ error: `LinkedIn API ${cRes.status}: ${t}` }, cRes.status >= 500 ? 502 : 400);
+    }
+    const campaigns = ((await cRes.json()).elements || []).filter((el: any) => !el.campaignGroup || el.campaignGroup === groupUrn);
+    if (campaigns.length === 0) return c.json({ error: "Este grupo não tem campanhas que possam ser editadas" }, 404);
+
+    // Nomes das localizações e cargos (melhor esforço).
+    const entityNames: Record<string, string> = {};
+    const urns = [...new Set(campaigns.flatMap((el: any) => namedUrnsOf(el.targetingCriteria)))] as string[];
+    if (urns.length > 0) {
+      try {
+        const list = urns.map((u) => encodeURIComponent(u)).join(",");
+        const eRes = await fetch(
+          `https://api.linkedin.com/rest/adTargetingEntities?q=urns&urns=List(${list})&locale=(language:pt,country:BR)`,
+          { headers: linkedInHeaders(accessToken) },
+        );
+        if (eRes.ok) {
+          for (const el of (await eRes.json()).elements || []) if (el?.urn && el?.name) entityNames[el.urn] = el.name;
+        } else {
+          console.log(`[Edit] adTargetingEntities ${eRes.status}: ${await eRes.text()}`);
+        }
+      } catch (err: any) {
+        console.log("[Edit] adTargetingEntities erro:", err.message);
+      }
+    }
+
+    return c.json({
+      group: {
+        id: String(group.id ?? groupId),
+        urn: groupUrn,
+        name: group.name,
+        status: group.status,
+        runSchedule: group.runSchedule || null,
+        dailyBudget: group.dailyBudget || null,
+        totalBudget: group.totalBudget || null,
+      },
+      campaigns: campaigns.map((el: any) => ({
+        id: String(el.id),
+        name: el.name,
+        status: el.status,
+        campaignGroup: el.campaignGroup || null,
+        dailyBudget: el.dailyBudget || null,
+        totalBudget: el.totalBudget || null,
+        runSchedule: el.runSchedule || null,
+        objectiveType: el.objectiveType || null,
+        costType: el.costType || null,
+        targetingCriteria: el.targetingCriteria || null,
+      })),
+      entityNames,
+      adAccountName: integration.selected_ad_account_name || null,
+      currency: integration.selected_ad_account_currency || "USD",
+    });
+  } catch (err: any) {
+    if (err.message === "UNAUTHORIZED") return c.json({ error: "LinkedIn não conectado" }, 401);
+    console.log("[Edit] edit-data erro:", err.message);
+    return c.json({ error: `Erro interno: ${err.message}` }, 500);
+  }
+});
+
+// Atualiza o KV gravado pelo publish para refletir o que mudou no LinkedIn.
+async function syncEditToKv(groupId: string, updates: CampaignUpdateInput[], okIds: Set<string>, group?: GroupUpdateInput, groupOk?: boolean) {
+  try {
+    const sameId = (a: unknown, b: string) => a != null && String(a).split(":").pop() === b.split(":").pop();
+    const now = new Date().toISOString();
+    const maestro = await kv.getByPrefix("maestro_campaign:");
+    for (const rec of maestro) {
+      const u = updates.find((x) => okIds.has(x.campaign_id) && sameId(rec?.linkedin_campaign_id, x.campaign_id));
+      if (!u) continue;
+      if (u.name !== undefined) rec.name = u.name;
+      if (u.budget_amount !== undefined) rec.budget_amount = u.budget_amount;
+      if (u.end_date !== undefined) rec.end_date = u.end_date;
+      if (group?.name !== undefined && groupOk) rec.campaign_group = group.name;
+      rec.updated_at = now;
+      await kv.set(`maestro_campaign:${rec.id}`, rec);
+    }
+    const camps = await kv.getByPrefix("campaign:");
+    for (const rec of camps) {
+      const u = updates.find((x) => okIds.has(x.campaign_id) && sameId(rec?.linkedin_id, x.campaign_id));
+      if (!u || !rec?.campaign_id) continue;
+      if (u.name !== undefined) rec.name = u.name;
+      rec.updated_at = now;
+      await kv.set(`campaign:${rec.campaign_id}`, rec);
+    }
+    if (group && groupOk) {
+      const groups = await kv.getByPrefix("campaign_group:");
+      for (const rec of groups) {
+        if (!rec?.campaign_id || !sameId(rec?.linkedin_id, groupId)) continue;
+        if (group.name !== undefined) rec.name = group.name;
+        if (group.budget_amount !== undefined) rec.budget_amount = group.budget_amount;
+        rec.updated_at = now;
+        await kv.set(`campaign_group:${rec.campaign_id}`, rec);
+      }
+    }
+  } catch (err: any) {
+    // O LinkedIn já foi atualizado; o KV é só espelho. Não derruba a resposta.
+    console.log("[Edit] Falha ao atualizar o KV:", err.message);
+  }
+}
+
+app.post("/make-server-a4d5bbe0/linkedin/campaigns/update", async (c) => {
+  try {
+    const body = (await c.req.json()) as UpdateRequest;
+
+    // 1. Regras que não dependem do LinkedIn. Qualquer problema recusa tudo.
+    const today = todayIso();
+    const invalid = validateUpdateRequest(body, today);
+    if (invalid.general.length > 0 || invalid.campaigns.length > 0) {
+      const first = invalid.general[0] ?? invalid.campaigns[0].problems[0];
+      return c.json({ success: false, error: first, problems: invalid }, 422);
+    }
+
+    const { accessToken, integration } = await requireLinkedIn();
+    const adAccountId = integration.selected_ad_account_id;
+    if (!adAccountId) return c.json({ error: "Nenhuma conta de anúncios selecionada" }, 400);
+    const accountPath = accountPathOf(adAccountId);
+    const groupId = String(body.group_id).split(":").pop()!;
+    const groupUrn = groupUrnOf(groupId);
+    const currency = body.currency || integration.selected_ad_account_currency || "USD";
+
+    // 2. Confere cada campanha como está no LinkedIn ANTES de gravar qualquer
+    //    coisa: é do grupo e o público novo mantém a mesma empresa.
+    const live = await Promise.all(body.campaigns.map((u) => fetchLiveCampaign(accessToken, accountPath, u.campaign_id).catch(() => null)));
+    const liveProblems: CampaignProblems[] = [];
+    body.campaigns.forEach((u, i) => {
+      const p = liveCampaignProblem(live[i], u, groupUrn);
+      if (p) liveProblems.push({ campaign_id: u.campaign_id, company_name: u.company_name || "", problems: [p] });
+    });
+    if (liveProblems.length > 0) {
+      return c.json({ success: false, error: liveProblems[0].problems[0], problems: { general: [], campaigns: liveProblems } }, 422);
+    }
+
+    // 3. Grupo primeiro: o teto e o término do grupo precisam comportar as
+    //    campanhas, senão o LinkedIn recusa (ou corta o gasto) delas.
+    let groupResult: { success: boolean; error?: string } | null = null;
+    const groupPatch = buildGroupPatch(body.group, currency);
+    if (groupPatch) {
+      const res = await fetchWithRetry(
+        `https://api.linkedin.com/rest/adCampaignGroups/${encodeURIComponent(groupUrn)}`,
+        { method: "POST", headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }), body: JSON.stringify(groupPatch) },
+        "Edit: PATCH group",
+      );
+      groupResult = res.ok ? { success: true } : { success: false, error: `LinkedIn API ${res.status}: ${await res.text()}` };
+      await auditLog(groupId, "edit-group", { status: res.ok ? "success" : "error", patch: groupPatch, error: groupResult.error });
+    }
+
+    // 4. Uma campanha por vez; o resultado volta por empresa.
+    const results: Array<{ campaign_id: string; success: boolean; error?: string }> = [];
+    for (const u of body.campaigns) {
+      if (groupResult && !groupResult.success) {
+        results.push({ campaign_id: u.campaign_id, success: false, error: "O grupo não foi atualizado no LinkedIn, então esta empresa ficou como estava." });
+        continue;
+      }
+      const patch = buildCampaignPatch(u, currency);
+      if (!patch) { results.push({ campaign_id: u.campaign_id, success: true }); continue; }
+      try {
+        const res = await fetchWithRetry(
+          `https://api.linkedin.com/rest/adCampaigns/${encodeURIComponent(campaignUrnOf(u.campaign_id))}`,
+          { method: "POST", headers: linkedInHeaders(accessToken, { "X-RestLi-Method": "PARTIAL_UPDATE" }), body: JSON.stringify(patch) },
+          "Edit: PATCH campaign",
+        );
+        const error = res.ok ? undefined : `LinkedIn API ${res.status}: ${await res.text()}`;
+        results.push({ campaign_id: u.campaign_id, success: res.ok, error });
+        await auditLog(u.campaign_id, "edit-campaign", { status: res.ok ? "success" : "error", patch, error });
+      } catch (err: any) {
+        results.push({ campaign_id: u.campaign_id, success: false, error: `Erro de rede: ${err.message}` });
+      }
+    }
+
+    const okIds = new Set(results.filter((r) => r.success).map((r) => r.campaign_id));
+    await syncEditToKv(groupId, body.campaigns, okIds, body.group, groupResult?.success ?? false);
+
+    const okCount = okIds.size;
+    return c.json({
+      success: okCount === results.length && (groupResult?.success ?? true),
+      partial: okCount > 0 && okCount < results.length,
+      group: groupResult,
+      results,
+    });
+  } catch (err: any) {
+    if (err.message === "UNAUTHORIZED") return c.json({ error: "LinkedIn não conectado" }, 401);
+    console.log("[Edit] update erro:", err.message);
+    return c.json({ success: false, error: `Erro interno: ${err.message}` }, 500);
   }
 });
 
