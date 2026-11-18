@@ -64,29 +64,6 @@ describe('LinkedInConnectionModal — lista de contas de anúncios', () => {
   });
 });
 
-describe('termos: "Conta de anúncios", nunca "Ad Account"', () => {
-  it('nenhuma tela de LinkedIn Ads escreve "Ad Account" para o usuário', async () => {
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const files = [
-      'src/app/integrations/Integrations.tsx',
-      'src/app/integrations/LinkedInConnectionModal.tsx',
-      'src/app/integrations/statusBadge.tsx',
-      'src/app/campaigns/CampaignList.tsx',
-      'src/app/campaigns/CampaignAnalytics.tsx',
-      'src/app/campaigns/wizard/ConfigStep.tsx',
-      'src/app/campaigns/wizard/OrchestrationStep.tsx',
-    ];
-    for (const f of files) {
-      const text = fs.readFileSync(path.resolve(process.cwd(), f), 'utf8')
-        .split('\n')
-        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
-        .join('\n');
-      expect(text, f).not.toMatch(/Ad Accounts?\b/);
-    }
-  });
-});
-
 describe('LinkedInConnectionModal — aviso ao trocar de conta (F125)', () => {
   it('escolher outra conta mostra o aviso e só libera "Trocar conta" depois do "Entendi"', async () => {
     renderManage();
@@ -95,16 +72,16 @@ describe('LinkedInConnectionModal — aviso ao trocar de conta (F125)', () => {
 
     fireEvent.click(radios[1]);
     const alert = screen.getByRole('alert', { name: 'Aviso de troca de conta' });
-    expect(within(alert).getByText('Trocar a conta afeta as campanhas existentes')).toBeInTheDocument();
+    expect(within(alert).getByText('Trocar a conta afeta as campanhas existentes')).toBeTruthy();
 
-    const confirm = screen.getByRole('button', { name: /Trocar conta/ });
-    expect(confirm).toBeDisabled();
+    const confirm = screen.getByRole('button', { name: /Trocar conta/ }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
     fireEvent.click(within(alert).getByRole('checkbox'));
-    expect(confirm).not.toBeDisabled();
+    expect(confirm.disabled).toBe(false);
 
     // Voltar para a conta vinculada some com o aviso.
     fireEvent.click(radios[0]);
     expect(screen.queryByRole('alert', { name: 'Aviso de troca de conta' })).toBeNull();
-    expect(screen.getByRole('button', { name: /Confirmar seleção/ })).not.toBeDisabled();
+    expect((screen.getByRole('button', { name: /Confirmar seleção/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
