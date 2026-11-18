@@ -42,6 +42,7 @@ import { AccountComparisonChart } from './AccountComparisonChart';
 import { AccountPerformanceTable } from './AccountPerformanceTable';
 import { AccountDetailPanel } from './AccountDetailPanel';
 import { periodLabel } from './CampaignList';
+import { groupIdFromRoute, groupChildren, groupCampaignMeta, buildGroupBreakdown } from './groupAnalytics';
 
 
 const DATE_RANGES = [
@@ -168,6 +169,11 @@ export function CampaignAnalytics() {
   const [breakdownFailed, setBreakdownFailed] = useState(false);
   const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
   const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
+  // Campanha real vista como grupo (/campaigns/group-<id>): um conjunto por empresa.
+  const groupId = groupIdFromRoute(campaignId);
+  const [groupAdSets, setGroupAdSets] = useState<LinkedInCampaign[] | null>(null);
+  /** Empresas do grupo cujo número não carregou (ficam fora da soma). */
+  const [groupFailed, setGroupFailed] = useState<string[]>([]);
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -186,14 +192,22 @@ export function CampaignAnalytics() {
       setCampaign(MOCK_CAMPAIGN);
       return;
     }
-    fetchLinkedInCampaigns().then(({ campaigns }) => {
+    fetchLinkedInCampaigns().then(({ campaigns, error }) => {
+      if (groupId) {
+        const children = groupChildren(campaigns, groupId);
+        setGroupAdSets(error ? [] : children);
+        if (children.length) setCampaign(groupCampaignMeta(groupId, children));
+        return;
+      }
       const found = campaigns.find(c => c.id === campaignId);
       if (found) setCampaign(found);
     });
-  }, [campaignId]);
+  }, [campaignId, groupId]);
 
   // Load analytics
   const loadAnalytics = useCallback(async () => {
+    // Grupo: espera a lista dizer quais conjuntos são dele (segue carregando).
+    if (groupId && groupAdSets === null) return;
     setLoading(true);
     setLoadError(null);
     try {
@@ -210,8 +224,30 @@ export function CampaignAnalytics() {
           setByAccount(null);
           setBreakdownFailed(true);
         }
+      } else if (groupId) {
+        // Grupo real: cada conjunto é uma empresa. Busca os números de cada
+        // um e monta a mesma tabela por empresa da demonstração.
+        if (!groupAdSets || groupAdSets.length === 0) {
+          setByAccount(null);
+          setData(null);
+          setLoadError('Não foi possível achar as empresas desta campanha no LinkedIn.');
+          return;
+        }
+        const results = await Promise.all(groupAdSets.map(c =>
+          fetchCampaignAnalyticsFull(c.id, dateRange).catch(() => null)));
+        const breakdown = buildGroupBreakdown(groupId, groupAdSets, results, 'BRL');
+        if (!breakdown) {
+          setByAccount(null);
+          setData(null);
+          setLoadError('Não foi possível carregar os números das empresas.');
+          return;
+        }
+        setByAccount(breakdown.byAccount);
+        setGroupFailed(breakdown.failed);
+        setBreakdownFailed(false);
+        setData(aggregateAccounts(breakdown.byAccount.accounts, breakdown.byAccount.currency));
       } else {
-        // Cada conjunto real já é uma empresa: não há divisão a buscar.
+        // Um conjunto avulso já é uma empresa: não há divisão a buscar.
         setByAccount(null);
         setBreakdownFailed(false);
         const result = await fetchCampaignAnalyticsFull(campaignId, dateRange);
@@ -223,7 +259,7 @@ export function CampaignAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [campaignId, dateRange]);
+  }, [campaignId, dateRange, groupId, groupAdSets]);
 
   useEffect(() => { loadAnalytics(); }, [loadAnalytics]);
 
@@ -322,11 +358,17 @@ export function CampaignAnalytics() {
       }, 250);
       return () => clearTimeout(t);
     }
-    fetchCampaignComments(campaignId).then(d => {
+    // No grupo, os comentários são do anúncio da empresa em foco.
+    const commentsOf = groupId ? focusedAccount?.linkedinCampaignId : campaignId;
+    if (!commentsOf) {
+      setCommentsLoading(groupId ? groupAdSets === null : false);
+      return;
+    }
+    fetchCampaignComments(commentsOf).then(d => {
       setCommentsData(d);
       setCommentsLoading(false);
     }).catch(() => setCommentsLoading(false));
-  }, [campaignId, focusedAccount?.accountId]);
+  }, [campaignId, focusedAccount?.accountId, groupId, groupAdSets]);
 
   // View do dashboard: agregado de TODAS as empresas quando há dados por empresa.
   const d: CampaignAnalyticsFull | null = React.useMemo(() => {
@@ -389,7 +431,8 @@ export function CampaignAnalytics() {
               </div>
             )}
           </div>
-          {!isMockCampaign(campaignId) && (
+          {/* No grupo, excluir é por empresa, na lista. */}
+          {!isMockCampaign(campaignId) && !groupId && (
             <button
               onClick={() => setShowDeleteConfirm(true)}
               className="flex items-center gap-2 px-3 py-2 bg-white border border-red-200 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 shadow-sm transition-colors"
@@ -458,6 +501,13 @@ export function CampaignAnalytics() {
               rangeLabel={dateRange === 'all' ? null : selectedRangeLabel}
               onShowAll={dateRange === 'all' ? null : () => setDateRange('all')}
             />
+          )}
+
+          {groupFailed.length > 0 && hasNumbers && (
+            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" role="status">
+              <Info className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+              Sem números de {groupFailed.join(', ')} agora. Os totais somam só as outras empresas; atualize para tentar de novo.
+            </div>
           )}
 
           {view.showBreakdownError && (

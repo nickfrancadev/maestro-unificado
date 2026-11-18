@@ -31,6 +31,7 @@ import { statusLabel, plural } from './labels';
 import { listDrafts, deleteDraft, draftDailyTotal } from './drafts';
 import type { CampaignDraft } from './drafts';
 import { LinkedInLogo } from '@/app/components/LinkedInLogo';
+import { groupRoutePath } from './groupAnalytics';
 
 /**
  * Uma linha = um conjunto de anúncios no LinkedIn (no produto, uma empresa-alvo).
@@ -398,6 +399,10 @@ export function CampaignList() {
   const onContinueDraft = (id: string) => navigate(`/campaigns/${id}/edit`);
   // A demonstração tem uma tela de analytics só; cada conjunto real tem a sua.
   const onViewPerformance = (row: CampaignRow) => navigate(`/campaigns/${row.isMock ? MOCK_CAMPAIGN_ID : row.id}`);
+  // Visão do grupo: a mesma tela da demonstração, com a tabela por empresa.
+  const onViewGroup = (first: CampaignRow) => navigate(first.isMock
+    ? `/campaigns/${MOCK_CAMPAIGN_ID}`
+    : groupRoutePath(first.campaignGroup!));
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
@@ -844,6 +849,15 @@ export function CampaignList() {
                       <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{periodLabel(s.start, s.end, s.continuous)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
+                          {(isMockGroup || group.children[0]?.campaignGroup) && (
+                            <button
+                              onClick={() => onViewGroup(group.children[0])}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 border border-slate-200 bg-white hover:bg-[#FFF1ED] hover:border-[#FFD0C2] rounded-lg"
+                              title="Analytics da campanha, com a tabela por empresa"
+                            >
+                              <BarChart3 className="w-3.5 h-3.5" /> Analytics
+                            </button>
+                          )}
                           {pausable.length > 0 && (
                             <button
                               onClick={() => setConfirmAction({ type: 'pause', targets: pausable, groupName: group.name, bulk: true })}
