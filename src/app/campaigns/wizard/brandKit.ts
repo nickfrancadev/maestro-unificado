@@ -15,24 +15,7 @@ export interface BrandKit {
   fontFamily: string;                                            // Google Font (movida do step de ads)
   logo: string | null;                                           // URL do logo no Storage | null
   logoPath?: string | null;                                      // caminho no bucket de criativos (para renovar a URL)
-  // Seguidores da página do anunciante no LinkedIn. Opcional: sem valor, o
-  // preview do anúncio não mostra número nenhum (nunca um número inventado).
-  followers?: number | null;
   source?: 'brandbook' | 'website';                              // como foi extraído (informativo)
-}
-
-/** "3.550" / "3550" → 3550. Vazio ou inválido → null (o preview não mostra número). */
-export function parseFollowers(raw: string | undefined | null): number | null {
-  const digits = (raw ?? '').replace(/[.\s]/g, '');
-  if (!/^\d+$/.test(digits)) return null;
-  return Number(digits);
-}
-
-/** Linha de seguidores do preview, ou null quando o kit não tem o número. */
-export function followersLabel(followers: number | null | undefined): string | null {
-  return typeof followers === 'number' && Number.isFinite(followers)
-    ? `${followers.toLocaleString('pt-BR')} seguidores`
-    : null;
 }
 
 export function createDefaultBrandKit(): BrandKit {

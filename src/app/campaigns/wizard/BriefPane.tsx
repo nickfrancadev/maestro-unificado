@@ -26,8 +26,6 @@ export interface BriefDraft {
   logo: string | null;
   /** Caminho do logo no Storage (o mesmo bucket da imagem-base). */
   logoPath?: string | null;
-  /** Seguidores da página no LinkedIn, como digitado. Opcional. */
-  followers?: string;
   colorOptions?: { primary: string[]; secondary: string[]; accent: string[] };
   source: 'website' | 'brandbook' | null;   // qual método de extração foi usado (null = nenhum ainda)
   extractedRef: string;                       // referência exibida no chip: URL do site ou nome do arquivo PDF
@@ -372,22 +370,6 @@ function BrandFields({ draft, setDraft }: {
       </div>
 
       <LogoGallery draft={draft} setDraft={setDraft} />
-
-      {/* Opcional: sem o número, o preview do anúncio não mostra seguidores. */}
-      <div>
-        <label htmlFor="brand-followers" className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">
-          Seguidores no LinkedIn <span className="normal-case font-normal text-slate-400">(opcional)</span>
-        </label>
-        <input
-          id="brand-followers"
-          inputMode="numeric"
-          value={draft.followers ?? ''}
-          onChange={(e) => { const v = e.target.value; setDraft((d) => ({ ...d, followers: v })); }}
-          placeholder="Ex.: 3.550"
-          className="w-full p-3 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-[#FF5F39] outline-none"
-        />
-        <p className="text-[11px] text-slate-400 mt-1">Aparece no preview do anúncio. Sem valor, o preview não mostra número.</p>
-      </div>
     </div>
   );
 }
