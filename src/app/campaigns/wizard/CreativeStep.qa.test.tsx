@@ -317,16 +317,16 @@ describe('CreativeStep — arte composta desatualizada', () => {
   });
 });
 
-describe('CreativeStep — seguidores no preview', () => {
-  it('sem o número no kit da marca, o preview não inventa seguidores', () => {
+describe('CreativeStep — preview sem seguidores', () => {
+  it('o preview do anúncio não mostra número de seguidores', () => {
     renderStep();
     expect(screen.queryByText(/seguidores/)).toBeNull();
   });
 
-  it('com o número no kit, mostra o número do kit', () => {
+  it('rascunho antigo com seguidores no kit também não mostra o número', () => {
     const base = createDefaultCreativeData();
-    renderStep({ brandKit: { ...base.brandKit, voice: 'Direto', followers: 12840 } });
-    expect(screen.getByText('12.840 seguidores')).toBeTruthy();
+    renderStep({ brandKit: { ...base.brandKit, voice: 'Direto', followers: 12840 } as typeof base.brandKit });
+    expect(screen.queryByText(/seguidores/)).toBeNull();
   });
 });
 

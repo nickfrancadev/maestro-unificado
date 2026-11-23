@@ -51,7 +51,7 @@ import {
 import { OverlayCanvas, type OverlayLayerId, measureTextWidthPx } from './OverlayCanvas';
 import { FontPicker } from './FontPicker';
 import { CompanyAvatar, resolveCompanyLogoUrl } from './CompanyAvatar';
-import { createDefaultBrandKit, followersLabel } from './brandKit';
+import { createDefaultBrandKit } from './brandKit';
 import { artStatus, artIssue, composedPatch } from './composition';
 import { crossCompanyMentions, creativeTextsFor, crossMentionIssue } from './crossMention';
 import { ctaLabel } from '../labels';
@@ -1051,8 +1051,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
     || (siteName ? siteName.charAt(0).toUpperCase() + siteName.slice(1) : 'Minha marca');
   // Chaveado pela URL: trocar o logo no Brand Kit dá nova chance ao <img>.
   const advertiserAvatarUrl = advertiserKit.logo && !brokenLogo[`avatar:${advertiserKit.logo}`] ? advertiserKit.logo : null;
-  // Sem o número no kit da marca, o preview não inventa um.
-  const advertiserFollowers = followersLabel(advertiserKit.followers);
   // Domínio sob a imagem: o da URL de destino que esta empresa vai de fato usar.
   const previewDomain = displayDomain(resolved.landingPageUrl);
 
@@ -2107,7 +2105,6 @@ export function CreativeStep({ selectedAccounts, targetingData, creativeData, on
                         <h3 className="font-semibold text-slate-900 text-sm">{advertiserName}</h3>
                         <span className="text-slate-500 text-xs">• 3º+</span>
                       </div>
-                      {advertiserFollowers && <p className="text-xs text-slate-500">{advertiserFollowers}</p>}
                       <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
                         <span>Promovido</span>
                         <Globe className="w-3 h-3" />
