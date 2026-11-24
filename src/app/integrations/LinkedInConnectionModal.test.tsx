@@ -85,3 +85,39 @@ describe('LinkedInConnectionModal — aviso ao trocar de conta (F125)', () => {
     expect((screen.getByRole('button', { name: /Confirmar seleção/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe('LinkedInConnectionModal — depois de autorizar vai para a escolha da conta', () => {
+  const disconnected = { status: 'disconnected' } as any;
+  const connectedNoAccount = { status: 'connected', selected_ad_account_id: null } as any;
+
+  it('conectado sem conta, mesmo em mode=connect, abre direto na escolha da conta', async () => {
+    render(
+      <LinkedInConnectionModal mode="connect" currentStatus={connectedNoAccount} onClose={() => {}} onStatusRefresh={async () => {}} />,
+    );
+    expect(await screen.findByRole('radiogroup')).toBeInTheDocument();
+    expect(screen.queryByText(/Conectar via LinkedIn OAuth/)).toBeNull();
+  });
+
+  it('quando o status vira "connected", troca a tela de conexão pela escolha da conta', async () => {
+    const { rerender } = render(
+      <LinkedInConnectionModal mode="connect" currentStatus={disconnected} onClose={() => {}} onStatusRefresh={async () => {}} />,
+    );
+    expect(screen.getByText(/Conectar via LinkedIn OAuth/)).toBeInTheDocument();
+    rerender(
+      <LinkedInConnectionModal mode="connect" currentStatus={connectedNoAccount} onClose={() => {}} onStatusRefresh={async () => {}} />,
+    );
+    expect(await screen.findByRole('radiogroup')).toBeInTheDocument();
+    expect(screen.queryByText(/Conectar via LinkedIn OAuth/)).toBeNull();
+  });
+
+  it('o aviso da janelinha pelo canal atualiza o status e mostra as contas', async () => {
+    const refresh = vi.fn(async () => {});
+    render(
+      <LinkedInConnectionModal mode="connect" currentStatus={disconnected} onClose={() => {}} onStatusRefresh={refresh} />,
+    );
+    const { postOAuthResult } = await import('./oauthChannel');
+    postOAuthResult({ type: 'connected' });
+    expect(await screen.findByRole('radiogroup')).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalled();
+  });
+});

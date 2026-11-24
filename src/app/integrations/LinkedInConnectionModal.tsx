@@ -31,6 +31,7 @@ import type { IntegrationData } from './types';
 import { adAccountStatusLabel } from '../campaigns/labels';
 import { accountSwitchWarning } from './accountSwitch';
 import { LINKEDIN_LOGO_URL } from '@/app/components/LinkedInLogo';
+import { markOAuthPopup, onOAuthResult } from './oauthChannel';
 
 type ModalState = 'idle' | 'authorizing' | 'selecting_account' | 'connected';
 
@@ -49,10 +50,9 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
   // Conta salva na integração — distinta da seleção atual na lista.
   const linkedAccountId = currentStatus?.selected_ad_account_id || null;
 
-  const [state, setState] = useState<ModalState>(() => {
-    if (mode === 'manage' && isAlreadyConnected) return 'selecting_account';
-    return 'idle';
-  });
+  // Já conectado (em qualquer modo) vai direto para a escolha da conta: não há
+  // o que autorizar de novo, e "Conectar via LinkedIn OAuth" só confundia.
+  const [state, setState] = useState<ModalState>(() => (isAlreadyConnected ? 'selecting_account' : 'idle'));
 
   const [adAccounts, setAdAccounts] = useState<LinkedInAdAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
@@ -86,12 +86,40 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
     }
   };
 
-  // If manage mode, load ad accounts immediately
+  // Conectado ao abrir, ou assim que o status vira "connected" (o OAuth terminou
+  // na janelinha, ou a pessoa voltou para a aba): carrega as contas e troca a
+  // tela de conexão pela escolha da conta.
   useEffect(() => {
-    if (mode === 'manage' && isAlreadyConnected) {
-      loadAdAccounts();
+    if (!isAlreadyConnected) return;
+    setState((s) => (s === 'idle' || s === 'authorizing' ? 'selecting_account' : s));
+    loadAdAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAlreadyConnected]);
+
+  // Resultado do OAuth quando a janelinha perdeu o vínculo com esta página
+  // (o linkedin.com corta o window.opener): ela troca o código e avisa aqui.
+  useEffect(() => onOAuthResult(async (message) => {
+    if (message.type === 'connected') {
+      toast.success('LinkedIn autorizado com sucesso!');
+      setError(null);
+      await onStatusRefresh();
+      await loadAdAccounts();
+      setState('selecting_account');
+    } else {
+      setError(`Não foi possível conectar o LinkedIn: ${message.error}`);
+      setState('idle');
     }
-  }, [mode, isAlreadyConnected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [onStatusRefresh]);
+
+  // Enquanto espera a autorização, voltar para esta aba confere o status: se a
+  // conexão já entrou por outro caminho, o efeito acima segue para a conta.
+  useEffect(() => {
+    if (state !== 'authorizing') return;
+    const check = () => { void onStatusRefresh(); };
+    window.addEventListener('focus', check);
+    return () => window.removeEventListener('focus', check);
+  }, [state, onStatusRefresh]);
 
   // Listen for OAuth callback from popup
   useEffect(() => {
@@ -122,6 +150,7 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
     setError(null);
     try {
       const authUrl = await getLinkedInAuthUrl();
+      markOAuthPopup();
       const popup = window.open(authUrl, 'linkedin-oauth', 'width=600,height=700');
       setState('authorizing');
 
@@ -129,8 +158,11 @@ export function LinkedInConnectionModal({ mode, currentStatus, onClose, onStatus
         const interval = setInterval(() => {
           try {
             if (popup.closed) {
+              // Não volta para "Conectar": depois do linkedin.com o navegador
+              // diz "fechada" mesmo com a janelinha aberta. O resultado chega
+              // pelo canal; se a pessoa desistiu, há o botão "Cancelar".
               clearInterval(interval);
-              setState((s) => (s === 'authorizing' ? 'idle' : s));
+              void onStatusRefresh();
               return;
             }
             const popupUrl = popup.location.href;
