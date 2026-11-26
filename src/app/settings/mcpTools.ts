@@ -19,7 +19,10 @@ import {
 // Ficam de fora 3 tools internas: `get_whatsapp_public_context` (contexto do próprio
 // atendimento de WhatsApp) e `get_client_usage_overview` / `get_client_usage_company`
 // (painel de uso dos clientes, só para a Maestro e agências).
-// No WhatsApp, todas as consultas funcionam, mas só 2 ações (WHATSAPP_WRITE_TOOLS).
+// No WhatsApp vale a interseção de duas listas: WHATSAPP_ALLOWED_TOOLS (whatsapp-agent.service.ts,
+// sem mudança desde 03/09) e WHATSAPP_WRITE_TOOLS (mcp-tools.service.ts, só 2 ações). A primeira
+// ficou para trás: não inclui list_segments, list_plays, list_touchpoints e get_my_tasks, e cita
+// search_plays, search_touchpoints, search_tasks e get_task, que não existem no MCP.
 
 export type McpKind = 'consulta' | 'acao';
 
@@ -42,8 +45,16 @@ export interface McpGroup {
 
 type Raw = [tool: string, title: string, description: string, example: string];
 
+const WHATSAPP_MISSING_READS = new Set(['list_segments', 'list_plays', 'list_touchpoints', 'get_my_tasks']);
 const consulta = (rows: Raw[]): McpCapability[] =>
-  rows.map(([tool, title, description, example]) => ({ tool, kind: 'consulta', title, description, example, whatsapp: true }));
+  rows.map(([tool, title, description, example]) => ({
+    tool,
+    kind: 'consulta',
+    title,
+    description,
+    example,
+    whatsapp: !WHATSAPP_MISSING_READS.has(tool),
+  }));
 
 const WHATSAPP_ACTIONS = new Set(['create_contact_and_link_account', 'create_account_and_contact_and_link']);
 const acao = (rows: Raw[]): McpCapability[] =>
@@ -225,4 +236,6 @@ export const MCP_COUNTS = {
   consulta: all.filter((i) => i.kind === 'consulta').length,
   acao: all.filter((i) => i.kind === 'acao').length,
   whatsapp: all.filter((i) => i.whatsapp).length,
+  whatsappConsulta: all.filter((i) => i.whatsapp && i.kind === 'consulta').length,
+  whatsappAcao: all.filter((i) => i.whatsapp && i.kind === 'acao').length,
 };

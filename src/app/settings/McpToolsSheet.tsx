@@ -138,8 +138,8 @@ export function McpToolsSheet({ open, onOpenChange, whatsappOnly = false }: Prop
           {onlyWa && (
             <p className="mt-3 flex gap-2 rounded-lg bg-[#25D366]/10 px-3 py-2 text-[13px] leading-snug text-[#14633a]">
               <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              No WhatsApp dá para fazer todas as consultas e cadastrar contatos e contas. As outras ações ficam para a IA
-              que você conectar.
+              Pelo WhatsApp funcionam {MCP_COUNTS.whatsapp} das {MCP_TOTAL}: {MCP_COUNTS.whatsappConsulta} consultas e o
+              cadastro de contatos e contas. O resto funciona na IA que você conectar.
             </p>
           )}
         </SheetHeader>
