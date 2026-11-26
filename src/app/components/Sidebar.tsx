@@ -132,8 +132,15 @@ export function Sidebar(_props: SidebarProps = {}) {
             <HelpCircle size={18} />
           </button>
           <button
-            className="flex items-center justify-center rounded-lg"
-            style={{ width: 40, height: 40, color: "rgba(255,255,255,0.7)" }}
+            onClick={() => navigate("/configuracoes")}
+            aria-label="Configurações"
+            className="flex items-center justify-center rounded-lg transition-colors"
+            style={{
+              width: 40,
+              height: 40,
+              background: currentPage === "configuracoes" ? "#FF5F39" : "transparent",
+              color: currentPage === "configuracoes" ? "white" : "rgba(255,255,255,0.7)",
+            }}
           >
             <Settings size={20} />
           </button>
