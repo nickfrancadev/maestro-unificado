@@ -226,7 +226,7 @@ function WhatsappMcp({ onOpenTools }: { onOpenTools: () => void }) {
               },
               {
                 title: 'A Maestro responde',
-                text: 'Pergunte sobre contas, plays, touchpoints e resultados. Pelo WhatsApp também dá para cadastrar contatos e contas novas.',
+                text: 'Pergunte sobre contas, contatos, dossiês e resultados, e cadastre contatos e contas novas. Para criar plays e touchpoints, use a IA conectada acima.',
               },
             ].map((s, i) => (
               <li key={s.title} className="flex gap-3">
@@ -274,7 +274,7 @@ function WhatsappMcp({ onOpenTools }: { onOpenTools: () => void }) {
             className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#212A46] hover:text-[#FF5F39]"
           >
             <ListChecks className="h-4 w-4 text-[#FF5F39]" />
-            Ver o que dá para pedir pelo WhatsApp ({MCP_COUNTS.whatsapp})
+            Ver o que funciona pelo WhatsApp ({MCP_COUNTS.whatsapp} de {MCP_TOTAL})
           </button>
         </div>
 
@@ -302,12 +302,12 @@ function ChatPreview({ phone }: { phone: string | null }) {
         </div>
       </div>
       <div className="space-y-2.5 bg-[#EFE7DE] px-3 py-4 text-[13px]">
-        <Bubble me>Quais touchpoints vencem essa semana?</Bubble>
+        <Bubble me>Quais contas estão esfriando?</Bubble>
         <Bubble>
-          Você tem 3 vencendo:
-          <br />• Ligação com a Ambev, amanhã
-          <br />• Envio de proposta para a Natura, quinta
-          <br />• Almoço com o iFood, sexta
+          3 contas sem interação há mais de 30 dias:
+          <br />• Ambev, 42 dias
+          <br />• Natura, 35 dias
+          <br />• iFood, 31 dias
         </Bubble>
         <Bubble me audio />
         <Bubble>
