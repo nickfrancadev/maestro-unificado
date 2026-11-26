@@ -8,12 +8,12 @@ import {
   Bell,
   Users,
   Plug,
-  Sparkles,
   Tag,
   Receipt,
   LogOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { McpIcon } from './brand';
 
 // Espelha a navegação de Configurações do produto real
 // (maestro_frontend/src/app/admin/pages/settings/settings.component.html),
@@ -25,7 +25,7 @@ export const SETTINGS_NAV = [
   { to: 'notificacoes', label: 'Notificações', icon: Bell },
   { to: 'usuarios', label: 'Usuários', icon: Users },
   { to: 'integracoes', label: 'Integrações', icon: Plug },
-  { to: 'mcp', label: 'MCP', icon: Sparkles, isNew: true },
+  { to: 'mcp', label: 'MCP', icon: McpIcon, isNew: true },
   { to: 'tags', label: 'Gestão de tags', icon: Tag },
   { to: 'assinatura', label: 'Gerenciar Assinatura', icon: Receipt },
 ] as const;
