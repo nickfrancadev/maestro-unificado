@@ -40,6 +40,18 @@ export const LLM_CLIENTS: LlmClient[] = [
     note: 'Depois de conectado no navegador, o conector aparece também no app de desktop e no celular.',
   },
   {
+    id: 'claude-code',
+    name: 'Claude Code',
+    surface: 'Terminal',
+    logo: claudeCodeLogo,
+    steps: [
+      'Abra o terminal.',
+      'Cole o comando abaixo e aperte Enter.',
+      'Dentro do Claude Code, digite /mcp, escolha a Maestro e entre com seu login.',
+    ],
+    command: `claude mcp add --transport http maestro ${MCP_URL}`,
+  },
+  {
     id: 'chatgpt',
     name: 'ChatGPT',
     surface: 'Web e desktop',
@@ -95,18 +107,6 @@ export const LLM_CLIENTS: LlmClient[] = [
       label: 'Adicionar ao Cursor',
       href: `cursor://anysphere.cursor-deeplink/mcp/install?name=maestro&config=${cursorConfig}`,
     },
-  },
-  {
-    id: 'claude-code',
-    name: 'Claude Code',
-    surface: 'Terminal',
-    logo: claudeCodeLogo,
-    steps: [
-      'Abra o terminal.',
-      'Cole o comando abaixo e aperte Enter.',
-      'Dentro do Claude Code, digite /mcp, escolha a Maestro e entre com seu login.',
-    ],
-    command: `claude mcp add --transport http maestro ${MCP_URL}`,
   },
   {
     id: 'outra',
