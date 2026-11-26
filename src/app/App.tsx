@@ -25,6 +25,9 @@ import { CreateSelector } from "./landingPages/create/CreateSelector";
 import { LandingPageEditor } from "./landingPages/editor/LandingPageEditor";
 import { PublicPage } from "./landingPages/public/PublicPage";
 import { LandingPageAnalytics } from "./landingPages/analytics/LandingPageAnalytics";
+import { SettingsLayout, SettingsPlaceholder } from "./settings/SettingsLayout";
+import { NotificationsSettings } from "./settings/NotificationsSettings";
+import { McpSettings } from "./settings/McpSettings";
 
 function PlaysRoute() {
   const navigate = useNavigate();
@@ -111,6 +114,18 @@ export default function App() {
           <Route path="landing-pages/:id/analytics" element={<LandingPageAnalytics />} />
           <Route path="uso-clientes" element={<UsagePortfolio />} />
           <Route path="uso-clientes/:companyId" element={<UsageCompanyDetail />} />
+          <Route path="configuracoes" element={<SettingsLayout />}>
+            <Route index element={<Navigate to="notificacoes" replace />} />
+            <Route path="meu-perfil" element={<SettingsPlaceholder title="Meu Perfil" />} />
+            <Route path="perfil-do-time" element={<SettingsPlaceholder title="Perfil do time" />} />
+            <Route path="dominio" element={<SettingsPlaceholder title="Configurar Domínio" />} />
+            <Route path="notificacoes" element={<NotificationsSettings />} />
+            <Route path="usuarios" element={<SettingsPlaceholder title="Usuários" />} />
+            <Route path="integracoes" element={<Integrations />} />
+            <Route path="mcp" element={<McpSettings />} />
+            <Route path="tags" element={<SettingsPlaceholder title="Gestão de tags" />} />
+            <Route path="assinatura" element={<SettingsPlaceholder title="Gerenciar Assinatura" />} />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
